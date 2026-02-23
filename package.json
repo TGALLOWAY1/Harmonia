@@ -6,19 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "seed:dev": "tsx prisma/seed.dev.ts",
+    "seed:prod": "tsx prisma/seed.prod.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.dev.ts"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.0.1",
+    "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.0.1",
-    "better-sqlite3": "^12.4.6",
     "clsx": "^2.1.1",
     "geist": "^1.5.1",
     "lucide-react": "^0.555.0",
     "next": "^14.2.5",
+    "pg": "^8.18.0",
     "prisma": "^7.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -26,6 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
+    "@types/pg": "^8.16.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
