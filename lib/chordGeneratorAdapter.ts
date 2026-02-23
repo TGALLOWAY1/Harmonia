@@ -5,6 +5,10 @@
  * Never import from ChordGenerator/** outside this file.
  * See docs/chordgenerator-adapter-policy.md
  *
+ * Imports: Uses relative paths into ChordGenerator/... (no Harmonia @/ aliases).
+ * ChordGenerator modules used by the adapter (theory.ts, harmonyEngine, voicing)
+ * use relative imports so they compile within Harmonia's tsconfig.
+ *
  * Note normalization: Tonal note strings (e.g. "C4", "Bb3") are converted to MIDI,
  * then to Harmonia PitchClass (sharps-only) via midiToPitchClass. Octaves are stripped.
  */

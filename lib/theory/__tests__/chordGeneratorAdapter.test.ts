@@ -148,7 +148,7 @@ describe("chordGeneratorAdapter", () => {
       const harmoniaPitchClasses = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
       let bVIIChord: { degree: string; notes: PitchClass[] } | undefined;
       for (let i = 0; i < 50; i++) {
-        const progression = generateChordProgression("D", "dorian", { mood: "moody" });
+        const progression = generateChordProgression("D", "dorian", { mood: "neutral" });
         const found = progression.find((c) => c.degree === "bVII");
         if (found) {
           bVIIChord = found;
