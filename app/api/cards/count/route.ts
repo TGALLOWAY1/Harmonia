@@ -4,6 +4,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { normalizeMetaForQuery } from "@/lib/cards/metaNormalization";
 
 export async function GET(request: Request) {
   try {
@@ -56,13 +57,13 @@ export async function GET(request: Request) {
             return matchesType && matchesRoot;
           });
         } else {
-          // For non-chord cards (e.g., scale_spelling), use existing behavior
-          // Check meta.type for scale type
-          if (scaleType && meta.type !== scaleType) {
+          // For non-chord cards (e.g., scale_spelling), use normalized meta
+          // (handles legacy root->keyRoot, type->keyType)
+          const norm = normalizeMetaForQuery(meta, t.kind);
+          if (scaleType && norm.keyType !== scaleType) {
             return false;
           }
-          // If scaleRoot is specified for non-chord cards, check meta.keyRoot
-          if (scaleRoot && meta.keyRoot !== scaleRoot) {
+          if (scaleRoot && norm.keyRoot !== scaleRoot) {
             return false;
           }
           return true;

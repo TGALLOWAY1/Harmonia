@@ -130,6 +130,8 @@ export function generateScaleSpellingTemplates(): CardTemplateSeed[] {
         meta: {
           root,
           type: scaleType,
+          keyRoot: root,
+          keyType: scaleType,
         } as ScaleSpellingMeta,
       });
     }
@@ -281,6 +283,8 @@ export function generateModeCharacterTemplates(): CardTemplateSeed[] {
         mode: char.mode,
         root: char.root,
         characteristic: char.characteristic,
+        keyRoot: char.root,
+        keyType: char.mode,
       } as ModeCharacterMeta,
     });
 
@@ -294,6 +298,8 @@ export function generateModeCharacterTemplates(): CardTemplateSeed[] {
           mode: char.mode,
           root,
           characteristic: char.characteristic,
+          keyRoot: root,
+          keyType: char.mode,
         } as ModeCharacterMeta,
       });
     }

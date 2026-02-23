@@ -11,7 +11,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "seed:dev": "tsx prisma/seed.dev.ts",
-    "seed:prod": "tsx prisma/seed.prod.ts"
+    "seed:prod": "tsx prisma/seed.prod.ts",
+    "db:patch:meta": "tsx scripts/patchTemplateMeta.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.dev.ts"
