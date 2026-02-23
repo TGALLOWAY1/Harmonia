@@ -1,3 +1,7 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCircleNodes, type PitchClass } from "@/lib/theory";
@@ -223,4 +227,3 @@ export async function GET() {
     );
   }
 }
-

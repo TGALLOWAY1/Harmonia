@@ -1,3 +1,7 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { calculateSM2, type ConfidenceRating } from "@/lib/srs";
@@ -152,4 +156,3 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 }
-
