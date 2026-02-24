@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { generateChordProgression } from "@/lib/chordGeneratorAdapter";
+import { generateRandomProgression } from "@/lib/progressionRandom";
 import type { PitchClass, ScaleType } from "@/lib/theory";
 
 const VALID_PITCH_CLASSES: PitchClass[] = [
@@ -36,6 +36,7 @@ type ProgressionResponse = {
     symbol: string;
     quality: string;
     notes: string[];
+    notesWithOctave: string[];
   }>;
 };
 
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
     const root = rootParam as PitchClass;
     const scaleType = scaleTypeParam as ScaleType;
 
-    const chords = generateChordProgression(root, scaleType);
+    const chords = generateRandomProgression(root, scaleType);
 
     const response: ProgressionResponse = {
       root,
@@ -90,6 +91,7 @@ export async function GET(request: Request) {
         symbol: c.symbol,
         quality: c.quality,
         notes: c.notes,
+        notesWithOctave: c.notesWithOctave,
       })),
     };
 

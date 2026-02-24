@@ -24,6 +24,8 @@ import {
   type ComplexityLevel,
 } from "../ChordGenerator/Harmonia Chord Progression Generator/src/lib/theory";
 
+export type { Mood, ComplexityLevel };
+
 /** Harmonia canonical pitch classes (sharps-only). Reject flats (Bb, Eb, etc.) at runtime. */
 const HARMONIA_PITCH_CLASSES: readonly PitchClass[] = [
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -35,12 +37,14 @@ const VALID_PITCH_CLASS_SET = new Set<string>(HARMONIA_PITCH_CLASSES);
  * Harmonia-shaped chord in a progression.
  * degree: ChordGenerator roman numeral passed through as string (preserves bVI, bVII, etc.).
  * quality conforms to ChordQuality. notes are sharps-only PitchClass[].
+ * notesWithOctave: Tonal format (e.g. "C3", "D3") for playback and MIDI export.
  */
 export type ChordProgressionItem = {
   degree: string;
   symbol: string;
   quality: ChordQuality;
   notes: PitchClass[];
+  notesWithOctave: string[];
 };
 
 /** Validate root is a Harmonia PitchClass. Rejects "Bb", "Eb", etc. */
@@ -140,6 +144,7 @@ export function generateChordProgression(
     symbol: chord.symbol,
     quality: mapQualityToHarmonia(inferQualityFromSymbol(chord.symbol)),
     notes: normalizeNotesToPitchClasses(chord.notes),
+    notesWithOctave: chord.notes,
   }));
 }
 

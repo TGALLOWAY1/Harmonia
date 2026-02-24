@@ -35,6 +35,7 @@ function getBreadcrumbs(pathname: string, dynamicLabel?: string): BreadcrumbItem
     learn: "Learn",
     practice: "Practice",
     circle: "Circle of Fifths",
+    progression: "Chord progression generator",
     progress: "Progress",
     dev: "Dev",
   };

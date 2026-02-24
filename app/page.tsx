@@ -68,6 +68,14 @@ export default function HomePage() {
               description="See how keys relate on the circle, view diatonic chords, and preview scales on the piano roll for any key."
             />
 
+            {/* Chord progression generator */}
+            <HomeNavCard
+              href="/progression"
+              title="Chord progression generator"
+              badge="Generator"
+              description="Generate 4-chord progressions by key and scale. Mood-biased Markov logic with sharps-only note output."
+            />
+
             {/* Progress */}
             <HomeNavCard
               href="/progress"
