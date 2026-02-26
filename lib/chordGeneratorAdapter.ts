@@ -5,39 +5,35 @@
  * Never import from ChordGenerator/** outside this file.
  * See docs/chordgenerator-adapter-policy.md
  *
- * Imports: Uses relative paths into ChordGenerator/... (no Harmonia @/ aliases).
- * ChordGenerator modules used by the adapter (theory.ts, harmonyEngine, voicing)
- * use relative imports so they compile within Harmonia's tsconfig.
- *
- * Note normalization: Tonal note strings (e.g. "C4", "Bb3") are converted to MIDI,
- * then to Harmonia PitchClass (sharps-only) via midiToPitchClass. Octaves are stripped.
+ * It bridges Harmonia canonical pitch classes to the internal harmonyEngine logic,
+ * completely bypassing Tonal.js logic and legacy wrappers.
  */
 
 import type { PitchClass } from "./theory/midiUtils";
+import { PITCH_CLASSES } from "./theory/midiUtils";
 import type { ScaleType } from "./theory/types";
 import type { ChordQuality } from "./theory/chord";
-import { midiToPitchClass } from "./theory/midiUtils";
-import { Note } from "@tonaljs/tonal";
+import { buildTriadFromRoot, buildSeventhFromRoot, formatChordSymbol } from "./theory/chord";
+import { mapTriadToMidi, mapSeventhToMidi } from "./theory/mapping";
+import { midiToNoteName } from "./theory/midiUtils";
+
 import {
-  generateProgressionWithMode,
-  type Mood,
-  type ComplexityLevel,
-} from "../ChordGenerator/Harmonia Chord Progression Generator/src/lib/theory";
+  generateProgression as generateHarmonyProgression,
+  type Mode as HarmonyMode,
+  type Mood as HarmonyMood,
+  type Depth as HarmonyDepth,
+  type Degree,
+} from "./theory/harmonyEngine";
 
-export type { Mood, ComplexityLevel };
-
-/** Harmonia canonical pitch classes (sharps-only). Reject flats (Bb, Eb, etc.) at runtime. */
-const HARMONIA_PITCH_CLASSES: readonly PitchClass[] = [
-  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-] as const;
-
-const VALID_PITCH_CLASS_SET = new Set<string>(HARMONIA_PITCH_CLASSES);
+// Re-export specific UI properties
+export type Mood = "happy" | "sad" | "dark" | "hopeful" | "neutral";
+export type ComplexityLevel = 0 | 1 | 2 | 3;
 
 /**
  * Harmonia-shaped chord in a progression.
  * degree: ChordGenerator roman numeral passed through as string (preserves bVI, bVII, etc.).
  * quality conforms to ChordQuality. notes are sharps-only PitchClass[].
- * notesWithOctave: Tonal format (e.g. "C3", "D3") for playback and MIDI export.
+ * notesWithOctave: canonical C3-B3 octaves for MIDI export/playback.
  */
 export type ChordProgressionItem = {
   degree: string;
@@ -47,9 +43,9 @@ export type ChordProgressionItem = {
   notesWithOctave: string[];
 };
 
-/** Validate root is a Harmonia PitchClass. Rejects "Bb", "Eb", etc. */
+/** Validate root is a Harmonia PitchClass. */
 function assertValidPitchClass(root: PitchClass): asserts root is PitchClass {
-  if (!VALID_PITCH_CLASS_SET.has(root)) {
+  if (!PITCH_CLASSES.includes(root)) {
     throw new Error(
       `Invalid root: "${root}". Harmonia uses sharps-only (C, C#, D, ..., A#, B). Use A# not Bb.`
     );
@@ -57,27 +53,7 @@ function assertValidPitchClass(root: PitchClass): asserts root is PitchClass {
 }
 
 /**
- * Normalize Tonal note strings to Harmonia PitchClass[] (sharps-only, no octaves).
- * Preserves chord tone order (root → third → fifth → seventh). Deduplicates by pitch class.
- */
-function normalizeNotesToPitchClasses(tonalNotes: string[]): PitchClass[] {
-  const seen = new Set<number>();
-  const result: PitchClass[] = [];
-  for (const noteName of tonalNotes) {
-    const midi = Note.midi(noteName);
-    if (typeof midi !== "number") continue;
-    const pcIndex = midi % 12;
-    if (seen.has(pcIndex)) continue;
-    seen.add(pcIndex);
-    result.push(midiToPitchClass(midi));
-  }
-  return result;
-}
-
-/**
  * Map ChordGenerator quality to Harmonia ChordQuality.
- * Supported: ""→maj, m→min, dim→dim, maj7→maj7, m7→min7, 7→dom7.
- * Unsupported (sus2, sus4, add9, m(add9), maj(add9)) map to closest: maj or min.
  */
 export function mapQualityToHarmonia(cgQuality: string): ChordQuality {
   const supported: Record<string, ChordQuality> = {
@@ -87,6 +63,8 @@ export function mapQualityToHarmonia(cgQuality: string): ChordQuality {
     maj7: "maj7",
     m7: "min7",
     "7": "dom7",
+    "half-dim7": "half-dim7",
+    "dim7": "dim7",
   };
   const unsupportedToClosest: Record<string, ChordQuality> = {
     sus2: "maj",
@@ -100,13 +78,8 @@ export function mapQualityToHarmonia(cgQuality: string): ChordQuality {
   return "maj";
 }
 
-/** ChordGenerator Mode (harmonyEngine.ts) */
 export type ChordGeneratorMode = "ionian" | "aeolian" | "dorian" | "mixolydian" | "phrygian";
 
-/**
- * Harmonia ScaleType → ChordGenerator Mode mapping.
- * Used when calling harmonyEngine / theory.ts generateProgressionWithMode.
- */
 export const SCALE_TYPE_TO_MODE: Record<ScaleType, ChordGeneratorMode> = {
   major: "ionian",
   natural_minor: "aeolian",
@@ -115,17 +88,8 @@ export const SCALE_TYPE_TO_MODE: Record<ScaleType, ChordGeneratorMode> = {
   phrygian: "phrygian",
 };
 
-/** Map Harmonia ScaleType to ChordGenerator Mode for harmonyEngine calls */
-function scaleTypeToMode(scaleType: ScaleType): ChordGeneratorMode {
-  return SCALE_TYPE_TO_MODE[scaleType];
-}
-
 /**
  * Generate a chord progression using ChordGenerator, returning Harmonia-shaped data.
- *
- * @param root - Pitch class (Harmonia sharps-only)
- * @param scaleType - Harmonia ScaleType
- * @param options - Optional mood and complexity (ChordGenerator-specific)
  */
 export function generateChordProgression(
   root: PitchClass,
@@ -133,37 +97,96 @@ export function generateChordProgression(
   options?: { mood?: Mood; complexity?: ComplexityLevel }
 ): ChordProgressionItem[] {
   assertValidPitchClass(root);
-  const mode = scaleTypeToMode(scaleType);
+  const mode = SCALE_TYPE_TO_MODE[scaleType] as HarmonyMode;
+
+  // Mood / Complexity mappings (from former theory wrapper)
+  const MOOD_TO_ENGINE_MOOD: Record<Mood, HarmonyMood> = {
+    happy: "happy",
+    sad: "melancholic",
+    dark: "dark",
+    hopeful: "optimistic",
+    neutral: "moody",
+  };
   const mood = options?.mood ?? "neutral";
+  const harmonyMood = MOOD_TO_ENGINE_MOOD[mood] ?? "moody";
+
   const complexity = options?.complexity ?? 1;
+  const depth = (complexity <= 0 ? 0 : complexity === 1 ? 1 : 2) as HarmonyDepth;
 
-  const raw = generateProgressionWithMode(root, mode, mood, complexity);
+  const rawChords = generateHarmonyProgression({
+    rootKey: root,
+    mode,
+    mood: harmonyMood,
+    depth,
+    numChords: 4,
+  });
 
-  return raw.map((chord) => ({
-    degree: chord.roman, // Preserve flat degrees (bVI, bVII, etc.) as string
-    symbol: chord.symbol,
-    quality: mapQualityToHarmonia(inferQualityFromSymbol(chord.symbol)),
-    notes: normalizeNotesToPitchClasses(chord.notes),
-    notesWithOctave: chord.notes,
-  }));
+  return rawChords.map((chord) => {
+    const cgQuality = chord.quality;
+    const harmoniaQuality = mapQualityToHarmonia(cgQuality);
+    const chordRoot = getDegreeRootPitchClass(root, mode, chord.degree);
+
+    // Build the canonical chord (Triad or Seventh)
+    const isSeventh = harmoniaQuality.includes("7");
+
+    let pitchClasses: PitchClass[];
+    let notesWithOctave: string[];
+
+    if (isSeventh) {
+      // NOTE: For 'half-dim7' or 'dim7' we would need to map properly.
+      // But mapQualityToHarmonia currently resolves complex CG qualities usually to maj, min, maj7, min7, dom7, or dim triad.
+      // If we did return half-dim7, we handle it if our builder supports it.
+      // buildSeventhFromRoot currently only supports maj7, min7, dom7. 
+      // If we got 'dim7' or 'half-dim7' we would need to fallback to 'min7' or extend builder.
+      const safeSeventhQuality = (harmoniaQuality === "maj7" || harmoniaQuality === "min7" || harmoniaQuality === "dom7") ? harmoniaQuality : "min7";
+      const seventhChord = buildSeventhFromRoot(chordRoot, safeSeventhQuality);
+      pitchClasses = seventhChord.pitchClasses;
+      const mapped = mapSeventhToMidi(seventhChord, 3);
+      notesWithOctave = mapped.midiNotes.map(midiToNoteName);
+    } else {
+      const triadChord = buildTriadFromRoot(chordRoot, harmoniaQuality as any);
+      pitchClasses = triadChord.pitchClasses;
+      const mapped = mapTriadToMidi(triadChord, 3);
+      notesWithOctave = mapped.midiNotes.map(midiToNoteName);
+    }
+
+    const symbol = formatChordSymbol(chordRoot, harmoniaQuality);
+
+    return {
+      degree: chord.degree,
+      symbol,
+      quality: harmoniaQuality,
+      notes: pitchClasses,
+      notesWithOctave,
+    };
+  });
 }
 
-/** Extract suffix from chord symbol (e.g. "Cm7" -> "m7") and return CG quality for mapping */
-function inferQualityFromSymbol(symbol: string): string {
-  const m = symbol.match(/^[A-G][#b]?(.*)$/);
-  const suffix = m?.[1] ?? "";
-  const suffixToCgQuality: Record<string, string> = {
-    "": "",
-    m: "m",
-    dim: "dim",
-    maj7: "maj7",
-    m7: "m7",
-    "7": "7",
-    sus2: "sus2",
-    sus4: "sus4",
-    add9: "add9",
-    madd9: "m(add9)",
-    maj9: "maj(add9)",
+// Geometric computation of degree root based on interval offsets
+function getDegreeRootPitchClass(keyRoot: PitchClass, mode: HarmonyMode, degree: Degree): PitchClass {
+  const MODE_DEGREE_OFFSETS: Record<HarmonyMode, number[]> = {
+    ionian: [0, 2, 4, 5, 7, 9, 11],
+    mixolydian: [0, 2, 4, 5, 7, 9, 10],
+    aeolian: [0, 2, 3, 5, 7, 8, 10],
+    dorian: [0, 2, 3, 5, 7, 9, 10],
+    phrygian: [0, 1, 3, 5, 7, 8, 10],
   };
-  return suffixToCgQuality[suffix] ?? suffix;
+
+  const ROMAN_INDEX: Record<string, number> = {
+    I: 0, II: 1, III: 2, IV: 3, V: 4, VI: 5, VII: 6,
+  };
+
+  const flats = (degree.match(/b/g) ?? []).length;
+  const sharps = (degree.match(/#/g) ?? []).length;
+  const normalizedNumeral = degree.replace(/[b#°]/g, "").toUpperCase();
+  const index = ROMAN_INDEX[normalizedNumeral] ?? 0;
+  const offsets = MODE_DEGREE_OFFSETS[mode] ?? MODE_DEGREE_OFFSETS.ionian;
+  const base = offsets[index] ?? 0;
+
+  let offset = (base - flats + sharps) % 12;
+  if (offset < 0) offset += 12;
+
+  const rootIndex = PITCH_CLASSES.indexOf(keyRoot);
+  const chordRootIndex = (rootIndex + offset) % 12;
+  return PITCH_CLASSES[chordRootIndex];
 }

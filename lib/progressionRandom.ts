@@ -7,6 +7,8 @@
 import type { PitchClass, ScaleType } from "./theory";
 import { getScaleDefinition } from "./theory/scale";
 import { buildTriadFromScale } from "./theory/chord";
+import { mapTriadToMidi } from "./theory/mapping";
+import { midiToNoteName } from "./theory/midiUtils";
 import type { TriadQuality } from "./theory/chord";
 
 /** Roman numeral for each scale degree by mode */
@@ -33,15 +35,7 @@ function qualityToSuffix(q: TriadQuality): string {
   }
 }
 
-/** Simple closed voicing: root at octave 3, third and fifth at 4 */
-function pitchClassesToNotesWithOctave(pitchClasses: PitchClass[]): string[] {
-  if (pitchClasses.length === 0) return [];
-  return [
-    pitchClasses[0] + "3",
-    pitchClasses[1] + "4",
-    pitchClasses[2] + "4",
-  ];
-}
+
 
 export type ProgressionChord = {
   degree: string;
@@ -74,7 +68,7 @@ export function generateRandomProgression(
       symbol,
       quality: triad.quality,
       notes: triad.pitchClasses,
-      notesWithOctave: pitchClassesToNotesWithOctave(triad.pitchClasses),
+      notesWithOctave: mapTriadToMidi(triad, 3).midiNotes.map(midiToNoteName),
     });
   }
 

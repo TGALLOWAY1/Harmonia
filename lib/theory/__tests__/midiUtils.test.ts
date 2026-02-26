@@ -9,9 +9,16 @@ import {
   isBlackKey,
   isWhiteKey,
   generateMidiRange,
+  pitchClassToMidi,
 } from "../midiUtils";
 
 describe("midiUtils", () => {
+  describe("pitchClassToMidi single octave mapping", () => {
+    it("converts C at octave 3 to 48", () => expect(pitchClassToMidi("C", 3)).toBe(48));
+    it("converts C# at octave 3 to 49", () => expect(pitchClassToMidi("C#", 3)).toBe(49));
+    it("converts B at octave 3 to 59", () => expect(pitchClassToMidi("B", 3)).toBe(59));
+  });
+
   describe("midiToNoteName", () => {
     it("converts 60 to C4", () => {
       expect(midiToNoteName(60)).toBe("C4");

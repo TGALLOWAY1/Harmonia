@@ -4,21 +4,7 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import { generateRandomProgression } from "@/lib/progressionRandom";
 import type { PitchClass, ScaleType } from "@/lib/theory";
-
-const VALID_PITCH_CLASSES: PitchClass[] = [
-  "C",
-  "C#",
-  "D",
-  "D#",
-  "E",
-  "F",
-  "F#",
-  "G",
-  "G#",
-  "A",
-  "A#",
-  "B",
-];
+import { PITCH_CLASSES } from "@/lib/theory/midiUtils";
 
 const VALID_SCALE_TYPES: ScaleType[] = [
   "major",
@@ -53,10 +39,10 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!VALID_PITCH_CLASSES.includes(rootParam as PitchClass)) {
+    if (!PITCH_CLASSES.includes(rootParam as PitchClass)) {
       return NextResponse.json(
         {
-          error: `Invalid root: "${rootParam}". Must be one of: ${VALID_PITCH_CLASSES.join(", ")}`,
+          error: `Invalid root: "${rootParam}". Must be one of: ${PITCH_CLASSES.join(", ")}`,
         },
         { status: 400 }
       );
