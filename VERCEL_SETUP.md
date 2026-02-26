@@ -1,13 +1,17 @@
 # Deploying Harmonia on Vercel
 
-## 1. Set `DATABASE_URL`
+## 1. Create a Vercel Postgres Database
 
-Add your PostgreSQL connection string in Vercel:
+Because this app utilizes Prisma 7 and `@prisma/adapter-pg` in production, you must link it to a PostgreSQL database on Vercel:
 
-1. Open **Project Settings** → **Environment Variables**
-2. Add `DATABASE_URL` for **Production** and **Preview**
-3. Use a Postgres URL from Neon, Supabase, Vercel Postgres, or your provider  
-   Example: `postgresql://user:password@host:5432/database?sslmode=require`
+1. Open your project dashboard in Vercel.
+2. Navigate to the **Storage** tab.
+3. Click **Create Database** and select **Postgres**.
+4. Accept the defaults and click **Create**.
+5. Once created, Vercel automatically maps the `POSTGRES_URL` to your app's environment variables. 
+6. To make this work with Prisma, explicitly add a new environment variable named `DATABASE_URL` and set its value to your `POSTGRES_URL` (found in the Storage credentials tab).
+
+*Note: For local testing, Harmonia is configured to use SQLite (`dev.db`). When deploying to Vercel, Prisma natively requires PostgreSQL due to the edge adapter setup.*
 
 ## 2. Run migrations in the build
 

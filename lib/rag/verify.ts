@@ -11,6 +11,7 @@ import {
   formatChordSymbol,
   getScaleDefinition,
 } from "@/lib/theory";
+import { normalizeToPitchClass } from "@/lib/theory/midiUtils";
 
 export type VerificationResult = {
   passed: boolean;
@@ -25,9 +26,7 @@ export type GeneratedProgression = {
   notes: string[];
 };
 
-const PITCH_CLASSES: PitchClass[] = [
-  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-];
+
 
 function parseKeyFromPrompt(prompt: string): {
   keyRoot: PitchClass;
@@ -37,24 +36,14 @@ function parseKeyFromPrompt(prompt: string): {
   const majorMatch = lower.match(/in\s+([a-g](?:#|b)?)\s+major/i);
   const minorMatch = lower.match(/in\s+([a-g](?:#|b)?)\s+minor/i);
   if (minorMatch) {
-    const root = normalizePitchClass(minorMatch[1]);
+    const root = normalizeToPitchClass(minorMatch[1]);
     if (root) return { keyRoot: root, keyType: "minor" };
   }
   if (majorMatch) {
-    const root = normalizePitchClass(majorMatch[1]);
+    const root = normalizeToPitchClass(majorMatch[1]);
     if (root) return { keyRoot: root, keyType: "major" };
   }
   return null;
-}
-
-function normalizePitchClass(s: string): PitchClass | null {
-  const cleaned = s.trim().toLowerCase();
-  const map: Record<string, PitchClass> = {
-    c: "C", "c#": "C#", db: "C#", d: "D", "d#": "D#", eb: "D#",
-    e: "E", f: "F", "f#": "F#", gb: "F#", g: "G", "g#": "G#", ab: "G#",
-    a: "A", "a#": "A#", bb: "A#", b: "B",
-  };
-  return map[cleaned] ?? (PITCH_CLASSES.includes(cleaned.toUpperCase() as PitchClass) ? (cleaned.toUpperCase() as PitchClass) : null);
 }
 
 const ROMAN_TO_DEGREE: Record<string, number> = {

@@ -64,4 +64,26 @@ describe("chord golden tests", () => {
       expect(vii.seventh.pitchClasses).toEqual(["B", "D", "F", "A"]);
     });
   });
+
+  describe("B dim triad", () => {
+    it("returns B D F", () => {
+      const triad = buildTriadFromRoot("B", "dim");
+      expect(triad.pitchClasses).toEqual(["B", "D", "F"]);
+    });
+  });
+
+  describe("Diatonic chords in C major", () => {
+    it("returns correct exact triads for I, ii, V", () => {
+      const diatonic = getDiatonicChords("C", "major");
+      // I
+      expect(diatonic.triads[0].degree).toBe("I");
+      expect(diatonic.triads[0].triad.pitchClasses).toEqual(["C", "E", "G"]);
+      // ii
+      expect(diatonic.triads[1].degree).toBe("ii");
+      expect(diatonic.triads[1].triad.pitchClasses).toEqual(["D", "F", "A"]);
+      // V
+      expect(diatonic.triads[4].degree).toBe("V");
+      expect(diatonic.triads[4].triad.pitchClasses).toEqual(["G", "B", "D"]);
+    });
+  });
 });

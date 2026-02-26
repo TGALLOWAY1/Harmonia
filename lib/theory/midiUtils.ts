@@ -26,7 +26,7 @@ export type PitchClass =
 
 export type NoteName = `${PitchClass}${number}`; // e.g. "C3", "C#4"
 
-const PITCH_CLASSES: PitchClass[] = [
+export const PITCH_CLASSES: PitchClass[] = [
   "C",
   "C#",
   "D",
@@ -40,6 +40,20 @@ const PITCH_CLASSES: PitchClass[] = [
   "A#",
   "B",
 ];
+
+/**
+ * Normalizes a string (e.g., "Bb", "db", "c#") to a canonical sharps-only PitchClass.
+ * Returns null if the string is not a valid pitch class.
+ */
+export function normalizeToPitchClass(s: string): PitchClass | null {
+  const cleaned = s.trim().toLowerCase();
+  const map: Record<string, PitchClass> = {
+    c: "C", "c#": "C#", db: "C#", d: "D", "d#": "D#", eb: "D#",
+    e: "E", f: "F", "f#": "F#", gb: "F#", g: "G", "g#": "G#", ab: "G#",
+    a: "A", "a#": "A#", bb: "A#", b: "B",
+  };
+  return map[cleaned] ?? (PITCH_CLASSES.includes(cleaned.toUpperCase() as PitchClass) ? (cleaned.toUpperCase() as PitchClass) : null);
+}
 
 // Black keys are at pitch class indices: 1, 3, 6, 8, 10 (C#, D#, F#, G#, A#)
 const BLACK_KEY_INDICES = new Set([1, 3, 6, 8, 10]);
