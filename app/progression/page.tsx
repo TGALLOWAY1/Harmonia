@@ -31,6 +31,22 @@ export default function ProgressionPage() {
     }
   };
 
+  const handlePlayChord = (notesWithOctave: string[], index: number) => {
+    if (synthRef.current) {
+      synthRef.current.releaseAll();
+
+      if (isPlaying) {
+        // If the sequencer is running, jump to this chord and restart the transport immediately
+        Tone.Transport.stop();
+        playbackIndexRef.current = index;
+        Tone.Transport.start();
+      } else {
+        // Standard preview
+        synthRef.current.triggerAttackRelease(notesWithOctave, "2n");
+      }
+    }
+  };
+
   const synthRef = useRef<Tone.PolySynth | null>(null);
   const playbackIndexRef = useRef(0);
   const scheduleIdRef = useRef<number | null>(null);
@@ -133,6 +149,10 @@ export default function ProgressionPage() {
           <ScaleSelector />
         </section>
 
+        <section className="mb-12">
+          <TriadPalette />
+        </section>
+
         <section className="mb-16">
           <div className="bg-surface rounded-3xl p-8 border border-border-subtle shadow-sm hover:shadow-md transition-shadow min-h-32 flex items-center justify-center">
             <ChordInspector selectedIndex={selectedChordIndex} />
@@ -144,6 +164,7 @@ export default function ProgressionPage() {
             activeIndex={playbackIndex}
             selectedIndex={selectedChordIndex}
             onSelectChord={setSelectedChordIndex}
+            onPlayChord={handlePlayChord}
           />
 
           {currentProgression && (
@@ -171,8 +192,6 @@ export default function ProgressionPage() {
               <span className="text-sm font-medium w-8 text-center">{bpm}</span>
             </div>
           </div>
-
-          <TriadPalette />
         </section>
       </main>
     </div>

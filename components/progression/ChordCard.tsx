@@ -51,49 +51,57 @@ export default function ChordCard({
             onDragStart={handleDragStart}
             onClick={() => onClick?.(index)}
             className={cn(
-                "relative flex flex-col items-center justify-center rounded-2xl px-6 py-8 border transition-all duration-200",
+                "relative flex flex-col items-center justify-center rounded-2xl px-8 py-10 min-w-[140px] border transition-all duration-200",
                 isActive ? "bg-accent/10 border-accent" : "bg-surface border-border-subtle",
                 isSelected && !isActive ? "ring-2 ring-accent border-transparent" : "",
                 isDraggable ? "cursor-grab active:cursor-grabbing hover:border-accent" : ""
             )}
         >
             {/* Top Action Buttons */}
-            <div className="absolute top-2 right-2 flex items-center gap-1">
-                {onRefresh && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onRefresh(index); }}
-                        className="text-muted hover:text-foreground p-1.5 rounded-full hover:bg-surface-muted transition-colors"
-                        title="Regenerate this chord"
-                    >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                )}
-                {onLock && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onLock(index); }}
-                        className="text-muted hover:text-foreground p-1.5 rounded-full hover:bg-surface-muted transition-colors"
-                        title={chord.isLocked ? "Unlock chord" : "Lock chord"}
-                    >
-                        {chord.isLocked ? <Lock className="w-3.5 h-3.5 text-accent" /> : <Unlock className="w-3.5 h-3.5 opacity-60" />}
-                    </button>
-                )}
-                {onRemove && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onRemove(index); }}
-                        className="text-muted hover:text-foreground p-1.5 rounded-full hover:bg-surface-muted transition-colors"
-                        title="Remove chord"
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
-                )}
+            <div className="absolute top-2 left-0 w-full px-3 flex items-center justify-between mt-1">
+                <div className="flex-1 flex justify-start">
+                    {onRefresh && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onRefresh(index); }}
+                            className="text-muted hover:text-foreground p-1 rounded-full hover:bg-surface-muted transition-colors"
+                            title="Regenerate this chord"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex-1 flex justify-center">
+                    {onLock && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onLock(index); }}
+                            className="text-muted hover:text-foreground p-1 rounded-full hover:bg-surface-muted transition-colors"
+                            title={chord.isLocked ? "Unlock chord" : "Lock chord"}
+                        >
+                            {chord.isLocked ? <Lock className="w-4 h-4 text-accent" /> : <Unlock className="w-4 h-4 opacity-60" />}
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex-1 flex justify-end">
+                    {onRemove && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onRemove(index); }}
+                            className="text-muted hover:text-foreground p-1 rounded-full hover:bg-surface-muted transition-colors"
+                            title="Remove chord"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="flex w-full justify-between items-start mb-2 mt-2">
-                <div className="text-sm font-medium text-muted opacity-70">{chord.romanNumeral}</div>
-                <div className="text-xs text-muted">#{index + 1}</div>
+            <div className="flex w-full justify-between items-start mb-3 mt-4">
+                <div className="text-base font-medium text-muted opacity-70">{chord.romanNumeral}</div>
+                <div className="text-sm text-muted">#{index + 1}</div>
             </div>
-            <div className="text-3xl font-medium mb-1">{chord.symbol}</div>
-            <div className="text-xs text-muted mt-2 opacity-70">
+            <div className="text-4xl font-semibold mb-2">{chord.symbol}</div>
+            <div className="text-sm text-muted mt-2 opacity-70">
                 {chord.notes.join(" ")}
             </div>
         </div>

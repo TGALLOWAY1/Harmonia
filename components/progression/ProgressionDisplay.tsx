@@ -9,9 +9,10 @@ interface ProgressionDisplayProps {
     activeIndex?: number | null;
     selectedIndex?: number | null;
     onSelectChord?: (index: number) => void;
+    onPlayChord?: (notesWithOctave: string[], index: number) => void;
 }
 
-export default function ProgressionDisplay({ activeIndex = null, selectedIndex = null, onSelectChord }: ProgressionDisplayProps) {
+export default function ProgressionDisplay({ activeIndex = null, selectedIndex = null, onSelectChord, onPlayChord }: ProgressionDisplayProps) {
     const { currentProgression, addChordToProgression, removeChord, reorderChords, toggleChordLock, refreshChord } = useProgressionStore();
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -94,7 +95,7 @@ export default function ProgressionDisplay({ activeIndex = null, selectedIndex =
 
     return (
         <div
-            className="flex flex-wrap gap-4 w-full p-6 border-2 border-dashed border-transparent hover:border-border-subtle rounded-3xl transition-colors min-h-64"
+            className="flex flex-wrap justify-center gap-4 w-full p-6 border-2 border-dashed border-transparent hover:border-border-subtle rounded-3xl transition-colors min-h-64"
             onDragOver={(e) => { e.preventDefault(); /* Allow drops into the general container */ }}
             onDrop={handleEmptyDrop}
         >
@@ -116,7 +117,10 @@ export default function ProgressionDisplay({ activeIndex = null, selectedIndex =
                         isDraggable={true}
                         isActive={index === activeIndex}
                         isSelected={index === selectedIndex}
-                        onClick={onSelectChord}
+                        onClick={(idx) => {
+                            onSelectChord?.(idx);
+                            onPlayChord?.(chord.notes.map(n => `${n}3`), idx);
+                        }}
                         onRemove={removeChord}
                         onLock={toggleChordLock}
                         onRefresh={refreshChord}
