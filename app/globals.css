@@ -297,3 +297,210 @@
 .piano-wrap {
   position: relative;
 }
+/* ─────────────────────────────────────────────
+   VERTICAL PIANO ROLL CSS (PROGRESSION PAGE)
+───────────────────────────────────────────── */
+:root {
+  --vert-accent-coral: #e8856a;
+  --vert-accent-teal:  #5abfb0;
+  --vert-accent-light: rgba(232, 133, 106, 0.15);
+  --vert-key-white:    #faf9f6;
+  --vert-key-black:    #2a2724;
+  --vert-key-active-w: #fde8e1;
+  --vert-key-active-b: #5a2d22;
+  --vert-col-hover:    rgba(232, 133, 106, 0.06);
+}
+
+.piano-roll-section {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.piano-roll-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.piano-roll-wrap {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--vert-key-white);
+  max-width: 100%;
+}
+
+/* ── LEFT PIANO KEYBOARD ── */
+.piano-keys {
+  width: 52px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.piano-key-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.6rem;
+  color: var(--muted);
+  flex: 1;
+  min-height: 22px;
+  position: relative;
+  background: var(--vert-key-white);
+}
+
+.piano-key-row.black-key {
+  background: var(--background); /* matches f0ede8 from mockup approx */
+  color: #a1a1aa; /* subtler text */
+}
+
+.piano-key-row.black-key::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 32px;
+  background: var(--vert-key-black);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Active states */
+.piano-key-row.key-active {
+  background: var(--vert-key-active-w);
+  color: var(--vert-accent-coral);
+  font-weight: 500;
+}
+.piano-key-row.black-key.key-active::before {
+  background: var(--vert-key-active-b);
+}
+.piano-key-row.c-note {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+/* ── GRID COLUMNS ── */
+.roll-grid {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.roll-column {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+}
+.roll-column:last-child {
+  border-right: none;
+}
+.roll-column:hover {
+  background: var(--vert-col-hover);
+}
+
+.roll-col-header {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.roll-col-header .col-numeral {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.6rem;
+  color: var(--muted);
+}
+.roll-col-header .col-chord-name {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.roll-column.playing .roll-col-header {
+  background: var(--vert-accent-light);
+  border-bottom-color: var(--vert-accent-coral);
+}
+.roll-column.playing .col-numeral {
+  color: var(--vert-accent-coral);
+}
+
+/* Individual note cells */
+.note-cell {
+  flex: 1;
+  min-height: 22px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: relative;
+  transition: background 0.08s;
+}
+
+.note-cell.black-row {
+  background: rgba(0,0,0,0.025);
+}
+
+.note-cell.has-note::after {
+  content: attr(data-note);
+  position: absolute;
+  inset: 2px 4px;
+  background: var(--vert-accent-coral);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.6rem;
+  color: white;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  transition: filter 0.1s, transform 0.1s;
+}
+
+.note-cell.is-root::after {
+  background: var(--vert-accent-teal);
+}
+
+.note-cell.has-note:hover::after {
+  filter: brightness(1.1);
+  transform: scaleY(1.04);
+}
+
+@keyframes noteFlash {
+  0%   { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+.note-cell.triggered::after {
+  animation: noteFlash 0.25s ease-out;
+}
+
+.range-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+.range-btn {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+  border-radius: 4px;
+  width: 22px; height: 22px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.range-btn:hover {
+  border-color: var(--muted);
+}

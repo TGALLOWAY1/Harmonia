@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import * as Tone from "tone";
 import ScaleSelector from "@/components/progression/ScaleSelector";
-import ComplexitySlider from "@/components/progression/ComplexitySlider";
+import ChordInspector from "@/components/progression/ChordInspector";
 import ProgressionDisplay from "@/components/progression/ProgressionDisplay";
+import { VerticalPianoRoll } from "@/components/progression/VerticalPianoRoll";
 import TriadPalette from "@/components/progression/TriadPalette";
 import ActionButtons from "@/components/progression/ActionButtons";
 import { useProgressionStore } from "@/lib/state/progressionStore";
@@ -22,6 +23,13 @@ export default function ProgressionPage() {
   } = useProgressionStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
+  const [selectedChordIndex, setSelectedChordIndex] = useState<number | null>(null);
+
+  const handlePlayNote = (noteWithOctave: string) => {
+    if (synthRef.current) {
+      synthRef.current.triggerAttackRelease(noteWithOctave, "4n");
+    }
+  };
 
   const synthRef = useRef<Tone.PolySynth | null>(null);
   const playbackIndexRef = useRef(0);
@@ -126,13 +134,27 @@ export default function ProgressionPage() {
         </section>
 
         <section className="mb-16">
-          <div className="bg-surface rounded-3xl p-8 border border-border-subtle shadow-sm hover:shadow-md transition-shadow">
-            <ComplexitySlider />
+          <div className="bg-surface rounded-3xl p-8 border border-border-subtle shadow-sm hover:shadow-md transition-shadow min-h-32 flex items-center justify-center">
+            <ChordInspector selectedIndex={selectedChordIndex} />
           </div>
         </section>
 
         <section className="flex flex-col items-center gap-12 w-full">
-          <ProgressionDisplay activeIndex={playbackIndex} />
+          <ProgressionDisplay
+            activeIndex={playbackIndex}
+            selectedIndex={selectedChordIndex}
+            onSelectChord={setSelectedChordIndex}
+          />
+
+          {currentProgression && (
+            <div className="w-full">
+              <VerticalPianoRoll
+                chords={currentProgression.chords}
+                playingIndex={playbackIndex}
+                onPlayNote={handlePlayNote}
+              />
+            </div>
+          )}
 
           <div className="flex items-center gap-6 w-full justify-center">
             <ActionButtons />

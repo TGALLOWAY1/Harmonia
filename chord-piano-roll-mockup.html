@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chord Generator – Piano Roll Mockup</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ─────────────────────────────────────────────
+       CSS VARIABLES – wire these to your theme system
+    ───────────────────────────────────────────── */
+    :root {
+      --bg:           #f0ede8;
+      --surface:      #ffffff;
+      --border:       #e0dbd2;
+      --text-primary: #1a1814;
+      --text-muted:   #9b9488;
+      --accent-coral: #e8856a;   /* active note fill  */
+      --accent-teal:  #5abfb0;   /* root note fill    */
+      --accent-light: rgba(232, 133, 106, 0.15);
+      --key-white:    #faf9f6;
+      --key-black:    #2a2724;
+      --key-active-w: #fde8e1;
+      --key-active-b: #5a2d22;
+      --col-hover:    rgba(232, 133, 106, 0.06);
+      --radius:       12px;
+      --radius-sm:    7px;
+      --mono:         'DM Mono', monospace;
+      --sans:         'DM Sans', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      font-family: var(--sans);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 80px;
+    }
+
+    /* ─────────────────────────────────────────────
+       PAGE HEADER
+    ───────────────────────────────────────────── */
+    .page-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .page-header h1 {
+      font-size: 1.15rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    .page-header p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    /* ─────────────────────────────────────────────
+       CARD WRAPPER
+    ───────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 820px;
+    }
+
+    .card + .card { margin-top: 16px; }
+
+    /* ─────────────────────────────────────────────
+       EXISTING: KEY / SCALE SELECTOR
+       WIRE IN: Connect to your existing key/scale state
+    ───────────────────────────────────────────── */
+    .scale-selector {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .scale-pill {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .scale-pill span { color: var(--text-muted); font-weight: 300; }
+
+    /* ─────────────────────────────────────────────
+       EXISTING: CHORD ARRANGEMENT CARDS
+       WIRE IN: These should reflect your chord arrangement state array
+    ───────────────────────────────────────────── */
+    .chord-arrangement {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .chord-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      min-width: 100px;
+      position: relative;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .chord-card:hover { border-color: var(--accent-coral); }
+    .chord-card.active {
+      border-color: var(--accent-coral);
+      background: var(--accent-light);
+    }
+    .chord-card .remove {
+      position: absolute; top: 6px; right: 8px;
+      font-size: 0.65rem; color: var(--text-muted);
+      cursor: pointer; line-height: 1;
+    }
+    .chord-card .numeral {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .chord-card .root {
+      font-size: 1.6rem;
+      font-weight: 600;
+      line-height: 1.1;
+      margin: 4px 0 2px;
+    }
+    .chord-card .notes {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+
+    /* ─────────────────────────────────────────────
+       NEW SECTION: PIANO ROLL COMPONENT
+       ─────────────────────────────────────────────
+       This entire section is new and should be wired in to:
+         1. Your chord arrangement state (for column data)
+         2. Your sound generator (for note playback on click)
+         3. Your theme/color system (for the accent colors)
+    ───────────────────────────────────────────── */
+    .piano-roll-section {
+      margin-top: 8px;
+    }
+
+    .piano-roll-label {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .piano-roll-wrap {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--key-white);
+      /* WIRE IN: height can be dynamic based on octave range setting */
+    }
+
+    /* ── LEFT PIANO KEYBOARD ──────────────────────
+       WIRE IN: Highlight keys that are currently playing
+       (i.e. when a chord column is hovered or playing)
+       Use the .key-white-active / .key-black-active classes
+       toggled via JS based on active chord notes
+    ───────────────────────────────────────────── */
+    .piano-keys {
+      width: 52px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      /* Keys rendered bottom→top to match musical pitch direction */
+    }
+
+    .piano-key-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 6px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      flex: 1;
+      min-height: 22px;
+      position: relative;
+      background: var(--key-white);
+      /* WIRE IN: add class 'key-active' when note is playing */
+    }
+
+    .piano-key-row.black-key {
+      background: #f0ede8;
+      color: #c5bfb5;
+    }
+
+    .piano-key-row.black-key::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 32px;
+      background: var(--key-black);
+      border-radius: 0 3px 3px 0;
+    }
+
+    /* Active states – toggled by JS on hover/playback */
+    .piano-key-row.key-active {
+      background: var(--key-active-w);
+      color: var(--accent-coral);
+      font-weight: 500;
+    }
+    .piano-key-row.black-key.key-active::before {
+      background: var(--key-active-b);
+    }
+
+    /* C note labels */
+    .piano-key-row.c-note { font-weight: 500; color: var(--text-primary); }
+
+    /* ── GRID COLUMNS ─────────────────────────────
+       WIRE IN: Render one .roll-column per chord in your arrangement array.
+       Each column's .note-cell elements should be highlighted
+       based on which notes belong to that chord.
+       The number of rows must match the piano keys above (same note range).
+    ───────────────────────────────────────────── */
+    .roll-grid {
+      display: flex;
+      flex: 1;
+      overflow-x: auto;
+    }
+
+    .roll-column {
+      flex: 1;
+      min-width: 120px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+      position: relative;
+    }
+    .roll-column:last-child { border-right: none; }
+    .roll-column:hover { background: var(--col-hover); }
+
+    /* Column header – chord name & numeral */
+    .roll-col-header {
+      padding: 8px 10px 6px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .roll-col-header .col-numeral {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+    }
+    .roll-col-header .col-chord-name {
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.1;
+    }
+    /* WIRE IN: tint the header of whichever chord is currently playing */
+    .roll-column.playing .roll-col-header {
+      background: var(--accent-light);
+      border-bottom-color: var(--accent-coral);
+    }
+    .roll-column.playing .col-numeral { color: var(--accent-coral); }
+
+    /* Individual note cells */
+    .note-cell {
+      flex: 1;
+      min-height: 22px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      transition: background 0.08s;
+    }
+
+    /* Black key rows get a subtle tint across the full grid */
+    .note-cell.black-row {
+      background: rgba(0,0,0,0.025);
+    }
+
+    /* ── NOTE BLOCKS ──────────────────────────────
+       WIRE IN: Add class 'has-note' to cells where the chord contains that pitch.
+       Add class 'is-root' specifically for the root note of the chord.
+       On click → call your sound generator: playNote(noteName, octave)
+    ───────────────────────────────────────────── */
+    .note-cell.has-note::after {
+      content: attr(data-note);
+      position: absolute;
+      inset: 2px 4px;
+      background: var(--accent-coral);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: white;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      /* WIRE IN: animate opacity/scale when note is triggered */
+      transition: filter 0.1s, transform 0.1s;
+    }
+
+    .note-cell.is-root::after {
+      background: var(--accent-teal);
+    }
+
+    .note-cell.has-note:hover::after {
+      filter: brightness(1.1);
+      transform: scaleY(1.04);
+    }
+
+    /* Flash animation – WIRE IN: add class 'triggered' via JS when note plays */
+    @keyframes noteFlash {
+      0%   { filter: brightness(1.5); }
+      100% { filter: brightness(1); }
+    }
+    .note-cell.triggered::after {
+      animation: noteFlash 0.25s ease-out;
+    }
+
+    /* ─────────────────────────────────────────────
+       PLAYBACK CONTROLS
+       WIRE IN: Connect Play/Stop to your audio engine.
+       BPM slider → your transport/sequencer BPM.
+       The playhead line should animate across columns during playback.
+    ───────────────────────────────────────────── */
+    .playback-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-size: 0.8rem;
+      font-family: var(--sans);
+      font-weight: 500;
+      cursor: pointer;
+      background: var(--surface);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover { border-color: var(--text-muted); }
+    .btn.primary {
+      background: var(--text-primary);
+      color: white;
+      border-color: var(--text-primary);
+    }
+    .btn.primary:hover { background: #333; }
+
+    /* WIRE IN: swap icon between ▶ and ■ based on isPlaying state */
+    .btn.play-btn::before { content: '▶  '; font-size: 0.65rem; }
+    .btn.play-btn.is-playing::before { content: '■  '; }
+
+    .bpm-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    /* WIRE IN: input range → your BPM state */
+    .bpm-control input[type=range] {
+      width: 80px;
+      accent-color: var(--accent-coral);
+    }
+    .bpm-value { color: var(--text-primary); font-weight: 500; }
+
+    /* ─────────────────────────────────────────────
+       EXISTING: PRIMARY TRIADS PALETTE
+       WIRE IN: Drag-and-drop from here should append
+       a chord to the arrangement array, which then
+       adds a new column in the piano roll above.
+    ───────────────────────────────────────────── */
+    .triads-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .triads-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .triads-grid {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .triad-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      min-width: 88px;
+      cursor: grab;
+      transition: border-color 0.15s, transform 0.1s, box-shadow 0.1s;
+    }
+    .triad-card:hover {
+      border-color: var(--accent-coral);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+    }
+    .triad-card .t-numeral {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .triad-card .t-root {
+      font-size: 1.3rem;
+      font-weight: 600;
+      line-height: 1.15;
+      margin: 2px 0 1px;
+    }
+    .triad-card .t-notes {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--text-muted);
+    }
+
+    /* ─────────────────────────────────────────────
+       OCTAVE RANGE TOGGLE
+       WIRE IN: Changing octave range should
+       re-render the piano key rows and note cells
+       with the updated pitch range.
+    ───────────────────────────────────────────── */
+    .range-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+    .range-btn {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 4px;
+      width: 22px; height: 22px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .range-btn:hover { border-color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════
+       PAGE HEADER
+  ═══════════════════════════════════════════════ -->
+  <div class="page-header">
+    <h1>Chord Generator</h1>
+    <p>AI-driven harmonic exploration</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       CARD 1: KEY/SCALE + CHORD ARRANGEMENT
+       WIRE IN: This card represents the existing top
+       section of your app. The chord cards here and
+       the piano roll columns below should share the
+       same underlying chord arrangement data array.
+  ═══════════════════════════════════════════════ -->
+  <div class="card">
+
+    <!-- WIRE IN: Key/Scale selector → your existing scale state -->
+    <div class="scale-selector">
+      <div class="scale-pill">D# <span>|</span> Major</div>
+    </div>
+
+    <!-- WIRE IN: Map over your arrangement[] array to render these cards.
+         On remove (×), splice the chord from the array → removes roll column too. -->
+    <div class="chord-arrangement">
+      <div class="chord-card active">
+        <span class="remove">×</span>
+        <div class="numeral"><span>I</span><span>#1</span></div>
+        <div class="root">D#</div>
+        <div class="notes">D# G A#</div>
+      </div>
+      <div class="chord-card">
+        <span class="remove">×</span>
+        <div class="numeral"><span>IV</span><span>#2</span></div>
+        <div class="root">G#</div>
+        <div class="notes">G# C D#</div>
+      </div>
+      <div class="chord-card">
+        <span class="remove">×</span>
+        <div class="numeral"><span>IV</span><span>#3</span></div>
+        <div class="root">G#</div>
+        <div class="notes">G# C D#</div>
+      </div>
+      <div class="chord-card">
+        <span class="remove">×</span>
+        <div class="numeral"><span>I</span><span>#4</span></div>
+        <div class="root">D#</div>
+        <div class="notes">D# G A#</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       CARD 2: PIANO ROLL  ← NEW COMPONENT
+  ═══════════════════════════════════════════════ -->
+  <div class="card piano-roll-section">
+
+    <div style="display:flex; align-items:center; margin-bottom:10px;">
+      <div class="piano-roll-label">Piano Roll</div>
+      <!-- WIRE IN: Octave range buttons → re-render note rows
+           and update the piano key range shown on the left.
+           Store as octaveRange: { low: 3, high: 5 } in state. -->
+      <div class="range-toggle">
+        C3–C5
+        <button class="range-btn" title="Expand range">−</button>
+        <button class="range-btn" title="Expand range">+</button>
+      </div>
+    </div>
+
+    <div class="piano-roll-wrap">
+
+      <!-- ── LEFT: PIANO KEYBOARD ───────────────────
+           WIRE IN: On column hover or playback, add class 'key-active'
+           to the .piano-key-row elements matching the chord's notes.
+           Use data-note attribute to match against chord note arrays.
+           On note cell click, also flash the corresponding key here.
+      ──────────────────────────────────────────── -->
+      <div class="piano-keys">
+        <!-- WIRE IN: Generate these rows programmatically from your
+             noteRange array (e.g. ['C5','B4','A#4','A4',...,'C3']).
+             Render from high pitch at top → low pitch at bottom. -->
+
+        <!-- Octave 5 top -->
+        <div class="piano-key-row c-note" data-note="C5">C5</div>
+        <div class="piano-key-row black-key" data-note="B4"></div>
+        <div class="piano-key-row key-active" data-note="A#4">A#4</div><!-- active: in chord -->
+        <div class="piano-key-row" data-note="A4">A4</div>
+        <div class="piano-key-row black-key" data-note="G#4"></div>
+        <div class="piano-key-row" data-note="G4">G4</div>
+        <div class="piano-key-row black-key" data-note="F#4"></div>
+        <div class="piano-key-row" data-note="F4">F4</div>
+        <div class="piano-key-row" data-note="E4">E4</div>
+        <div class="piano-key-row black-key" data-note="D#4"></div>
+        <div class="piano-key-row" data-note="D4">D4</div>
+        <div class="piano-key-row black-key" data-note="C#4"></div>
+        <!-- Octave 4 -->
+        <div class="piano-key-row c-note" data-note="C4">C4</div>
+        <div class="piano-key-row black-key" data-note="B3"></div>
+        <div class="piano-key-row key-active" data-note="A#3">A#3</div>
+        <div class="piano-key-row" data-note="A3">A3</div>
+        <div class="piano-key-row black-key" data-note="G#3"></div>
+        <div class="piano-key-row key-active" data-note="G3">G3</div>
+        <div class="piano-key-row black-key" data-note="F#3"></div>
+        <div class="piano-key-row" data-note="F3">F3</div>
+        <div class="piano-key-row" data-note="E3">E3</div>
+        <div class="piano-key-row black-key key-active" data-note="D#3">D#3</div><!-- root – active -->
+        <div class="piano-key-row" data-note="D3">D3</div>
+        <div class="piano-key-row black-key" data-note="C#3"></div>
+        <!-- Octave 3 bottom -->
+        <div class="piano-key-row c-note" data-note="C3">C3</div>
+      </div>
+
+      <!-- ── RIGHT: NOTE GRID ────────────────────────
+           WIRE IN: Render one .roll-column per entry in arrangement[].
+           For each column, loop over the same noteRange array used for
+           piano keys. Mark a cell as 'has-note' if the chord's notes[]
+           array includes that pitch. Mark 'is-root' for the root note.
+           data-note is used for the label inside the block.
+           On click of a has-note cell → call:
+             soundGenerator.playNote(note, octave, duration)
+      ──────────────────────────────────────────── -->
+      <div class="roll-grid">
+
+        <!-- COLUMN 1: D# Major (I) – currently active/playing -->
+        <div class="roll-column playing">
+          <!-- WIRE IN: col-numeral and col-chord-name from arrangement[0] -->
+          <div class="roll-col-header">
+            <div class="col-numeral">I · #1</div>
+            <div class="col-chord-name">D#</div>
+          </div>
+          <!-- WIRE IN: Generate cells from noteRange, add has-note/is-root
+               based on chord.notes.includes(noteName) -->
+          <div class="note-cell black-row"></div><!-- C5 -->
+          <div class="note-cell"></div>           <!-- B4 -->
+          <div class="note-cell black-row has-note" data-note="A#"></div><!-- A#4 ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="G"></div>            <!-- G4 ✓ -->
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="D#"></div>  <!-- D#4 root ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>           <!-- C4 -->
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="A#"></div>           <!-- A#3 ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="G"></div>            <!-- G3 ✓ -->
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="D#"></div>  <!-- D#3 root ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>           <!-- C3 -->
+        </div>
+
+        <!-- COLUMN 2: G# Major (IV) -->
+        <div class="roll-column">
+          <div class="roll-col-header">
+            <div class="col-numeral">IV · #2</div>
+            <div class="col-chord-name">G#</div>
+          </div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="G#"></div>  <!-- G#4 root ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row has-note" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell has-note" data-note="C"></div>            <!-- C4 ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="G#"></div>  <!-- G#3 root ✓ -->
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row has-note" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="C"></div>
+        </div>
+
+        <!-- COLUMN 3: G# Major (IV) – duplicate chord, same as col 2 -->
+        <div class="roll-column">
+          <div class="roll-col-header">
+            <div class="col-numeral">IV · #3</div>
+            <div class="col-chord-name">G#</div>
+          </div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="G#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row has-note" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell has-note" data-note="C"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="G#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row has-note" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="C"></div>
+        </div>
+
+        <!-- COLUMN 4: D# Major (I) – same as col 1 -->
+        <div class="roll-column">
+          <div class="roll-col-header">
+            <div class="col-numeral">I · #4</div>
+            <div class="col-chord-name">D#</div>
+          </div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row has-note" data-note="A#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="G"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="A#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell has-note" data-note="G"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row is-root" data-note="D#"></div>
+          <div class="note-cell"></div>
+          <div class="note-cell black-row"></div>
+          <div class="note-cell"></div>
+        </div>
+
+      </div><!-- /roll-grid -->
+    </div><!-- /piano-roll-wrap -->
+
+    <!-- ── PLAYBACK CONTROLS ───────────────────────
+         WIRE IN: Generate button → call your AI chord generation endpoint.
+         Play button   → start your audio sequencer/transport at current BPM.
+         BPM slider    → update transport BPM in real time.
+         During playback, add class 'playing' to each .roll-column sequentially
+         to animate the playhead moving through the chords.
+    ──────────────────────────────────────────── -->
+    <div class="playback-bar">
+      <button class="btn primary">Generate</button>
+      <!-- WIRE IN: toggle class 'is-playing' on click → start/stop transport -->
+      <button class="btn play-btn">Play</button>
+      <div class="bpm-control">
+        BPM
+        <!-- WIRE IN: oninput → soundGenerator.setBPM(this.value) -->
+        <input type="range" min="60" max="200" value="120" />
+        <span class="bpm-value">120</span>
+      </div>
+    </div>
+
+  </div><!-- /piano roll card -->
+
+  <!-- ══════════════════════════════════════════════
+       CARD 3: PRIMARY TRIADS PALETTE (existing)
+       WIRE IN: Drag events from .triad-card should push
+       the chord object into arrangement[], which triggers
+       a re-render of the piano roll with a new column.
+       Click on a triad-card → preview chord via sound generator.
+  ═══════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="triads-label">Primary Triads</div>
+    <div class="triads-sub">Drag and drop into the arrangement above, or click to preview.</div>
+    <div class="triads-grid">
+      <!-- WIRE IN: Map over scale.diatonicChords to render these dynamically -->
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>I</span><span>#1</span></div>
+        <div class="t-root">D#</div>
+        <div class="t-notes">D# G A#</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>ii</span><span>#2</span></div>
+        <div class="t-root">Fm</div>
+        <div class="t-notes">F G# C</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>iii</span><span>#3</span></div>
+        <div class="t-root">Gm</div>
+        <div class="t-notes">G A# D</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>IV</span><span>#4</span></div>
+        <div class="t-root">G#</div>
+        <div class="t-notes">G# C D#</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>V</span><span>#5</span></div>
+        <div class="t-root">A#</div>
+        <div class="t-notes">A# D F</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>vi</span><span>#6</span></div>
+        <div class="t-root">Cm</div>
+        <div class="t-notes">C D# G</div>
+      </div>
+      <div class="triad-card" draggable="true">
+        <div class="t-numeral"><span>vii°</span><span>#7</span></div>
+        <div class="t-root">D°</div>
+        <div class="t-notes">D F G#</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       DEMO JS – hover interactions only
+       WIRE IN: Replace this block entirely with your
+       real state management (React/Vue/Svelte state or
+       vanilla JS store). The classes being toggled here
+       ('playing', 'key-active', 'triggered') are the
+       integration points for your sound engine.
+  ═══════════════════════════════════════════════ -->
+  <script>
+    // ── Column hover: highlight matching piano keys ──────
+    // WIRE IN: In production, replace hover-based activation
+    // with event listeners on your audio sequencer's
+    // onNoteStart(note) / onNoteEnd(note) callbacks.
+    document.querySelectorAll('.roll-column').forEach(col => {
+      col.addEventListener('mouseenter', () => {
+        const activeNotes = [...col.querySelectorAll('.has-note, .is-root')]
+          .map(c => c.dataset.note);
+        // Highlight piano keys
+        document.querySelectorAll('.piano-key-row').forEach(key => {
+          const noteName = key.dataset.note?.replace(/\d/, ''); // strip octave
+          if (activeNotes.includes(noteName)) key.classList.add('key-active');
+        });
+      });
+      col.addEventListener('mouseleave', () => {
+        // WIRE IN: Only clear keys that aren't from a currently-playing chord
+        document.querySelectorAll('.piano-key-row').forEach(k => {
+          if (!k.dataset.note?.match(/D#|G|A#/)) k.classList.remove('key-active');
+        });
+      });
+    });
+
+    // ── Note cell click: trigger flash animation ─────────
+    // WIRE IN: Replace with → soundGenerator.playNote(note, octave, 0.5)
+    document.querySelectorAll('.note-cell.has-note, .note-cell.is-root').forEach(cell => {
+      cell.addEventListener('click', () => {
+        cell.classList.remove('triggered');
+        void cell.offsetWidth; // reflow to restart animation
+        cell.classList.add('triggered');
+        // TODO: soundGenerator.playNote(cell.dataset.note, octave, duration)
+      });
+    });
+
+    // ── BPM slider display ───────────────────────────────
+    // WIRE IN: Also call → transport.setBPM(val) here
+    const bpmSlider = document.querySelector('.bpm-control input');
+    const bpmDisplay = document.querySelector('.bpm-value');
+    bpmSlider?.addEventListener('input', e => {
+      bpmDisplay.textContent = e.target.value;
+      // TODO: soundGenerator.setBPM(e.target.value)
+    });
+  </script>
+
+</body>
+</html>

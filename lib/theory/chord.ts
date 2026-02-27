@@ -361,6 +361,8 @@ export function buildTriadFromRoot(
     case "maj(add9)":
       third = addSemitones(root, 4);
       fifth = addSemitones(root, 7);
+      if (q === "maj7") extra.push(addSemitones(root, 11)); // major 7th
+      if (q === "7") extra.push(addSemitones(root, 10)); // dominant 7th
       if (q === "maj(add9)") extra.push(addSemitones(root, 2));
       break;
     case "min":
@@ -368,6 +370,7 @@ export function buildTriadFromRoot(
     case "m(add9)":
       third = addSemitones(root, 3);
       fifth = addSemitones(root, 7);
+      if (q === "m7") extra.push(addSemitones(root, 10)); // minor 7th
       if (q === "m(add9)") extra.push(addSemitones(root, 2));
       break;
     case "dim":

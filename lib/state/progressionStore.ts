@@ -33,6 +33,9 @@ interface ProgressionState {
     addChordToProgression: (chord: Chord, insertIndex?: number) => void;
     removeChord: (index: number) => void;
     reorderChords: (startIndex: number, endIndex: number) => void;
+    toggleChordLock: (index: number) => void;
+    refreshChord: (index: number) => void;
+    setChordQuality: (index: number, quality: string) => void;
 }
 
 const DEGREE_MAP: Record<Degree, number> = {
@@ -172,6 +175,98 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         });
     },
 
+    toggleChordLock: (index: number) => {
+        const current = get().currentProgression;
+        if (!current || !current.chords[index]) return;
+
+        const newChords = [...current.chords];
+        newChords[index] = {
+            ...newChords[index],
+            isLocked: !newChords[index].isLocked
+        };
+
+        set({
+            currentProgression: {
+                ...current,
+                chords: newChords
+            }
+        });
+    },
+
+    refreshChord: (index: number) => {
+        const { rootKey, mode, depth, currentProgression } = get();
+        if (!currentProgression || !currentProgression.chords[index]) return;
+        const rootPC = normalizeToPitchClass(rootKey) || "C";
+
+        // Generate a small batch and pick a random new chord (skipping the first tonic one)
+        const generated = generateProgression({
+            rootKey: rootPC,
+            mode,
+            depth,
+            numChords: 5,
+        });
+        const gc = generated[Math.floor(Math.random() * 4) + 1];
+
+        const modeToScaleType: Record<Mode, ScaleType> = {
+            ionian: "major",
+            aeolian: "natural_minor",
+            dorian: "dorian",
+            mixolydian: "mixolydian",
+            phrygian: "phrygian",
+        };
+        const scale = getScaleDefinition(rootPC, modeToScaleType[mode]);
+        const degreeIndex = DEGREE_MAP[gc.degree] ?? 0;
+        const rootOfChord = scale.pitchClasses[degreeIndex];
+        const triad = buildTriadFromRoot(rootOfChord, gc.quality);
+        const symbol = formatChordSymbol(rootOfChord, gc.quality);
+
+        const newChord: Chord = {
+            symbol,
+            notes: triad.pitchClasses,
+            romanNumeral: gc.degree,
+            root: rootOfChord,
+            quality: gc.quality as any,
+            isLocked: false,
+        };
+
+        const newChords = [...currentProgression.chords];
+        newChords[index] = newChord;
+
+        set({
+            currentProgression: {
+                ...currentProgression,
+                chords: newChords
+            }
+        });
+    },
+
+    setChordQuality: (index: number, quality: string) => {
+        const { currentProgression } = get();
+        if (!currentProgression || !currentProgression.chords[index]) return;
+
+        const chord = currentProgression.chords[index];
+        if (!chord.root) return; // Only diatonic chords with rooted properties can be modified easily
+
+        // Validate generic compatibility to reconstruct the note arrays without calling full AI API
+        const triad = buildTriadFromRoot(chord.root, quality);
+        const symbol = formatChordSymbol(chord.root, quality);
+
+        const newChords = [...currentProgression.chords];
+        newChords[index] = {
+            ...chord,
+            symbol,
+            quality: quality as any,
+            notes: triad.pitchClasses
+        };
+
+        set({
+            currentProgression: {
+                ...currentProgression,
+                chords: newChords
+            }
+        });
+    },
+
     generateNew: () => {
         const { rootKey, mode, depth, numChords } = get();
         const rootPC = normalizeToPitchClass(rootKey) || "C";
@@ -193,8 +288,14 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         };
 
         const scale = getScaleDefinition(rootPC, modeToScaleType[mode]);
+        const current = get().currentProgression;
 
-        const chords: Chord[] = generated.map((gc) => {
+        const chords: Chord[] = generated.map((gc, i) => {
+            // Keep locked chords from the old progression at the same index
+            if (current && current.chords[i] && current.chords[i].isLocked) {
+                return current.chords[i];
+            }
+
             const degreeIndex = DEGREE_MAP[gc.degree] ?? 0;
             const rootOfChord = scale.pitchClasses[degreeIndex];
 

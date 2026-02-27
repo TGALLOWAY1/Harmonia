@@ -7,6 +7,7 @@ export interface Chord {
     romanNumeral: string;
     root?: PitchClass;
     quality?: ChordQuality;
+    isLocked?: boolean;
 }
 
 export interface Progression {

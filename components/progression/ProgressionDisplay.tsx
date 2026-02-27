@@ -7,10 +7,12 @@ import { Chord } from "../../lib/theory/progressionTypes";
 
 interface ProgressionDisplayProps {
     activeIndex?: number | null;
+    selectedIndex?: number | null;
+    onSelectChord?: (index: number) => void;
 }
 
-export default function ProgressionDisplay({ activeIndex = null }: ProgressionDisplayProps) {
-    const { currentProgression, addChordToProgression, removeChord, reorderChords } = useProgressionStore();
+export default function ProgressionDisplay({ activeIndex = null, selectedIndex = null, onSelectChord }: ProgressionDisplayProps) {
+    const { currentProgression, addChordToProgression, removeChord, reorderChords, toggleChordLock, refreshChord } = useProgressionStore();
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
@@ -113,7 +115,11 @@ export default function ProgressionDisplay({ activeIndex = null }: ProgressionDi
                         index={index}
                         isDraggable={true}
                         isActive={index === activeIndex}
+                        isSelected={index === selectedIndex}
+                        onClick={onSelectChord}
                         onRemove={removeChord}
+                        onLock={toggleChordLock}
+                        onRefresh={refreshChord}
                     />
                 </div>
             ))}
