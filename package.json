@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:generate": "prisma generate",
+    "db:push": "prisma db push",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "seed:dev": "tsx prisma/seed.dev.ts",
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",
+    "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.0.1",
     "@tonaljs/tonal": "^4.10.0",
     "@tonejs/midi": "^2.0.28",

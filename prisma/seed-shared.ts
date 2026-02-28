@@ -11,6 +11,7 @@ import type { PitchClass } from "../lib/theory/midiUtils";
 import type { ScaleType } from "../lib/theory/types";
 import type { CardTemplateSeed } from "../lib/cards/generators/advancedGenerators";
 import type { ScaleMembership } from "../lib/cards/basicCardMeta";
+import { generateChordCardTemplates } from "../lib/flashcards/chordCardGenerator";
 
 export type SeedMode = "dev" | "prod";
 
@@ -145,6 +146,58 @@ async function seedAdvancedCards(mode: SeedMode) {
   console.log(`Seeded ${count} advanced flashcard cards`);
 }
 
+async function seedChordCards(mode: SeedMode) {
+  const chordCards = generateChordCardTemplates();
+
+  if (mode === "prod") {
+    await prisma.cardTemplate.deleteMany({
+      where: {
+        slug: {
+          startsWith: "chords-v1-",
+        },
+      },
+    });
+  }
+
+  let count = 0;
+  for (const card of chordCards) {
+    if (mode === "prod") {
+      await prisma.cardTemplate.upsert({
+        where: { slug: card.slug as string },
+        update: {
+          kind: card.kind,
+          question: card.question,
+          optionA: card.optionA,
+          optionB: card.optionB,
+          optionC: card.optionC,
+          optionD: card.optionD,
+          correctIndex: card.correctIndex,
+          meta: card.meta as object,
+          milestoneKey: card.milestoneKey,
+          updatedAt: new Date(),
+        },
+        create: {
+          slug: card.slug as string,
+          kind: card.kind,
+          question: card.question,
+          optionA: card.optionA,
+          optionB: card.optionB,
+          optionC: card.optionC,
+          optionD: card.optionD,
+          correctIndex: card.correctIndex,
+          meta: card.meta as object,
+          milestoneKey: card.milestoneKey,
+        },
+      });
+    } else {
+      await prisma.cardTemplate.create({ data: card });
+    }
+    count++;
+  }
+
+  console.log(`Seeded ${count} chord dataset cards (chords_v1)`);
+}
+
 export async function runSeed(mode: SeedMode) {
   if (mode === "dev") {
     await prisma.cardAttempt.deleteMany();
@@ -217,6 +270,7 @@ export async function runSeed(mode: SeedMode) {
     });
   }
 
+  await seedChordCards(mode);
   await seedAdvancedCards(mode);
   await attachScaleMemberships();
 }

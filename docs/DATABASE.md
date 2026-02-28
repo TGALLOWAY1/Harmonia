@@ -1,60 +1,60 @@
-# Database Setup (PostgreSQL)
+# Database Setup (SQLite Local + Postgres Production)
 
-Harmonia uses PostgreSQL with Prisma ORM and the `@prisma/adapter-pg` driver.
+Harmonia uses Prisma with an environment-driven provider.
+`prisma.config.ts` selects `prisma/schema.prisma` (SQLite) or `prisma/schema.postgres.prisma` (Postgres) from `DATABASE_PROVIDER` / `DATABASE_URL`.
 
-## Required environment variables
+## Environment variables
 
 ```env
+DATABASE_PROVIDER="sqlite"      # or "postgresql"
+DATABASE_URL="file:./dev.db"    # local SQLite example
+```
+
+Production example:
+
+```env
+DATABASE_PROVIDER="postgresql"
 DATABASE_URL="postgresql://user:password@host:5432/database?sslmode=require"
 ```
 
-**Important:** `DATABASE_URL` must be a valid PostgreSQL connection string. The SQLite `file:./dev.db` format is no longer supported. For local development, use a local Postgres instance or a hosted provider (Neon, Supabase, Vercel Postgres).
+## Local development (SQLite)
 
-Optional for connection pooling (e.g. serverless):
+1. Set `.env`:
+   - `DATABASE_PROVIDER=sqlite`
+   - `DATABASE_URL=file:./dev.db`
+2. Sync schema:
+   - `npm run db:push`
+3. Seed:
+   - `npm run seed:dev`
+4. Start app:
+   - `npm run dev`
 
-```env
-DIRECT_URL="postgresql://user:password@host:5432/database?sslmode=require"
-```
+## Production / Vercel (Postgres)
 
-## Local development
+1. Provision hosted Postgres (Neon, Supabase, Vercel Postgres).
+2. Set env vars:
+   - `DATABASE_PROVIDER=postgresql`
+   - `DATABASE_URL=<hosted-postgres-url>`
+3. Deploy with migration step:
+   - `npx prisma generate && npx prisma migrate deploy && npm run build`
+4. Bootstrap with seed once:
+   - `npm run seed:prod`
 
-1. Create a Postgres database (local or hosted).
-2. Set `DATABASE_URL` in `.env`.
-3. Run migrations and seed:
+## Migration workflow note
 
-```bash
-npm run db:generate
-npm run db:migrate:dev
-npm run seed:dev
-```
+Prisma migration history is provider-specific.  
+Use this split workflow:
 
-4. Start the app:
-
-```bash
-npm run dev
-```
-
-## Build
-
-`npm run build` requires `DATABASE_URL` to be set to a valid Postgres URL. The build will fail if it is missing or invalid (e.g. a leftover `file:./dev.db`).
+- SQLite local: `prisma db push`
+- Postgres production: `prisma migrate deploy`
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
 | `db:generate` | Generate Prisma Client |
-| `db:migrate:dev` | Run migrations in dev (creates new migrations if schema changed) |
-| `db:migrate:deploy` | Apply pending migrations (production) |
+| `db:push` | Push schema to current datasource (SQLite local) |
+| `db:migrate:dev` | Create/apply dev migrations (Postgres workflow) |
+| `db:migrate:deploy` | Apply pending migrations (production Postgres) |
 | `seed:dev` | Destructive seed – wipes and reseeds (dev only) |
-| `seed:prod` | Non-destructive seed – upserts baseline content only |
-
-## Deploying on Vercel
-
-1. **Connect a Postgres database** (Neon, Supabase, or Vercel Postgres).
-2. **Set `DATABASE_URL`** in Vercel Project Settings → Environment Variables for Production/Preview.
-3. **Add build step for migrations** in `vercel.json` or your build command. Run migrations before the Next.js build:
-   ```bash
-   npx prisma generate && npx prisma migrate deploy && npm run build
-   ```
-   Or add a `build` script that includes `prisma migrate deploy` before `next build`.
-4. **Bootstrap with `seed:prod`** only for first-time setup. Do **not** run `seed:prod` on every deploy. Run it manually once after creating the database, or via a one-off script.
+| `seed:prod` | Non-destructive baseline seed upsert |

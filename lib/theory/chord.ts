@@ -336,6 +336,36 @@ export type ChordQuality =
   | "maj(add9)";
 
 /**
+ * Build a seventh chord directly from root and quality.
+ * Supports explicit seventh qualities used by APIs and flashcard generation.
+ */
+export function buildSeventhFromRoot(
+  root: PitchClass,
+  quality: "maj7" | "min7" | "dom7"
+): SeventhChord {
+  switch (quality) {
+    case "maj7":
+      return {
+        root,
+        quality,
+        pitchClasses: [root, addSemitones(root, 4), addSemitones(root, 7), addSemitones(root, 11)],
+      };
+    case "min7":
+      return {
+        root,
+        quality,
+        pitchClasses: [root, addSemitones(root, 3), addSemitones(root, 7), addSemitones(root, 10)],
+      };
+    case "dom7":
+      return {
+        root,
+        quality,
+        pitchClasses: [root, addSemitones(root, 4), addSemitones(root, 7), addSemitones(root, 10)],
+      };
+  }
+}
+
+/**
  * Build a triad or expanded chord directly from root and quality
  * @param root - Root pitch class
  * @param quality - Chord quality
@@ -353,6 +383,8 @@ export function buildTriadFromRoot(
   let q = quality;
   if (q === "") q = "maj";
   if (q === "m") q = "min";
+  if (q === "min7") q = "m7";
+  if (q === "dom7") q = "7";
 
   switch (q) {
     case "maj":
@@ -424,8 +456,10 @@ export function formatChordSymbol(
     case "maj7":
       return `${root}maj7`;
     case "m7":
+    case "min7":
       return `${root}m7`;
     case "7":
+    case "dom7":
       return `${root}7`;
     case "dim":
       return `${root}°`;
@@ -449,4 +483,3 @@ export function formatChordSymbol(
       return `${root}${quality}`; // Best effort
   }
 }
-

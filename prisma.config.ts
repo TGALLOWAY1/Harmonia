@@ -3,11 +3,15 @@
 import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
 
+const provider = process.env.DATABASE_PROVIDER?.toLowerCase() ??
+  ((process.env.DATABASE_URL ?? "").startsWith("postgres") ? "postgresql" : "sqlite");
+const schema = provider === "postgresql" ? "prisma/schema.postgres.prisma" : "prisma/schema.prisma";
+
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema,
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed.dev.ts",
+    seed: "node --import tsx prisma/seed.dev.ts",
   },
   datasource: {
     url: env("DATABASE_URL"),

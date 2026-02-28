@@ -56,6 +56,8 @@ export function Flashcard({
 }: FlashcardProps) {
   const hintLevel = useSettingsStore((state) => state.hintLevel);
   const isCircleCard = cardKind?.startsWith("circle_");
+  const isChordCard = cardKind === "notes_from_chord" || cardKind === "chord_from_notes";
+  const showAnswerDetails = showResult && correctIndex !== null && isChordCard;
 
   // Determine which root to show on circle and what to highlight
   const { selectedRoot, highlightedRoot } = useMemo(() => {
@@ -175,6 +177,23 @@ export function Flashcard({
       </div>
   );
 
+  const answerDetails = showAnswerDetails ? (
+    <div className="mt-4 rounded-xl border border-subtle bg-surface-muted px-4 py-3 text-left">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Answer details</p>
+      <p className="mt-1 text-sm text-foreground">
+        {cardMeta?.display?.name && cardMeta?.display?.symbol
+          ? `${cardMeta.display.name} (${cardMeta.display.symbol})`
+          : "Chord details unavailable"}
+      </p>
+      {Array.isArray(cardMeta?.notes) && (
+        <p className="mt-1 text-sm text-muted">Notes: {cardMeta.notes.join(" – ")}</p>
+      )}
+      {typeof cardMeta?.formula === "string" && (
+        <p className="mt-1 text-sm text-muted">Formula: {cardMeta.formula}</p>
+      )}
+    </div>
+  ) : null;
+
   if (isCircleCard) {
     return (
       <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-sm max-w-4xl w-full">
@@ -198,7 +217,7 @@ export function Flashcard({
     <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-sm max-w-xl w-full">
       {questionContent}
       {optionsGrid}
+      {answerDetails}
     </div>
   );
 }
-

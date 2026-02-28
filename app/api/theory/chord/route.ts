@@ -4,6 +4,7 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import {
   buildTriadFromRoot,
+  buildSeventhFromRoot,
   formatChordSymbol,
   pitchClassesToMidi,
   type PitchClass,
@@ -98,13 +99,28 @@ export async function GET(request: Request) {
 
     if (quality === "maj7" || quality === "min7" || quality === "dom7") {
       // Seventh chord
-      pitchClasses = [];
-      degrees = ["1", "3", "5", "7"];
+      const seventh = buildSeventhFromRoot(root, quality);
+      pitchClasses = seventh.pitchClasses;
+      if (quality === "maj7") {
+        degrees = ["1", "3", "5", "7"];
+      } else if (quality === "min7") {
+        degrees = ["1", "b3", "5", "b7"];
+      } else {
+        degrees = ["1", "3", "5", "b7"];
+      }
     } else {
       // Triad
       const triad = buildTriadFromRoot(root, quality);
       pitchClasses = triad.pitchClasses;
-      degrees = ["1", "3", "5"];
+      if (quality === "maj") {
+        degrees = ["1", "3", "5"];
+      } else if (quality === "min") {
+        degrees = ["1", "b3", "5"];
+      } else if (quality === "dim") {
+        degrees = ["1", "b3", "b5"];
+      } else {
+        degrees = ["1", "3", "#5"];
+      }
     }
 
     // Format chord symbol

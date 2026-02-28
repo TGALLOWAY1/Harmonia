@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+model CardTemplate {
+  id           Int       @id @default(autoincrement())
+  slug         String    @unique
+  kind         String    // e.g. "chord_from_notes" | "notes_from_chord" | "circle_key"
+  question     String    // user-facing question text
+  optionA      String
+  optionB      String
+  optionC      String
+  optionD      String
+  correctIndex Int       // 0..3
+  meta         Json?     // extra structured data (root, quality, scale type, etc.)
+  milestoneKey String?   // e.g. "FOUNDATION", "TRIADS", "CIRCLE_OF_FIFTHS"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  states       CardState[]
+  attempts     CardAttempt[]
+}
+
+model CardState {
+  id           Int       @id @default(autoincrement())
+  cardId       Int
+  card         CardTemplate @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  // basic per-card tracking (SRS details will be fully used in Milestone 4)
+  attemptsCount Int      @default(0)
+  correctCount  Int      @default(0)
+  lastAnswerAt  DateTime?
+  lastResult    String?  // e.g. "Again" | "Hard" | "Good" | "Easy"
+
+  // SRS fields (used next milestone, but define them now)
+  easeFactor    Float    @default(2.5)
+  intervalDays  Int      @default(0)
+  repetitions   Int      @default(0)
+  lapses        Int      @default(0)
+  dueAt         DateTime @default(now())
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CardAttempt {
+  id          Int          @id @default(autoincrement())
+  cardId      Int
+  card        CardTemplate @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  selectedIndex Int        // 0..3
+  isCorrect     Boolean
+  responseMs    Int        // time taken to answer, in ms (optional in UI)
+  createdAt     DateTime   @default(now())
+}
+
+model Milestone {
+  id          Int     @id @default(autoincrement())
+  key         String  @unique
+  title       String
+  description String
+  order       Int
+  isUnlocked  Boolean @default(false)
+  isCompleted Boolean @default(false)
+  progress    Float   @default(0.0)
+  @@index([order])
+}

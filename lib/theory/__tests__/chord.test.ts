@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildTriadFromRoot,
+  buildSeventhFromRoot,
   formatChordSymbol,
   buildTriadFromScale,
   getDiatonicChords,
@@ -30,16 +31,6 @@ describe("chord golden tests", () => {
     });
   });
 
-  /*
-  describe("C7 (dominant seventh)", () => {
-    it("returns C E G A# (sharp-only engine spelling)", () => {
-      const seventh = buildSeventhFromRoot("C", "dom7");
-      expect(seventh.root).toBe("C");
-      expect(seventh.quality).toBe("dom7");
-      expect(seventh.pitchClasses).toEqual(["C", "E", "G", "A#"]);
-    });
-  });
-
   describe("Cmaj7", () => {
     it("returns C E G B", () => {
       const seventh = buildSeventhFromRoot("C", "maj7");
@@ -48,7 +39,24 @@ describe("chord golden tests", () => {
       expect(seventh.pitchClasses).toEqual(["C", "E", "G", "B"]);
     });
   });
-  */
+
+  describe("Amin7", () => {
+    it("returns A C E G", () => {
+      const seventh = buildSeventhFromRoot("A", "min7");
+      expect(seventh.root).toBe("A");
+      expect(seventh.quality).toBe("min7");
+      expect(seventh.pitchClasses).toEqual(["A", "C", "E", "G"]);
+    });
+  });
+
+  describe("Gdom7", () => {
+    it("returns G B D F", () => {
+      const seventh = buildSeventhFromRoot("G", "dom7");
+      expect(seventh.root).toBe("G");
+      expect(seventh.quality).toBe("dom7");
+      expect(seventh.pitchClasses).toEqual(["G", "B", "D", "F"]);
+    });
+  });
 
   describe("B half-diminished seventh", () => {
     it("returns B D F A with quality half-dim7", () => {
