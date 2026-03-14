@@ -393,8 +393,8 @@
 }
 
 .roll-column {
-  flex: 1;
-  min-width: 120px;
+  flex: var(--col-flex, 1);
+  min-width: 60px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-subtle);
@@ -436,6 +436,20 @@
   color: var(--vert-accent-coral);
 }
 
+.roll-column.selected {
+  background: rgba(74, 74, 74, 0.04);
+}
+.roll-col-header.selected-header {
+  background: rgba(74, 74, 74, 0.08);
+  cursor: pointer;
+}
+.roll-col-header {
+  cursor: pointer;
+}
+.roll-col-header:hover {
+  background: var(--surface-muted);
+}
+
 /* Individual note cells */
 .note-cell {
   flex: 1;
@@ -473,6 +487,13 @@
 .note-cell.has-note:hover::after {
   filter: brightness(1.1);
   transform: scaleY(1.04);
+}
+
+.note-cell.note-selected::after {
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 3px var(--vert-accent-coral), 0 0 8px rgba(232, 133, 106, 0.4);
+  filter: brightness(1.15);
+  z-index: 1;
 }
 
 @keyframes noteFlash {

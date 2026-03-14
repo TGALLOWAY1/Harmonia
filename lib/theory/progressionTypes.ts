@@ -1,5 +1,6 @@
 import { PitchClass } from "../theory/midiUtils";
 import { ChordQuality, RomanNumeral } from "../theory/chord";
+import type { DurationClass } from "../music/generators/advanced/types";
 
 export interface Chord {
     symbol: string;
@@ -10,6 +11,7 @@ export interface Chord {
     root?: PitchClass;
     quality?: ChordQuality;
     isLocked?: boolean;
+    durationClass?: DurationClass;
 }
 
 export interface Progression {

@@ -10,15 +10,18 @@ import { getScaleDefinition } from "@/lib/theory/scale";
 import type { ScaleType } from "@/lib/theory/types";
 
 import { applyComplexityExtensions, type QualityHint } from "./extensions";
+import { getPhraseRoles, getTensionCurve, selectDegreeForRole } from "./phraseStructure";
 import {
   applyTritoneSubstitutions,
   injectSecondaryDominants,
   insertPassingDiminished,
   insertSuspensions,
+  validateChromaticDensity,
 } from "./substitutions";
 import type {
   AdvancedProgressionOptions,
   AdvancedProgressionResult,
+  DurationClass,
   PlannedAdvancedChord,
 } from "./types";
 import { pickBestVoiceLedCandidate } from "./voiceLeading";
@@ -72,9 +75,7 @@ const MINORISH_TEMPLATES: number[][] = [
 ];
 
 function clampVoiceRange(low: number, high: number): { low: number; high: number } {
-  if (low <= high) {
-    return { low, high };
-  }
+  if (low <= high) return { low, high };
   return { low: high, high: low };
 }
 
@@ -102,29 +103,41 @@ function dominantPitchClasses(root: PitchClass): PitchClass[] {
   ];
 }
 
-function adaptLength(template: number[], numChords: number, random: () => number): number[] {
-  if (numChords <= 0) {
-    return [];
-  }
+// ---------------------------------------------------------------------------
+// Phrase-aware length adaptation
+// ---------------------------------------------------------------------------
 
-  if (template.length === numChords) {
-    return [...template];
-  }
-
-  if (template.length > numChords) {
-    return template.slice(0, numChords);
-  }
+/**
+ * Adapt template to target length using phrase-role-aware padding.
+ * Instead of random degree selection, uses role-weighted candidates
+ * for each new position.
+ */
+function adaptLength(
+  template: number[],
+  numChords: number,
+  isMinor: boolean,
+  random: () => number
+): number[] {
+  if (numChords <= 0) return [];
+  if (template.length === numChords) return [...template];
+  if (template.length > numChords) return template.slice(0, numChords);
 
   const padded = [...template];
-  const continuationPool = [1, 3, 5, 4, 6, 0];
+  const roles = getPhraseRoles(numChords);
 
+  // For each position beyond the template, select a degree based on role
   while (padded.length < numChords) {
-    const idx = Math.floor(random() * continuationPool.length);
-    padded.push(continuationPool[idx] ?? 0);
+    const role = roles[padded.length] ?? "continuation";
+    const degree = selectDegreeForRole(role, isMinor, random);
+    padded.push(degree);
   }
 
   return padded;
 }
+
+// ---------------------------------------------------------------------------
+// Functional substitution
+// ---------------------------------------------------------------------------
 
 function familyForDegreeIndex(degreeIndex: number): "tonic" | "subdominant" | "dominant" | null {
   if ([0, 2, 5].includes(degreeIndex)) return "tonic";
@@ -141,6 +154,12 @@ function familyAlternates(degreeIndex: number): number[] {
   return [];
 }
 
+/**
+ * Apply functional substitution with weighted probabilities.
+ * Key changes:
+ * - Never substitute at protected positions (first/last)
+ * - Weight substitution candidates: I(1.0) > vi(0.4) > iii(0.15)
+ */
 function maybeApplyFunctionalSwap(
   degreeIndices: number[],
   enabled: boolean,
@@ -154,6 +173,7 @@ function maybeApplyFunctionalSwap(
     return { indices: degreeIndices, swappedIndex: null };
   }
 
+  // Only swap interior positions (not first or last — these are protected)
   const interior = Array.from({ length: Math.max(0, degreeIndices.length - 2) }, (_, i) => i + 1);
   const interiorPick = interior[Math.floor(random() * interior.length)];
 
@@ -177,35 +197,28 @@ function maybeApplyFunctionalSwap(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Chord plan building
+// ---------------------------------------------------------------------------
+
 function mapTriadToSymbolQuality(quality: TriadQuality): string {
   switch (quality) {
-    case "maj":
-      return "maj";
-    case "min":
-      return "min";
-    case "dim":
-      return "dim";
-    case "aug":
-      return "aug";
-    default:
-      return "maj";
+    case "maj": return "maj";
+    case "min": return "min";
+    case "dim": return "dim";
+    case "aug": return "aug";
+    default: return "maj";
   }
 }
 
 function mapSeventhToSymbolQuality(quality: SeventhQuality): string {
   switch (quality) {
-    case "maj7":
-      return "maj7";
-    case "min7":
-      return "min7";
-    case "dom7":
-      return "dom7";
-    case "half-dim7":
-      return "half-dim7";
-    case "dim7":
-      return "dim7";
-    default:
-      return "maj7";
+    case "maj7": return "maj7";
+    case "min7": return "min7";
+    case "dom7": return "dom7";
+    case "half-dim7": return "half-dim7";
+    case "dim7": return "dim7";
+    default: return "maj7";
   }
 }
 
@@ -224,13 +237,14 @@ function buildDiatonicChordPlan(params: {
   complexity: AdvancedProgressionOptions["complexity"];
   random: () => number;
   kind: PlannedAdvancedChord["kind"];
+  tensionLevel?: number;
+  isProtected?: boolean;
 }): PlannedAdvancedChord {
-  const { root, degreeLabel, degreeIndex, scale, complexity, random, kind } = params;
+  const { root, degreeLabel, degreeIndex, scale, complexity, random, kind, tensionLevel, isProtected } = params;
 
   const triad = buildTriadFromScale(scale, degreeIndex);
   const seventh = buildSeventhFromScale(scale, degreeIndex);
 
-  // In advanced mode, treat degree 5 as a dominant center to improve directed motion.
   const isDominant = degreeIndex === 4 || degreeLabel.startsWith("V/") || degreeLabel.startsWith("sub(V");
   const triadQuality = isDominant ? "maj" : triad.quality;
   const qualityHint = qualityHintFromTriad(triad.quality, isDominant);
@@ -249,6 +263,7 @@ function buildDiatonicChordPlan(params: {
     qualityHint,
     isDominant,
     random,
+    tensionLevel: tensionLevel ?? 0.5,
   });
 
   let symbolQuality: string;
@@ -270,7 +285,7 @@ function buildDiatonicChordPlan(params: {
     symbol = `${root}7alt`;
   }
 
-  if (complexity >= 3 && qualityHint === "maj" && random() > 0.72) {
+  if (complexity >= 3 && qualityHint === "maj" && (tensionLevel ?? 0.5) > 0.4 && random() > 0.72) {
     symbol = `${symbol}(13)`;
   }
 
@@ -281,40 +296,69 @@ function buildDiatonicChordPlan(params: {
     pitchClasses: expandedPitchClasses,
     kind,
     isDominant,
+    role: "structural",
+    durationClass: "full",
+    tensionLevel: tensionLevel ?? 0.5,
+    isProtected: isProtected ?? false,
   };
 }
 
 function limitLength(chords: PlannedAdvancedChord[], maxLength: number): PlannedAdvancedChord[] {
-  if (chords.length <= maxLength) {
-    return chords;
-  }
+  if (chords.length <= maxLength) return chords;
   return chords.slice(0, maxLength);
 }
+
+// ---------------------------------------------------------------------------
+// Duration class helpers
+// ---------------------------------------------------------------------------
+
+function durationToBeats(dc: DurationClass | undefined): number {
+  switch (dc) {
+    case "full": return 4;
+    case "half": return 2;
+    case "quarter": return 1;
+    case "eighth": return 0.5;
+    default: return 4;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main generator
+// ---------------------------------------------------------------------------
 
 export function generateAdvancedProgression(
   options: AdvancedProgressionOptions
 ): AdvancedProgressionResult {
   const numChords = options.numChords ?? 4;
   const scaleType = MODE_TO_SCALE_TYPE[options.mode] ?? "major";
-  const romans = options.mode === "ionian" || options.mode === "mixolydian" ? MAJORISH_ROMANS : MINORISH_ROMANS;
+  const isMinor = options.mode !== "ionian" && options.mode !== "mixolydian";
+  const romans = isMinor ? MINORISH_ROMANS : MAJORISH_ROMANS;
 
   const seed = options.seed ?? Math.floor(Math.random() * 2_147_483_647);
   const random = createSeededRandom(seed);
 
-  const chosenTemplatePool = options.mode === "ionian" || options.mode === "mixolydian" ? MAJORISH_TEMPLATES : MINORISH_TEMPLATES;
-  const template = chosenTemplatePool[Math.floor(random() * chosenTemplatePool.length)] ?? chosenTemplatePool[0];
+  // --- Phrase structure ---
+  const phraseRoles = getPhraseRoles(numChords);
+  const tensionCurve = getTensionCurve(numChords);
 
-  const baseDegreeIndices = adaptLength(template, numChords, random);
+  // --- Template selection and adaptation ---
+  const chosenTemplatePool = isMinor ? MINORISH_TEMPLATES : MAJORISH_TEMPLATES;
+  const template = chosenTemplatePool[Math.floor(random() * chosenTemplatePool.length)] ?? chosenTemplatePool[0];
+  const baseDegreeIndices = adaptLength(template, numChords, isMinor, random);
+
   const functionalSwap = maybeApplyFunctionalSwap(
     baseDegreeIndices,
     options.useFunctionalSubstitutions ?? options.complexity >= 3,
     random
   );
 
+  // --- Build diatonic chord plans with tension levels ---
   const scale = getScaleDefinition(options.rootKey, scaleType);
   const plannedDiatonic = functionalSwap.indices.map((degreeIndex, idx) => {
     const root = scale.pitchClasses[degreeIndex] ?? scale.pitchClasses[0];
     const degreeLabel = romans[degreeIndex] ?? romans[0];
+    const tension = tensionCurve[idx] ?? 0.5;
+    const isProtected = idx === 0 || idx === functionalSwap.indices.length - 1;
 
     return buildDiatonicChordPlan({
       root,
@@ -324,20 +368,24 @@ export function generateAdvancedProgression(
       complexity: options.complexity,
       random,
       kind: functionalSwap.swappedIndex === idx ? "functional-substitution" : "diatonic",
+      tensionLevel: tension,
+      isProtected,
     });
   });
 
+  // --- Apply substitutions (gated by tension and context) ---
   let planned = plannedDiatonic;
   planned = injectSecondaryDominants(planned, options, random);
   planned = applyTritoneSubstitutions(planned, options, random);
   planned = insertPassingDiminished(planned, options, random);
   planned = insertSuspensions(planned, options, random);
 
-  // Resolution heuristic: ensure the progression ends on tonic (I/i) for a sense of completion.
-  // If the last diatonic chord is not the tonic, replace it with the tonic chord.
+  // --- Chromatic density validation (2/3 rule) ---
+  planned = validateChromaticDensity(planned);
+
+  // --- Resolution heuristic: ensure progression ends on tonic ---
   if (planned.length > 0) {
     const lastChord = planned[planned.length - 1];
-    // Only apply to diatonic/functional-substitution chords (not passing/suspension)
     if (lastChord.kind === "diatonic" || lastChord.kind === "functional-substitution") {
       const tonicRoot = scale.pitchClasses[0];
       if (lastChord.root !== tonicRoot) {
@@ -349,6 +397,8 @@ export function generateAdvancedProgression(
           complexity: options.complexity,
           random,
           kind: "diatonic",
+          tensionLevel: 0.0, // cadence = fully resolved
+          isProtected: true,
         });
       }
     }
@@ -356,6 +406,7 @@ export function generateAdvancedProgression(
 
   planned = limitLength(planned, Math.max(numChords, 4) + 4);
 
+  // --- Voice each chord ---
   const { low, high } = clampVoiceRange(options.rangeLow, options.rangeHigh);
   const center = (low + high) / 2;
 
@@ -379,6 +430,7 @@ export function generateAdvancedProgression(
       symbol: chord.symbol,
       midi: finalVoicing,
       notes: finalVoicing.map((midi) => midiToNoteName(midi)),
+      durationClass: chord.durationClass ?? "full",
     });
 
     costs.push(selection.cost);

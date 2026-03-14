@@ -10,6 +10,8 @@ export type ExtensionInput = {
   qualityHint: QualityHint;
   isDominant: boolean;
   random: () => number;
+  /** Tension level 0.0–1.0 from phrase structure. Gates extension richness. */
+  tensionLevel?: number;
 };
 
 function pitchClassOffset(root: PitchClass, semitones: number): PitchClass {
@@ -35,27 +37,53 @@ function preferredSeventh(qualityHint: QualityHint): number {
   return 10;
 }
 
+/**
+ * Apply complexity extensions gated by tension level.
+ *
+ * Key changes from original:
+ * - Tension < 0.3: extensions limited to 7th max (stable chords stay simple)
+ * - Tension 0.3-0.5: 9th allowed on ~60% of chords (weighted toward dominants)
+ * - Tension 0.5-0.7: 9th + 13th allowed (building tension)
+ * - Tension > 0.7: all extensions + alterations (maximum tension)
+ * - Dominant chords get richer treatment than tonic/subdominant
+ */
 export function applyComplexityExtensions(input: ExtensionInput): PitchClass[] {
   const { root, basePitchClasses, complexity, qualityHint, isDominant, random } = input;
+  const tension = input.tensionLevel ?? 0.5; // default to mid-tension for backwards compat
 
   const intervals = basePitchClasses.map((pc) => intervalFromRoot(root, pc));
 
+  // Complexity 2+: add 7th
   if (complexity >= 2) {
     intervals.push(preferredSeventh(qualityHint));
   }
 
+  // Complexity 3+: selectively add 9th and 13th, gated by tension
   if (complexity >= 3 && qualityHint !== "dim") {
-    intervals.push(2); // add9
-    if (qualityHint === "maj" || qualityHint === "dom") {
-      intervals.push(9); // add13
+    // 9th: apply based on tension level and randomness
+    // At high tension or on dominant chords: more likely
+    // At low tension on non-dominant: less likely
+    const ninthThreshold = isDominant ? 0.3 : 0.55 - tension * 0.3;
+    if (random() > ninthThreshold) {
+      intervals.push(2); // add9
+    }
+
+    // 13th: only on major/dominant chords, at higher tension
+    if ((qualityHint === "maj" || qualityHint === "dom") && tension > 0.4) {
+      const thirteenthThreshold = isDominant ? 0.6 : 0.8;
+      if (random() > thirteenthThreshold) {
+        intervals.push(9); // add13
+      }
     }
   }
 
-  if (complexity >= 4 && isDominant) {
+  // Complexity 4+: alterations only on dominants at high tension
+  if (complexity >= 4 && isDominant && tension > 0.5) {
     const alterations = [1, 3, 8] as const; // b9, #9, b13
     const picked = alterations[Math.floor(random() * alterations.length)] ?? 1;
     intervals.push(picked);
-    if (random() > 0.55) {
+    // Second alteration only at very high tension
+    if (tension > 0.7 && random() > 0.6) {
       intervals.push(1);
     }
   }

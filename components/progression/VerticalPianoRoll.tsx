@@ -6,7 +6,6 @@ import {
     isWhiteKey,
     midiToNoteName,
     midiToPitchClass,
-    pitchClassToMidi,
     generateMidiRange,
     PitchClass,
 } from "@/lib/theory/midiUtils";
@@ -15,32 +14,83 @@ import { Chord } from "@/lib/theory/progressionTypes";
 export type VerticalPianoRollProps = {
     chords: Chord[];
     playingIndex: number | null;
+    selectedIndex: number | null;
     onPlayNote?: (note: string) => void;
+    onDeleteChord?: (index: number) => void;
+    onShiftNote?: (chordIndex: number, midiNote: number, direction: "up" | "down") => void;
+    onSelectChord?: (index: number | null) => void;
 };
+
+/** Compute the MIDI range needed to display all notes, with 2-note padding. */
+function computeAutoRange(chords: Chord[]): { low: number; high: number } {
+    let minMidi = Infinity;
+    let maxMidi = -Infinity;
+
+    for (const chord of chords) {
+        if (chord.midiNotes && chord.midiNotes.length > 0) {
+            for (const m of chord.midiNotes) {
+                if (m < minMidi) minMidi = m;
+                if (m > maxMidi) maxMidi = m;
+            }
+        }
+    }
+
+    if (minMidi === Infinity) {
+        return { low: 48, high: 72 };
+    }
+
+    const lowOctave = Math.floor((minMidi - 2) / 12) * 12;
+    const highOctave = Math.ceil((maxMidi + 3) / 12) * 12;
+    const finalHigh = Math.max(highOctave, lowOctave + 12);
+    return { low: lowOctave, high: finalHigh };
+}
+
+type SelectedNote = { chordIndex: number; midi: number };
+
+/** Map durationClass to a flex multiplier for column width. */
+function durationFlex(dc?: string): number {
+    switch (dc) {
+        case "full": return 4;
+        case "half": return 2;
+        case "quarter": return 1;
+        case "eighth": return 0.5;
+        default: return 4;
+    }
+}
 
 export function VerticalPianoRoll({
     chords,
     playingIndex,
+    selectedIndex,
     onPlayNote,
+    onDeleteChord,
+    onShiftNote,
+    onSelectChord,
 }: VerticalPianoRollProps) {
-    const [octaveBase, setOctaveBase] = useState<number>(3);
-    const [octaveCount, setOctaveCount] = useState<number>(2); // 1 or 2 octaves
-
-    // Hover state for columns to highlight piano keys
     const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
+    const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
+    const [flashingNote, setFlashingNote] = useState<number | null>(null);
 
-    // Generate the descending range of MIDI notes for the Y-axis
+    // Clear note selection when chord selection changes
+    useEffect(() => {
+        if (selectedIndex === null) {
+            setSelectedNote(null);
+        }
+    }, [selectedIndex]);
+
+    const autoRange = useMemo(() => computeAutoRange(chords), [chords]);
+
     const noteRange = useMemo(() => {
-        // E.g. low=C3 (48), high=C5 (72) if base=3 and count=2
-        const lowMidi = pitchClassToMidi("C", octaveBase);
-        const highMidi = pitchClassToMidi("C", octaveBase + octaveCount);
-        // We want inclusive of the top C, so generate up to highMidi
-        const range = generateMidiRange(lowMidi, highMidi);
-        return range.reverse(); // high pitch at top, low at bottom
-    }, [octaveBase, octaveCount]);
+        const range = generateMidiRange(autoRange.low, autoRange.high);
+        return range.reverse();
+    }, [autoRange]);
 
-    // Which notes are "active" on the left keyboard?
-    // Either from the globally playing chord, or the hovered column
+    const rangeLabel = useMemo(() => {
+        const lowNote = midiToNoteName(autoRange.low);
+        const highNote = midiToNoteName(autoRange.high);
+        return `${lowNote}–${highNote}`;
+    }, [autoRange]);
+
     const activeChord = useMemo(() => {
         if (hoveredColumnIdx !== null && chords[hoveredColumnIdx]) {
             return chords[hoveredColumnIdx];
@@ -51,41 +101,107 @@ export function VerticalPianoRoll({
         return null;
     }, [chords, playingIndex, hoveredColumnIdx]);
 
+    const activeMidiNotes = useMemo(() => {
+        if (!activeChord) return new Set<number>();
+        if (activeChord.midiNotes && activeChord.midiNotes.length > 0) {
+            return new Set(activeChord.midiNotes);
+        }
+        return new Set<number>();
+    }, [activeChord]);
+
     const activePitchClasses = useMemo(() => {
         if (!activeChord) return new Set<PitchClass>();
+        if (activeChord.midiNotes && activeChord.midiNotes.length > 0) {
+            return new Set<PitchClass>();
+        }
         return new Set(activeChord.notes);
     }, [activeChord]);
 
-    // Temporary local flash state when a note cell is clicked
-    const [flashingNote, setFlashingNote] = useState<number | null>(null);
-
-    const handleNoteClick = (midi: number) => {
+    const handleNoteClick = (midi: number, colIdx: number, hasNote: boolean) => {
+        if (hasNote) {
+            // Select this specific note for octave shifting
+            const alreadySelected = selectedNote?.chordIndex === colIdx && selectedNote?.midi === midi;
+            if (alreadySelected) {
+                setSelectedNote(null);
+            } else {
+                setSelectedNote({ chordIndex: colIdx, midi });
+                onSelectChord?.(colIdx);
+            }
+        }
+        // Always play the note on click
         if (onPlayNote) {
             const noteNameWithOctave = midiToNoteName(midi);
             onPlayNote(noteNameWithOctave);
             setFlashingNote(midi);
-            setTimeout(() => {
-                setFlashingNote(null);
-            }, 250);
+            setTimeout(() => setFlashingNote(null), 250);
         }
     };
 
-    const increaseRange = () => {
-        if (octaveCount < 3) setOctaveCount((c) => c + 1);
-    };
+    // Keyboard handler for delete and per-note octave shift
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                setSelectedNote(null);
+                onSelectChord?.(null);
+                return;
+            }
 
-    const decreaseRange = () => {
-        if (octaveCount > 1) setOctaveCount((c) => c - 1);
-    };
+            if (e.key === "Delete" || e.key === "Backspace") {
+                if (selectedIndex !== null) {
+                    if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "SELECT") return;
+                    e.preventDefault();
+                    onDeleteChord?.(selectedIndex);
+                    onSelectChord?.(null);
+                    setSelectedNote(null);
+                }
+                return;
+            }
+
+            // Per-note octave shift: Cmd/Ctrl + Arrow Up/Down
+            if ((e.metaKey || e.ctrlKey) && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                if (selectedNote) {
+                    e.preventDefault();
+                    const direction = e.key === "ArrowUp" ? "up" : "down";
+                    const newMidi = selectedNote.midi + (direction === "up" ? 12 : -12);
+                    onShiftNote?.(selectedNote.chordIndex, selectedNote.midi, direction);
+                    // Update selection to track the shifted note
+                    setSelectedNote({ chordIndex: selectedNote.chordIndex, midi: newMidi });
+                }
+                return;
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [selectedIndex, selectedNote, onDeleteChord, onShiftNote, onSelectChord]);
+
+    const selectedNoteLabel = useMemo(() => {
+        if (!selectedNote) return null;
+        return midiToNoteName(selectedNote.midi);
+    }, [selectedNote]);
 
     return (
         <div className="piano-roll-section">
             <div className="flex items-center justify-between mb-2.5">
                 <div className="piano-roll-label">Piano Roll</div>
-                <div className="range-toggle">
-                    C{octaveBase}–C{octaveBase + octaveCount}
-                    <button className="range-btn" title="Contract range" onClick={decreaseRange}>−</button>
-                    <button className="range-btn" title="Expand range" onClick={increaseRange}>+</button>
+                <div className="flex items-center gap-3">
+                    {selectedNote && (
+                        <div className="text-xs text-muted flex items-center gap-2">
+                            <span className="opacity-60">Note: {selectedNoteLabel}</span>
+                            <span className="opacity-40">|</span>
+                            <span className="opacity-60">{typeof navigator !== "undefined" && navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+↑↓ octave</span>
+                        </div>
+                    )}
+                    {selectedIndex !== null && !selectedNote && (
+                        <div className="text-xs text-muted flex items-center gap-2">
+                            <span className="opacity-60">{chords[selectedIndex]?.symbol}</span>
+                            <span className="opacity-40">|</span>
+                            <span className="opacity-60">Del to remove · Click a note to shift</span>
+                        </div>
+                    )}
+                    <div className="range-toggle">
+                        {rangeLabel}
+                    </div>
                 </div>
             </div>
 
@@ -97,7 +213,9 @@ export function VerticalPianoRoll({
                         const pClass = midiToPitchClass(midi);
                         const isC = pClass === "C";
                         const noteName = midiToNoteName(midi);
-                        const isActive = activePitchClasses.has(pClass) || flashingNote === midi;
+                        const isActive = activeMidiNotes.size > 0
+                            ? activeMidiNotes.has(midi) || flashingNote === midi
+                            : activePitchClasses.has(pClass) || flashingNote === midi;
 
                         return (
                             <div
@@ -120,27 +238,51 @@ export function VerticalPianoRoll({
                 <div className="roll-grid">
                     {chords.map((chord, colIdx) => {
                         const isPlaying = playingIndex === colIdx;
-                        const chordPcs = new Set(chord.notes);
-                        const rootPc = chord.notes.length > 0 ? chord.notes[0] : null;
+                        const isSelected = selectedIndex === colIdx;
+                        const hasMidiNotes = chord.midiNotes && chord.midiNotes.length > 0;
+                        const midiSet = hasMidiNotes ? new Set(chord.midiNotes) : null;
+                        const chordPcs = !hasMidiNotes ? new Set(chord.notes) : null;
+                        const rootPc = chord.root ?? (chord.notes.length > 0 ? chord.notes[0] : null);
+
+                        const colFlex = durationFlex(chord.durationClass);
 
                         return (
                             <div
                                 key={`${colIdx}-${chord.romanNumeral}`}
-                                className={clsx("roll-column", isPlaying && "playing")}
+                                className={clsx("roll-column", isPlaying && "playing", isSelected && "selected")}
+                                style={{ "--col-flex": colFlex } as React.CSSProperties}
                                 onMouseEnter={() => setHoveredColumnIdx(colIdx)}
                                 onMouseLeave={() => setHoveredColumnIdx(null)}
                             >
-                                <div className="roll-col-header">
-                                    <div className="col-numeral">{chord.romanNumeral}</div>
+                                <div
+                                    className={clsx("roll-col-header", isSelected && "selected-header")}
+                                    onClick={() => {
+                                        onSelectChord?.(isSelected ? null : colIdx);
+                                        setSelectedNote(null);
+                                    }}
+                                >
+                                    <div className="col-numeral">
+                                        {chord.romanNumeral}
+                                        {chord.durationClass && chord.durationClass !== "full" && (
+                                            <span className="ml-1 opacity-50">
+                                                ({chord.durationClass === "half" ? "2" : chord.durationClass === "quarter" ? "1" : "½"}♩)
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="col-chord-name">{chord.symbol}</div>
                                 </div>
 
                                 {noteRange.map((midi) => {
                                     const isWhite = isWhiteKey(midi);
                                     const pClass = midiToPitchClass(midi);
-                                    const hasNote = chordPcs.has(pClass);
-                                    const isRoot = pClass === rootPc;
+                                    const hasNote = midiSet
+                                        ? midiSet.has(midi)
+                                        : chordPcs!.has(pClass);
+                                    const isRoot = midiSet
+                                        ? hasNote && pClass === rootPc
+                                        : pClass === rootPc;
                                     const isFlashing = flashingNote === midi && hoveredColumnIdx === colIdx;
+                                    const isNoteSelected = selectedNote?.chordIndex === colIdx && selectedNote?.midi === midi;
 
                                     return (
                                         <div
@@ -150,10 +292,11 @@ export function VerticalPianoRoll({
                                                 !isWhite && "black-row",
                                                 hasNote && "has-note",
                                                 isRoot && "is-root",
-                                                isFlashing && "triggered"
+                                                isFlashing && "triggered",
+                                                isNoteSelected && "note-selected"
                                             )}
                                             data-note={pClass}
-                                            onClick={() => handleNoteClick(midi)}
+                                            onClick={() => handleNoteClick(midi, colIdx, hasNote)}
                                         ></div>
                                     );
                                 })}
@@ -161,7 +304,6 @@ export function VerticalPianoRoll({
                         );
                     })}
 
-                    {/* Placeholder column if arrangement is empty to keep structure */}
                     {chords.length === 0 && (
                         <div className="roll-column flex-1 opacity-50 pointer-events-none">
                             <div className="roll-col-header">

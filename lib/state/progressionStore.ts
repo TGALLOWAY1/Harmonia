@@ -29,6 +29,9 @@ interface ProgressionState {
 
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm">>) => void;
     generateNew: () => void;
+    toggleLock: (index: number) => void;
+    deleteChord: (index: number) => void;
+    shiftNote: (chordIndex: number, midiNote: number, direction: "up" | "down") => void;
     setIsPlaying: (playing: boolean) => void;
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
@@ -92,8 +95,16 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateNew: () => {
-        const { rootKey, mode, complexity, numChords } = get();
+        const { rootKey, mode, complexity, numChords, currentProgression } = get();
         const rootPC = normalizeToPitchClass(rootKey) || "C";
+
+        // Collect locked chords from the current progression (by position)
+        const lockedByIndex = new Map<number, Chord>();
+        if (currentProgression) {
+            currentProgression.chords.forEach((chord, i) => {
+                if (chord.isLocked) lockedByIndex.set(i, chord);
+            });
+        }
 
         const result = generateAdvancedProgression({
             rootKey: rootPC,
@@ -102,11 +113,11 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             voicingStyle: "auto",
             voiceCount: 4,
             rangeLow: 48,
-            rangeHigh: 72,
+            rangeHigh: 79,
             ...complexityToOptions(complexity),
         });
 
-        const chords: Chord[] = result.chords.map((voiced) => {
+        const newChords: Chord[] = result.chords.map((voiced) => {
             const pitchClasses = Array.from(new Set(voiced.midi.map((midi) => midiToPitchClass(midi))));
             const root = pitchClasses[0];
 
@@ -117,7 +128,14 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
                 notesWithOctave: voiced.notes,
                 midiNotes: voiced.midi,
                 root,
+                durationClass: voiced.durationClass,
             };
+        });
+
+        // Merge: keep locked chords in their positions, fill others from generated
+        const chords = newChords.map((chord, i) => {
+            const locked = lockedByIndex.get(i);
+            return locked ? { ...locked } : chord;
         });
 
         const progression: Progression = {
@@ -128,6 +146,72 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
         set({ currentProgression: progression });
         get().addToHistory(progression);
+    },
+
+    toggleLock: (index: number) => {
+        const { currentProgression } = get();
+        if (!currentProgression) return;
+
+        const chords = currentProgression.chords.map((chord, i) =>
+            i === index ? { ...chord, isLocked: !chord.isLocked } : chord
+        );
+
+        set({
+            currentProgression: {
+                ...currentProgression,
+                chords,
+            },
+        });
+    },
+
+    deleteChord: (index: number) => {
+        const { currentProgression } = get();
+        if (!currentProgression || currentProgression.chords.length <= 1) return;
+
+        const chords = currentProgression.chords.filter((_, i) => i !== index);
+        set({
+            currentProgression: {
+                ...currentProgression,
+                chords,
+            },
+        });
+    },
+
+    shiftNote: (chordIndex: number, midiNote: number, direction: "up" | "down") => {
+        const { currentProgression } = get();
+        if (!currentProgression) return;
+
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord || !chord.midiNotes) return;
+
+        const shift = direction === "up" ? 12 : -12;
+        const noteIdx = chord.midiNotes.indexOf(midiNote);
+        if (noteIdx === -1) return;
+
+        const newMidiNotes = [...chord.midiNotes];
+        newMidiNotes[noteIdx] = midiNote + shift;
+
+        const newNotesWithOctave = chord.notesWithOctave ? [...chord.notesWithOctave] : undefined;
+        if (newNotesWithOctave && newNotesWithOctave[noteIdx]) {
+            const match = newNotesWithOctave[noteIdx].match(/^([A-G]#?)(\d+)$/);
+            if (match) {
+                const [, pc, oct] = match;
+                newNotesWithOctave[noteIdx] = `${pc}${Number(oct) + (direction === "up" ? 1 : -1)}`;
+            }
+        }
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex
+                ? { ...c, midiNotes: newMidiNotes, notesWithOctave: newNotesWithOctave }
+                : c
+        );
+
+        set({
+            currentProgression: {
+                ...currentProgression,
+                chords,
+            },
+        });
     },
 
     setIsPlaying: (playing: boolean) => {
@@ -148,7 +232,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: c.symbol,
             notesWithOctave: c.notesWithOctave && c.notesWithOctave.length > 0
                 ? c.notesWithOctave
-                : c.notes.map(n => `${n}3`)
+                : c.notes.map(n => `${n}3`),
+            durationClass: c.durationClass,
         }));
 
         const blob = progressionToMidi(midiChords, bpm);

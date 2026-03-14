@@ -21,6 +21,27 @@ export type ChordKind =
   | "passing"
   | "suspension";
 
+export type ChordRole =
+  | "structural"
+  | "passing"
+  | "approach"
+  | "suspension"
+  | "embellishment"
+  | "cadential";
+
+export type DurationClass =
+  | "full"      // 4 beats (1 measure)
+  | "half"      // 2 beats
+  | "quarter"   // 1 beat
+  | "eighth";   // half beat
+
+export type PhraseRole =
+  | "opening"
+  | "continuation"
+  | "pre-dominant"
+  | "dominant"
+  | "cadence";
+
 export type PlannedAdvancedChord = {
   degreeLabel: string;
   symbol: string;
@@ -28,6 +49,11 @@ export type PlannedAdvancedChord = {
   pitchClasses: PitchClass[];
   kind: ChordKind;
   isDominant?: boolean;
+  role?: ChordRole;
+  durationClass?: DurationClass;
+  tensionLevel?: number;
+  phraseRole?: PhraseRole;
+  isProtected?: boolean;
 };
 
 export type AdvancedProgressionOptions = {
@@ -52,6 +78,7 @@ export type VoicedChord = {
   symbol: string;
   midi: number[];
   notes: string[];
+  durationClass?: DurationClass;
 };
 
 export type AdvancedProgressionResult = {

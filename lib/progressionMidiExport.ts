@@ -1,14 +1,27 @@
 import { Midi } from "@tonejs/midi";
 import { Note } from "@tonaljs/tonal";
+import type { DurationClass } from "./music/generators/advanced/types";
 
 export type ProgressionChord = {
   symbol: string;
   notesWithOctave: string[];
+  durationClass?: DurationClass;
 };
+
+/** Convert a DurationClass to beat count. */
+function durationToBeats(dc: DurationClass | undefined): number {
+  switch (dc) {
+    case "full": return 4;
+    case "half": return 2;
+    case "quarter": return 1;
+    case "eighth": return 0.5;
+    default: return 4;
+  }
+}
 
 /**
  * Export a chord progression to a MIDI file.
- * Each chord gets one bar (4 beats) in 4/4 time.
+ * Supports variable durations per chord via durationClass.
  * Includes tempo, track name, and a subtle velocity curve.
  */
 export function progressionToMidi(
@@ -21,15 +34,19 @@ export function progressionToMidi(
 
   const track = midi.addTrack();
   track.name = "Harmonia Progression";
-  const beatsPerBar = 4;
   const secondsPerBeat = 60 / bpm;
 
+  let currentBeat = 0;
+
   chords.forEach((chord, index) => {
-    const startTime = index * beatsPerBar * secondsPerBeat;
-    const duration = beatsPerBar * secondsPerBeat;
+    const beats = durationToBeats(chord.durationClass);
+    const startTime = currentBeat * secondsPerBeat;
+    const duration = beats * secondsPerBeat;
 
     // Subtle velocity curve: first beat slightly louder, inner notes slightly softer
-    const baseVelocity = 0.72;
+    // Passing/short chords get reduced velocity
+    const isShort = beats <= 1;
+    const baseVelocity = isShort ? 0.62 : 0.72;
     const accentBoost = index === 0 ? 0.08 : 0;
 
     chord.notesWithOctave.forEach((noteName, noteIdx) => {
@@ -49,6 +66,8 @@ export function progressionToMidi(
         velocity,
       });
     });
+
+    currentBeat += beats;
   });
 
   const bytes = midi.toArray();
