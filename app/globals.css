@@ -519,6 +519,173 @@
   animation: noteFlash 0.25s ease-out;
 }
 
+/* ─────────────────────────────────────────────
+   MELODY LANE CSS
+───────────────────────────────────────────── */
+
+.melody-lane-section {
+  margin-top: 4px;
+  width: 100%;
+}
+
+.melody-lane-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.melody-lane-wrap {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--vert-key-white);
+  max-width: 100%;
+}
+
+/* ── Left pitch axis ── */
+.melody-pitch-axis {
+  width: 52px;
+  flex-shrink: 0;
+  position: relative;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.melody-pitch-label {
+  position: absolute;
+  right: 6px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.55rem;
+  color: var(--muted);
+  pointer-events: none;
+  line-height: 1;
+}
+
+.melody-guide-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border-subtle);
+  pointer-events: none;
+}
+
+/* ── Grid columns ── */
+.melody-grid {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  position: relative;
+}
+
+.melody-column {
+  flex: var(--col-flex, 1);
+  min-width: 60px;
+  position: relative;
+  border-right: 1px solid var(--border-subtle);
+  cursor: crosshair;
+  overflow: hidden;
+}
+.melody-column:last-child {
+  border-right: none;
+}
+.melody-column:hover {
+  background: rgba(232, 133, 106, 0.03);
+}
+
+.melody-col-playing {
+  background: var(--vert-accent-light);
+}
+
+/* ── Beat grid lines ── */
+.melody-beat-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.04);
+  pointer-events: none;
+}
+.melody-beat-strong {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Horizontal pitch guides ── */
+.melody-h-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border-subtle);
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* ── Note bars ── */
+.melody-bar {
+  position: absolute;
+  background: var(--vert-accent-coral);
+  border-radius: 3px;
+  min-width: 6px;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  cursor: grab;
+  z-index: 2;
+  transition: filter 0.08s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.melody-bar:hover {
+  filter: brightness(1.1);
+  z-index: 3;
+}
+.melody-bar:active {
+  cursor: grabbing;
+}
+
+.melody-bar-selected {
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 3px var(--vert-accent-coral), 0 0 8px rgba(232, 133, 106, 0.4);
+  filter: brightness(1.15);
+  z-index: 4;
+}
+
+.melody-bar-drawn {
+  background: var(--vert-accent-teal);
+}
+.melody-bar-drawn.melody-bar-selected {
+  box-shadow: 0 0 0 3px var(--vert-accent-teal), 0 0 8px rgba(62, 168, 152, 0.4);
+}
+
+.melody-bar-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.5rem;
+  color: white;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ── Resize handle ── */
+.melody-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  border-radius: 0 3px 3px 0;
+}
+.melody-resize-handle:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 /* ── Custom Range Input (BPM slider) ── */
 input[type="range"] {
   -webkit-appearance: none;

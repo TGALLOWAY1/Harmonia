@@ -30,7 +30,7 @@ export type InteractivePianoRollProps = {
   playheadRef?: React.Ref<HTMLDivElement>;
 };
 
-/** Compute the MIDI range needed to display all notes, with padding. */
+/** Compute the MIDI range needed to display all chord notes, with padding. */
 function computeAutoRange(chords: Chord[]): { low: number; high: number } {
   let minMidi = Infinity;
   let maxMidi = -Infinity;

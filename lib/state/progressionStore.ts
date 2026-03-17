@@ -9,6 +9,10 @@ import type { ChordSourceType, MutationChange, SubstitutionOption } from "../cre
 import { getSubstitutions } from "../creative/substitutionEngine";
 import { mutateProgression } from "../creative/mutationEngine";
 import { interpretChord } from "../creative/chordInterpreter";
+import { generateMelody } from "../music/generators/melody/generateMelody";
+import type { Melody, MelodyNote, MelodyStyle } from "../music/generators/melody/types";
+import { getScaleDefinition } from "../theory/scale";
+import type { ScaleType } from "../theory/types";
 
 export type ComplexityLevel = 1 | 2 | 3 | 4;
 
@@ -44,6 +48,11 @@ interface ProgressionState {
     lastMutationChanges: MutationChange[];
     undoStack: Progression[];
 
+    // Melody state
+    melody: Melody | null;
+    melodyEnabled: boolean;
+    melodyStyle: MelodyStyle;
+
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
     generateNew: () => void;
     toggleLock: (index: number) => void;
@@ -64,6 +73,16 @@ interface ProgressionState {
     removeNote: (chordIndex: number, midi: number) => void;
     moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => void;
     resetChord: (chordIndex: number) => void;
+
+    // Melody actions
+    setMelodyEnabled: (enabled: boolean) => void;
+    setMelodyStyle: (style: MelodyStyle) => void;
+    generateMelodyForProgression: () => void;
+    clearMelody: () => void;
+    addMelodyNote: (note: MelodyNote) => void;
+    moveMelodyNote: (noteId: string, newMidi: number, newStartBeat: number) => void;
+    resizeMelodyNote: (noteId: string, newDurationBeats: number) => void;
+    deleteMelodyNote: (noteId: string) => void;
 }
 
 type ComplexityOptions = Pick<
@@ -132,6 +151,11 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     lastMutationChanges: [],
     undoStack: [],
 
+    // Melody initial state
+    melody: null,
+    melodyEnabled: false,
+    melodyStyle: "lyrical",
+
     setSettings: (settings) => {
         set((state) => ({ ...state, ...settings }));
     },
@@ -198,8 +222,12 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             substitutionOptions: [],
             lastMutationChanges: [],
             undoStack: [],
+            melody: null,
         });
         get().addToHistory(progression);
+        if (get().melodyEnabled) {
+            get().generateMelodyForProgression();
+        }
     },
 
     toggleLock: (index: number) => {
@@ -570,5 +598,98 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         if (original) {
             get().revertChord(chordIndex);
         }
+    },
+
+    // ─── Melody Actions ───
+
+    setMelodyEnabled: (enabled: boolean) => {
+        set({ melodyEnabled: enabled });
+        if (enabled && !get().melody && get().currentProgression) {
+            get().generateMelodyForProgression();
+        }
+        if (!enabled) {
+            set({ melody: null });
+        }
+    },
+
+    setMelodyStyle: (style: MelodyStyle) => {
+        set({ melodyStyle: style });
+        if (get().melodyEnabled && get().currentProgression) {
+            get().generateMelodyForProgression();
+        }
+    },
+
+    generateMelodyForProgression: () => {
+        const { currentProgression, rootKey, mode, melodyStyle } = get();
+        if (!currentProgression) return;
+
+        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
+        const MODE_TO_SCALE: Record<Mode, ScaleType> = {
+            ionian: "major",
+            aeolian: "natural_minor",
+            dorian: "dorian",
+            mixolydian: "mixolydian",
+            phrygian: "phrygian",
+        };
+        const scaleType = MODE_TO_SCALE[mode] ?? "major";
+        const scale = getScaleDefinition(rootPC, scaleType);
+
+        const chords = currentProgression.chords.map((c) => ({
+            midiNotes: c.midiNotes ?? [],
+            pitchClasses: (c.notes ?? []) as PitchClass[],
+            root: (c.root ?? c.notes[0] ?? "C") as PitchClass,
+            durationClass: c.durationClass,
+        }));
+
+        const melody = generateMelody({
+            scalePitchClasses: scale.pitchClasses,
+            chords,
+            style: melodyStyle,
+            octave: 5,
+        });
+
+        set({ melody });
+    },
+
+    clearMelody: () => {
+        set({ melody: null, melodyEnabled: false });
+    },
+
+    addMelodyNote: (note: MelodyNote) => {
+        const { melody } = get();
+        if (!melody) {
+            set({ melody: { notes: [note], octave: 5 } });
+            return;
+        }
+        set({ melody: { ...melody, notes: [...melody.notes, note] } });
+    },
+
+    moveMelodyNote: (noteId: string, newMidi: number, newStartBeat: number) => {
+        const { melody } = get();
+        if (!melody) return;
+        const notes = melody.notes.map((n) => {
+            if (n.id !== noteId) return n;
+            const noteWithOctave = midiToNoteName(newMidi);
+            const pitchClass = midiToPitchClass(newMidi);
+            return { ...n, midi: newMidi, noteWithOctave, pitchClass, startBeat: newStartBeat };
+        });
+        set({ melody: { ...melody, notes } });
+    },
+
+    resizeMelodyNote: (noteId: string, newDurationBeats: number) => {
+        const { melody } = get();
+        if (!melody) return;
+        const clamped = Math.max(0.25, newDurationBeats);
+        const notes = melody.notes.map((n) =>
+            n.id === noteId ? { ...n, durationBeats: clamped } : n
+        );
+        set({ melody: { ...melody, notes } });
+    },
+
+    deleteMelodyNote: (noteId: string) => {
+        const { melody } = get();
+        if (!melody) return;
+        const notes = melody.notes.filter((n) => n.id !== noteId);
+        set({ melody: { ...melody, notes } });
     },
 }));

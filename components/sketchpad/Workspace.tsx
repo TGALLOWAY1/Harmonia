@@ -7,81 +7,12 @@ import { useSketchpadStore } from "@/lib/sketchpad/store";
 import { SongStructurePanel } from "./SongStructurePanel";
 import { SectionEditorPanel } from "./SectionEditorPanel";
 import { HarmonicPreviewPanel } from "./HarmonicPreviewPanel";
-
-type SoundPresetId = "piano" | "mellow" | "bell" | "bright";
-type Synth = Tone.PolySynth | Tone.Sampler;
-
-let masterReverb: Tone.Reverb | null = null;
-let masterCompressor: Tone.Compressor | null = null;
-let masterLimiter: Tone.Limiter | null = null;
-
-function getEffectsChain() {
-  if (!masterLimiter) {
-    masterLimiter = new Tone.Limiter(-3).toDestination();
-  }
-  if (!masterReverb) {
-    masterReverb = new Tone.Reverb({ decay: 1.8, wet: 0.2 }).connect(masterLimiter);
-  }
-  if (!masterCompressor) {
-    masterCompressor = new Tone.Compressor({
-      threshold: -18,
-      ratio: 4,
-      attack: 0.003,
-      release: 0.15,
-    }).connect(masterReverb);
-  }
-  return { reverb: masterReverb, compressor: masterCompressor, limiter: masterLimiter };
-}
-
-function createSynth(preset: SoundPresetId, onLoaded?: () => void): Synth {
-  const { compressor } = getEffectsChain();
-  switch (preset) {
-    case "piano": {
-      const sampler = new Tone.Sampler({
-        urls: {
-          A1: "A1.mp3", A2: "A2.mp3", A3: "A3.mp3", A4: "A4.mp3", A5: "A5.mp3",
-          C2: "C2.mp3", C3: "C3.mp3", C4: "C4.mp3", C5: "C5.mp3", C6: "C6.mp3",
-          "D#2": "Ds2.mp3", "D#3": "Ds3.mp3", "D#4": "Ds4.mp3", "D#5": "Ds5.mp3",
-          "F#2": "Fs2.mp3", "F#3": "Fs3.mp3", "F#4": "Fs4.mp3", "F#5": "Fs5.mp3",
-        },
-        baseUrl: "https://tonejs.github.io/audio/salamander/",
-        release: 1,
-        volume: -6,
-        onload: () => onLoaded?.(),
-      });
-      sampler.connect(compressor);
-      return sampler;
-    }
-    case "mellow":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -14,
-        oscillator: { type: "triangle" },
-        envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
-      }).connect(compressor);
-    case "bell":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -12,
-        oscillator: { type: "sine" },
-        envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.6 },
-      }).connect(compressor);
-    case "bright":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -16,
-        oscillator: { type: "sawtooth" },
-        envelope: { attack: 0.01, decay: 0.15, sustain: 0.4, release: 0.4 },
-      }).connect(compressor);
-    default:
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -14,
-        oscillator: { type: "triangle" },
-        envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
-      }).connect(compressor);
-  }
-}
+import {
+  createSynthForPreset,
+  presetNeedsLoading,
+  type SoundPresetId,
+  type Synth,
+} from "@/lib/audio/synthPresets";
 
 function beatsToDuration(beats: number): string {
   switch (beats) {
@@ -122,8 +53,8 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
 
   // Synth lifecycle
   useEffect(() => {
-    setIsSynthLoading(soundPreset === "piano");
-    const synth = createSynth(soundPreset, () => setIsSynthLoading(false));
+    setIsSynthLoading(presetNeedsLoading(soundPreset));
+    const synth = createSynthForPreset(soundPreset, () => setIsSynthLoading(false));
     synthRef.current = synth;
     return () => {
       synth.releaseAll();

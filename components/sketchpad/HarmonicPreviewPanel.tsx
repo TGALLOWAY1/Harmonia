@@ -23,14 +23,8 @@ import type {
   PlaybackMode,
 } from "@/lib/sketchpad/types";
 import type { Mode } from "@/lib/theory/harmonyEngine";
+import { SOUND_PRESETS } from "@/lib/audio/synthPresets";
 import clsx from "clsx";
-
-const SOUND_PRESETS = [
-  { id: "piano", label: "Piano" },
-  { id: "mellow", label: "Mellow" },
-  { id: "bell", label: "Bell" },
-  { id: "bright", label: "Bright" },
-];
 
 const MODES: { value: Mode; label: string }[] = [
   { value: "ionian", label: "Major" },
