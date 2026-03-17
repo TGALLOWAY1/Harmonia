@@ -1,0 +1,52 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Harmonia Icon</title>
+  <desc>A piano-key H with an ascending chord progression line.</desc>
+  <defs>
+    <linearGradient id="bg" x1="88" y1="72" x2="438" y2="456" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#252B29"/>
+      <stop offset="1" stop-color="#121715"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 194) rotate(90) scale(232)">
+      <stop stop-color="#2F6B58" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#2F6B58" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ivory" x1="182" y1="136" x2="350" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#EAE5D7"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="120" y1="328" x2="406" y2="164" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17A96B"/>
+      <stop offset="1" stop-color="#67E5A8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="28" y="28" width="456" height="456" rx="116" fill="url(#bg)"/>
+  <rect x="28" y="28" width="456" height="456" rx="116" stroke="#3F4A46" stroke-width="10"/>
+  <rect x="58" y="58" width="396" height="396" rx="92" fill="url(#glow)"/>
+
+  <path
+    d="M122 336L199 294L260 257L320 214L392 172"
+    stroke="url(#accent)"
+    stroke-width="22"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="122" cy="336" r="17" fill="#17A96B"/>
+  <circle cx="199" cy="294" r="15" fill="#29C57F"/>
+  <circle cx="260" cy="257" r="15" fill="#47D992"/>
+  <circle cx="320" cy="214" r="15" fill="#67E5A8"/>
+  <circle cx="392" cy="172" r="17" fill="#8BF0BD"/>
+
+  <g filter="none">
+    <rect x="138" y="138" width="88" height="240" rx="28" fill="url(#ivory)"/>
+    <rect x="286" y="138" width="88" height="240" rx="28" fill="url(#ivory)"/>
+    <rect x="210" y="226" width="92" height="64" rx="22" fill="url(#ivory)"/>
+
+    <rect x="206" y="106" width="42" height="96" rx="16" fill="#121715"/>
+    <rect x="264" y="106" width="42" height="96" rx="16" fill="#121715"/>
+
+    <rect x="138" y="138" width="88" height="240" rx="28" stroke="#D6D0C3" stroke-width="6"/>
+    <rect x="286" y="138" width="88" height="240" rx="28" stroke="#D6D0C3" stroke-width="6"/>
+    <rect x="210" y="226" width="92" height="64" rx="22" stroke="#D6D0C3" stroke-width="6"/>
+  </g>
+</svg>

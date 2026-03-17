@@ -7,6 +7,10 @@ export const metadata: Metadata = {
   title: "Harmonia — Chord Progression Generator",
   description:
     "Generate musically coherent chord progressions in any key and mode. Hear them instantly, export as MIDI.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
   openGraph: {
     title: "Harmonia — Chord Progression Generator",
     description:
@@ -36,4 +40,3 @@ export default function RootLayout({
     </html>
   );
 }
-
