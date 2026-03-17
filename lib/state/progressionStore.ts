@@ -1,10 +1,14 @@
 import { create } from "zustand";
 import type { Progression, Chord } from "../theory/progressionTypes";
 import type { Mode } from "../theory/harmonyEngine";
-import { midiToPitchClass, normalizeToPitchClass } from "../theory/midiUtils";
+import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
 import { progressionToMidi } from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { AdvancedProgressionOptions } from "../music/generators/advanced/types";
+import type { ChordSourceType, MutationChange, SubstitutionOption } from "../creative/types";
+import { getSubstitutions } from "../creative/substitutionEngine";
+import { mutateProgression } from "../creative/mutationEngine";
+import { interpretChord } from "../creative/chordInterpreter";
 
 export type ComplexityLevel = 1 | 2 | 3 | 4;
 
@@ -27,6 +31,15 @@ interface ProgressionState {
     complexity: ComplexityLevel;
     numChords: number;
 
+    // Creative iteration state
+    chordSourceTypes: ChordSourceType[];
+    originalChords: Map<number, Chord>;     // Original chord data for revert, keyed by index
+    substitutionTarget: number | null;       // Index of chord being substituted
+    substitutionOptions: SubstitutionOption[];
+    mutationIntensity: number;
+    lastMutationChanges: MutationChange[];
+    undoStack: Progression[];
+
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm">>) => void;
     generateNew: () => void;
     toggleLock: (index: number) => void;
@@ -35,6 +48,18 @@ interface ProgressionState {
     setIsPlaying: (playing: boolean) => void;
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
+
+    // Creative iteration actions
+    openSubstitution: (chordIndex: number) => void;
+    closeSubstitution: () => void;
+    applySubstitution: (option: SubstitutionOption, chordIndex: number) => void;
+    revertChord: (chordIndex: number) => void;
+    mutate: (intensity: number) => void;
+    undoMutation: () => void;
+    addNote: (chordIndex: number, midi: number) => void;
+    removeNote: (chordIndex: number, midi: number) => void;
+    moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => void;
+    resetChord: (chordIndex: number) => void;
 }
 
 type ComplexityOptions = Pick<
@@ -90,6 +115,15 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     complexity: 2,
     numChords: 4,
 
+    // Creative iteration initial state
+    chordSourceTypes: [],
+    originalChords: new Map(),
+    substitutionTarget: null,
+    substitutionOptions: [],
+    mutationIntensity: 30,
+    lastMutationChanges: [],
+    undoStack: [],
+
     setSettings: (settings) => {
         set((state) => ({ ...state, ...settings }));
     },
@@ -144,7 +178,19 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             timestamp: Date.now(),
         };
 
-        set({ currentProgression: progression });
+        const sourceTypes: ChordSourceType[] = chords.map((c, i) =>
+            lockedByIndex.has(i) ? (get().chordSourceTypes[i] ?? "generated") : "generated"
+        );
+
+        set({
+            currentProgression: progression,
+            chordSourceTypes: sourceTypes,
+            originalChords: new Map(),
+            substitutionTarget: null,
+            substitutionOptions: [],
+            lastMutationChanges: [],
+            undoStack: [],
+        });
         get().addToHistory(progression);
     },
 
@@ -243,5 +289,278 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         a.download = `harmonia-${rootKey}-${mode}-${Date.now()}.mid`;
         a.click();
         URL.revokeObjectURL(url);
+    },
+
+    // ─── Creative Iteration Actions ───
+
+    openSubstitution: (chordIndex: number) => {
+        const { currentProgression, rootKey, mode } = get();
+        if (!currentProgression) return;
+
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord) return;
+
+        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
+        const options = getSubstitutions(chord, chordIndex, currentProgression.chords, rootPC, mode);
+
+        set({
+            substitutionTarget: chordIndex,
+            substitutionOptions: options,
+        });
+    },
+
+    closeSubstitution: () => {
+        set({
+            substitutionTarget: null,
+            substitutionOptions: [],
+        });
+    },
+
+    applySubstitution: (option: SubstitutionOption, chordIndex: number) => {
+        const { currentProgression, chordSourceTypes, originalChords } = get();
+        if (!currentProgression) return;
+
+        // Save original chord for revert
+        const newOriginals = new Map(originalChords);
+        if (!newOriginals.has(chordIndex)) {
+            newOriginals.set(chordIndex, { ...currentProgression.chords[chordIndex] });
+        }
+
+        const newChord: Chord = {
+            symbol: option.candidateSymbol,
+            root: option.candidateRoot,
+            quality: option.candidateQuality as Chord["quality"],
+            notes: option.candidateNotes,
+            romanNumeral: option.candidateRomanNumeral,
+            midiNotes: option.candidateMidiNotes,
+            notesWithOctave: option.candidateNotesWithOctave,
+            isLocked: currentProgression.chords[chordIndex].isLocked,
+            durationClass: currentProgression.chords[chordIndex].durationClass,
+        };
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex ? newChord : c
+        );
+
+        const newSourceTypes = [...chordSourceTypes];
+        while (newSourceTypes.length < chords.length) newSourceTypes.push("generated");
+        newSourceTypes[chordIndex] = "substituted";
+
+        set({
+            currentProgression: { ...currentProgression, chords },
+            chordSourceTypes: newSourceTypes,
+            originalChords: newOriginals,
+            substitutionTarget: null,
+            substitutionOptions: [],
+        });
+    },
+
+    revertChord: (chordIndex: number) => {
+        const { currentProgression, originalChords, chordSourceTypes } = get();
+        if (!currentProgression) return;
+
+        const original = originalChords.get(chordIndex);
+        if (!original) return;
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex ? { ...original } : c
+        );
+
+        const newOriginals = new Map(originalChords);
+        newOriginals.delete(chordIndex);
+
+        const newSourceTypes = [...chordSourceTypes];
+        newSourceTypes[chordIndex] = "generated";
+
+        set({
+            currentProgression: { ...currentProgression, chords },
+            originalChords: newOriginals,
+            chordSourceTypes: newSourceTypes,
+        });
+    },
+
+    mutate: (intensity: number) => {
+        const { currentProgression, rootKey, mode, chordSourceTypes } = get();
+        if (!currentProgression) return;
+
+        // Save current state for undo
+        const undoStack = [...get().undoStack, { ...currentProgression, chords: [...currentProgression.chords] }].slice(-10);
+
+        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
+        const lockedIndices = new Set(
+            currentProgression.chords
+                .map((c, i) => c.isLocked ? i : -1)
+                .filter(i => i >= 0)
+        );
+
+        const result = mutateProgression(
+            currentProgression.chords,
+            intensity,
+            rootPC,
+            mode,
+            lockedIndices,
+        );
+
+        const newSourceTypes = [...chordSourceTypes];
+        while (newSourceTypes.length < result.chords.length) newSourceTypes.push("generated");
+        for (const change of result.record.changes) {
+            newSourceTypes[change.chordIndex] = "mutated";
+        }
+
+        set({
+            currentProgression: { ...currentProgression, chords: result.chords },
+            chordSourceTypes: newSourceTypes,
+            lastMutationChanges: result.record.changes,
+            mutationIntensity: intensity,
+            undoStack,
+        });
+    },
+
+    undoMutation: () => {
+        const { undoStack } = get();
+        if (undoStack.length === 0) return;
+
+        const previous = undoStack[undoStack.length - 1];
+        const newStack = undoStack.slice(0, -1);
+
+        set({
+            currentProgression: previous,
+            undoStack: newStack,
+            lastMutationChanges: [],
+        });
+    },
+
+    addNote: (chordIndex: number, midi: number) => {
+        const { currentProgression, chordSourceTypes } = get();
+        if (!currentProgression) return;
+
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord || !chord.midiNotes) return;
+
+        // Don't add if already exists
+        if (chord.midiNotes.includes(midi)) return;
+
+        const newMidiNotes = [...chord.midiNotes, midi].sort((a, b) => a - b);
+        const newNotesWithOctave = newMidiNotes.map(m => midiToNoteName(m));
+        const newNotes = [...new Set(newMidiNotes.map(m => midiToPitchClass(m)))];
+
+        // Re-interpret chord
+        const interpretation = interpretChord(newMidiNotes);
+
+        const updatedChord: Chord = {
+            ...chord,
+            midiNotes: newMidiNotes,
+            notesWithOctave: newNotesWithOctave,
+            notes: newNotes,
+            symbol: interpretation.isCustomVoicing && interpretation.customLabel
+                ? interpretation.customLabel
+                : interpretation.symbol,
+        };
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex ? updatedChord : c
+        );
+
+        const newSourceTypes = [...chordSourceTypes];
+        while (newSourceTypes.length < chords.length) newSourceTypes.push("generated");
+        newSourceTypes[chordIndex] = "manual";
+
+        set({
+            currentProgression: { ...currentProgression, chords },
+            chordSourceTypes: newSourceTypes,
+        });
+    },
+
+    removeNote: (chordIndex: number, midi: number) => {
+        const { currentProgression, chordSourceTypes } = get();
+        if (!currentProgression) return;
+
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord || !chord.midiNotes) return;
+
+        const newMidiNotes = chord.midiNotes.filter(m => m !== midi);
+        if (newMidiNotes.length === 0) return; // Don't remove last note
+
+        const newNotesWithOctave = newMidiNotes.map(m => midiToNoteName(m));
+        const newNotes = [...new Set(newMidiNotes.map(m => midiToPitchClass(m)))];
+
+        const interpretation = interpretChord(newMidiNotes);
+
+        const updatedChord: Chord = {
+            ...chord,
+            midiNotes: newMidiNotes,
+            notesWithOctave: newNotesWithOctave,
+            notes: newNotes,
+            symbol: interpretation.isCustomVoicing && interpretation.customLabel
+                ? interpretation.customLabel
+                : interpretation.symbol,
+        };
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex ? updatedChord : c
+        );
+
+        const newSourceTypes = [...chordSourceTypes];
+        while (newSourceTypes.length < chords.length) newSourceTypes.push("generated");
+        newSourceTypes[chordIndex] = "manual";
+
+        set({
+            currentProgression: { ...currentProgression, chords },
+            chordSourceTypes: newSourceTypes,
+        });
+    },
+
+    moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => {
+        const { currentProgression, chordSourceTypes } = get();
+        if (!currentProgression) return;
+
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord || !chord.midiNotes) return;
+
+        const noteIdx = chord.midiNotes.indexOf(fromMidi);
+        if (noteIdx === -1) return;
+
+        // Don't move to a position that already has a note
+        if (chord.midiNotes.includes(toMidi)) return;
+
+        const newMidiNotes = [...chord.midiNotes];
+        newMidiNotes[noteIdx] = toMidi;
+        newMidiNotes.sort((a, b) => a - b);
+
+        const newNotesWithOctave = newMidiNotes.map(m => midiToNoteName(m));
+        const newNotes = [...new Set(newMidiNotes.map(m => midiToPitchClass(m)))];
+
+        const interpretation = interpretChord(newMidiNotes);
+
+        const updatedChord: Chord = {
+            ...chord,
+            midiNotes: newMidiNotes,
+            notesWithOctave: newNotesWithOctave,
+            notes: newNotes,
+            symbol: interpretation.isCustomVoicing && interpretation.customLabel
+                ? interpretation.customLabel
+                : interpretation.symbol,
+        };
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex ? updatedChord : c
+        );
+
+        const newSourceTypes = [...chordSourceTypes];
+        while (newSourceTypes.length < chords.length) newSourceTypes.push("generated");
+        newSourceTypes[chordIndex] = "manual";
+
+        set({
+            currentProgression: { ...currentProgression, chords },
+            chordSourceTypes: newSourceTypes,
+        });
+    },
+
+    resetChord: (chordIndex: number) => {
+        const { originalChords } = get();
+        const original = originalChords.get(chordIndex);
+        if (original) {
+            get().revertChord(chordIndex);
+        }
     },
 }));

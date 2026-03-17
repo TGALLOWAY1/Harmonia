@@ -1,6 +1,6 @@
-# Harmonia — Chord Progression Generator & Harmonic Sketchpad
+# Harmonia — Chord Progression Generator & Harmonic Workstation
 
-Generate musically coherent chord progressions in any key and mode. Plan the harmonic structure of entire songs with the Harmonic Sketchpad. Hear everything instantly with real piano samples, edit individual notes, and export to MIDI.
+Generate musically coherent chord progressions in any key and mode. Refine them with theory-guided substitutions, controlled mutations, and direct note-level editing. Plan the harmonic structure of entire songs with the Harmonic Sketchpad. Hear everything instantly with real piano samples and export to MIDI.
 
 ![Harmonia screenshot](public/screenshot.png)
 
@@ -16,6 +16,14 @@ Generate musically coherent chord progressions in any key and mode. Plan the har
 - **Chord locking** — Lock specific chords to preserve them while regenerating the rest
 - **MIDI export** — Download your progression as a standard MIDI file
 - **Adjustable BPM** — 60–180 BPM with looping playback
+
+### Creative Iteration Tools
+
+Three complementary forms of control for refining generated progressions:
+
+- **Manual Chord Substitution** — Click any chord card to open a substitution panel with theory-approved alternatives. Options are grouped by category (diatonic, relative, dominant-function, tritone, modal mixture, inversion) with explanations of why each works. Preview before applying, and revert any time.
+- **Mutate Parameter** — Apply controlled variation to the current progression using an intensity slider (0–100). Low values make subtle voicing or inversion changes; higher values introduce harmonic substitutions or extension changes. A structured change summary shows exactly what was mutated, with full undo support.
+- **Interactive Piano Roll Editing** — Double-click empty grid cells to add notes, double-click existing notes to remove them, and drag notes vertically to change pitch. Harmonia re-interprets the chord label in real time after edits. Source badges (Generated, Substituted, Mutated, Edited) track the provenance of each chord. Reset any chord to its original state.
 
 ### Harmonic Sketchpad
 
@@ -63,6 +71,9 @@ Open [http://localhost:3000](http://localhost:3000) to start generating progress
 5. Use the piano roll to inspect voicings — click a note then **Cmd/Ctrl + Arrow Up/Down** to shift it by octave
 6. **Lock** chords you like, then regenerate to replace only the unlocked ones
 7. **Export MIDI** to bring your progression into a DAW
+8. Click the **substitute icon** on a chord card to browse theory-guided replacement options
+9. Use the **Mutate** slider and button to introduce controlled variation to the whole progression
+10. **Double-click** the piano roll grid to add or remove individual notes — chord labels update automatically
 
 ### Harmonic Sketchpad
 

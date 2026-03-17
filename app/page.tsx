@@ -4,10 +4,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Replace, Undo2, RotateCcw } from "lucide-react";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
-import { VerticalPianoRoll } from "@/components/progression/VerticalPianoRoll";
+import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
+import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
+import { MutationControls } from "@/components/creative/MutationControls";
 import type { Mode } from "@/lib/theory/harmonyEngine";
+import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 
 /* ─── Sound Presets ─── */
 
@@ -163,6 +166,23 @@ export default function HarmoniaPage() {
     shiftNote,
     setIsPlaying,
     exportMidi,
+    // Creative iteration
+    chordSourceTypes,
+    originalChords,
+    substitutionTarget,
+    substitutionOptions,
+    lastMutationChanges,
+    undoStack,
+    openSubstitution,
+    closeSubstitution,
+    applySubstitution,
+    revertChord,
+    mutate,
+    undoMutation,
+    addNote,
+    removeNote,
+    moveNote,
+    resetChord,
   } = useProgressionStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
@@ -386,6 +406,48 @@ export default function HarmoniaPage() {
     [isPlaying, setIsPlaying]
   );
 
+  // ─── Substitution handlers ───
+  const handleSubstitutionPreview = useCallback(
+    (option: SubstitutionOption) => {
+      if (synthRef.current) {
+        synthRef.current.releaseAll();
+        setTimeout(() => {
+          synthRef.current?.triggerAttackRelease(option.candidateNotesWithOctave, "2n");
+        }, 10);
+      }
+    },
+    []
+  );
+
+  const handleSubstitutionApply = useCallback(
+    (option: SubstitutionOption) => {
+      if (substitutionTarget === null) return;
+      applySubstitution(option, substitutionTarget);
+      // Preview the applied chord
+      if (synthRef.current) {
+        synthRef.current.releaseAll();
+        setTimeout(() => {
+          synthRef.current?.triggerAttackRelease(option.candidateNotesWithOctave, "2n");
+        }, 10);
+      }
+    },
+    [substitutionTarget, applySubstitution]
+  );
+
+  const handleSubstitutionRevert = useCallback(() => {
+    if (substitutionTarget === null) return;
+    revertChord(substitutionTarget);
+  }, [substitutionTarget, revertChord]);
+
+  // ─── Mutation handler ───
+  const handleMutate = useCallback(
+    (intensity: number) => {
+      if (isPlaying) setIsPlaying(false);
+      mutate(intensity);
+    },
+    [isPlaying, setIsPlaying, mutate]
+  );
+
   // Keyboard handler for chord deletion on selected chord card
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -594,7 +656,7 @@ export default function HarmoniaPage() {
           </div>
         </section>
 
-        {/* ── Chord Cards + Piano Roll (unified) ── */}
+        {/* ── Chord Cards + Piano Roll + Creative Tools ── */}
         <section>
           <AnimatePresence mode="wait">
             {currentProgression && currentProgression.chords.length > 0 ? (
@@ -616,6 +678,14 @@ export default function HarmoniaPage() {
                           ? chord.notesWithOctave
                           : chord.notes.map((n) => `${n}3`);
                       const colFlex = durationToFlex(chord.durationClass);
+                      const sourceType: ChordSourceType = chordSourceTypes[index] ?? "generated";
+
+                      const SOURCE_BADGE: Record<ChordSourceType, { color: string; label: string }> = {
+                        generated: { color: "", label: "" },
+                        substituted: { color: "bg-purple-500/20 text-purple-300", label: "Substituted" },
+                        mutated: { color: "bg-amber-500/20 text-amber-300", label: "Mutated" },
+                        manual: { color: "bg-emerald-500/20 text-emerald-300", label: "Edited" },
+                      };
 
                       return (
                         <motion.div
@@ -648,25 +718,45 @@ export default function HarmoniaPage() {
                             />
                           )}
 
-                          {/* Lock toggle */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleLock(index);
-                            }}
-                            className={`absolute top-1.5 right-1.5 p-1 rounded-md transition-colors ${
-                              chord.isLocked
-                                ? "text-accent hover:text-accent/80"
-                                : "text-muted/30 hover:text-muted/60"
-                            }`}
-                            title={chord.isLocked ? "Unlock chord" : "Lock chord"}
-                          >
-                            {chord.isLocked ? (
-                              <Lock className="w-3 h-3" />
-                            ) : (
-                              <Unlock className="w-3 h-3" />
-                            )}
-                          </button>
+                          {/* Top-left: source badge */}
+                          {sourceType !== "generated" && (
+                            <div className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-semibold ${SOURCE_BADGE[sourceType].color}`}>
+                              {SOURCE_BADGE[sourceType].label}
+                            </div>
+                          )}
+
+                          {/* Top-right: Lock toggle + Substitute button */}
+                          <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSubstitution(index);
+                                setSelectedChordIndex(index);
+                              }}
+                              className="p-1 rounded-md text-muted/30 hover:text-accent/70 transition-colors"
+                              title="Substitute chord"
+                            >
+                              <Replace className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLock(index);
+                              }}
+                              className={`p-1 rounded-md transition-colors ${
+                                chord.isLocked
+                                  ? "text-accent hover:text-accent/80"
+                                  : "text-muted/30 hover:text-muted/60"
+                              }`}
+                              title={chord.isLocked ? "Unlock chord" : "Lock chord"}
+                            >
+                              {chord.isLocked ? (
+                                <Lock className="w-3 h-3" />
+                              ) : (
+                                <Unlock className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
 
                           <div className="text-xs font-mono text-muted mb-1 tracking-wider">
                             {chord.romanNumeral}
@@ -677,8 +767,23 @@ export default function HarmoniaPage() {
                           </div>
                           {chord.durationClass && chord.durationClass !== "full" && (
                             <div className="mt-1 text-[9px] font-mono text-muted/50 uppercase tracking-widest">
-                              {chord.durationClass === "half" ? "2 beats" : chord.durationClass === "quarter" ? "1 beat" : "½ beat"}
+                              {chord.durationClass === "half" ? "2 beats" : chord.durationClass === "quarter" ? "1 beat" : "\u00BD beat"}
                             </div>
+                          )}
+
+                          {/* Revert indicator for modified chords */}
+                          {sourceType !== "generated" && originalChords.has(index) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                revertChord(index);
+                              }}
+                              className="mt-1.5 flex items-center gap-1 text-[9px] text-muted/50 hover:text-accent transition-colors"
+                              title="Revert to original"
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              revert
+                            </button>
                           )}
                         </motion.div>
                       );
@@ -686,8 +791,8 @@ export default function HarmoniaPage() {
                   </div>
                 </div>
 
-                {/* Piano Roll — directly below, unified */}
-                <VerticalPianoRoll
+                {/* Interactive Piano Roll */}
+                <InteractivePianoRoll
                   chords={currentProgression.chords}
                   playingIndex={playbackIndex}
                   selectedIndex={selectedChordIndex}
@@ -696,8 +801,43 @@ export default function HarmoniaPage() {
                   onShiftNote={shiftNote}
                   onSelectChord={setSelectedChordIndex}
                   onExportMidi={exportMidi}
+                  onAddNote={addNote}
+                  onRemoveNote={removeNote}
+                  onMoveNote={moveNote}
+                  onResetChord={resetChord}
+                  chordSourceTypes={chordSourceTypes}
                   playheadRef={playheadRef}
                 />
+
+                {/* Creative Iteration Tools */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  {/* Substitution Panel */}
+                  {substitutionTarget !== null && currentProgression.chords[substitutionTarget] && (
+                    <div className="lg:col-span-1">
+                      <SubstitutionPanel
+                        chord={currentProgression.chords[substitutionTarget]}
+                        chordIndex={substitutionTarget}
+                        substitutions={substitutionOptions}
+                        onPreview={handleSubstitutionPreview}
+                        onApply={handleSubstitutionApply}
+                        onRevert={handleSubstitutionRevert}
+                        onClose={closeSubstitution}
+                        canRevert={originalChords.has(substitutionTarget)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Mutation Controls */}
+                  <div className={substitutionTarget !== null ? "lg:col-span-1" : "lg:col-span-2 max-w-md"}>
+                    <MutationControls
+                      onMutate={handleMutate}
+                      onUndo={undoMutation}
+                      canUndo={undoStack.length > 0}
+                      lastChanges={lastMutationChanges}
+                      disabled={!currentProgression}
+                    />
+                  </div>
+                </div>
               </motion.div>
             ) : (
               <motion.div
