@@ -11,7 +11,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **5 modes** — Major, Minor, Dorian, Mixolydian, Phrygian
 - **4 complexity levels** — Simple triads through altered dominants, tritone substitutions, and passing chords
 - **Variable-duration chords** — Full, half, quarter, and eighth-note durations assigned contextually
-- **Real piano samples** — Salamander Grand Piano via Tone.js, plus Mellow, Bell, and Bright synth presets
+- **Multiple sound presets** — Salamander Grand Piano, Casio Electric Piano (with chorus), and FM Organ via Tone.js
 - **Interactive piano roll** — Click notes to preview, select and shift individual notes up/down by octave
 - **Chord locking** — Lock specific chords to preserve them while regenerating the rest
 - **MIDI export** — Download your progression as a standard MIDI file

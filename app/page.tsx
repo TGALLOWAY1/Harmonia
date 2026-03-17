@@ -12,21 +12,16 @@ import { MutationControls } from "@/components/creative/MutationControls";
 import { VoicingFeedback } from "@/components/feedback/VoicingFeedback";
 import { FeedbackChart } from "@/components/feedback/FeedbackChart";
 import { getInversionLabel } from "@/lib/theory/inversionLabel";
+import {
+  SOUND_PRESETS,
+  createSynthForPreset,
+  presetNeedsLoading,
+  type SoundPresetId,
+  type Synth,
+} from "@/lib/audio/synthPresets";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
-
-/* ─── Sound Presets ─── */
-
-type SoundPresetId = "piano" | "mellow" | "bell" | "bright";
-type Synth = Tone.PolySynth | Tone.Sampler;
-
-const SOUND_PRESETS: Array<{ id: SoundPresetId; label: string }> = [
-  { id: "piano", label: "Piano" },
-  { id: "mellow", label: "Mellow" },
-  { id: "bell", label: "Bell" },
-  { id: "bright", label: "Bright" },
-];
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: { value: Mode; label: string }[] = [
@@ -58,109 +53,6 @@ function durationToFlex(dc?: string): number {
     case "quarter": return 1;
     case "eighth": return 0.5;
     default: return 4;
-  }
-}
-
-/* ─── Effects Chain (shared) ─── */
-
-let masterReverb: Tone.Reverb | null = null;
-let masterCompressor: Tone.Compressor | null = null;
-let masterLimiter: Tone.Limiter | null = null;
-let pianoReverbNode: Tone.Reverb | null = null;
-
-function getEffectsChain(): { reverb: Tone.Reverb; compressor: Tone.Compressor; limiter: Tone.Limiter } {
-  if (!masterLimiter) {
-    masterLimiter = new Tone.Limiter(-3).toDestination();
-  }
-  if (!masterReverb) {
-    masterReverb = new Tone.Reverb({ decay: 1.8, wet: 0.2 }).connect(masterLimiter);
-  }
-  if (!masterCompressor) {
-    masterCompressor = new Tone.Compressor({
-      threshold: -18,
-      ratio: 4,
-      attack: 0.003,
-      release: 0.15,
-    }).connect(masterReverb);
-  }
-  return { reverb: masterReverb, compressor: masterCompressor, limiter: masterLimiter };
-}
-
-function getPianoReverb(): Tone.Reverb {
-  if (!pianoReverbNode) {
-    const { limiter } = getEffectsChain();
-    pianoReverbNode = new Tone.Reverb({ decay: 2.5, wet: 0.25 }).connect(limiter);
-  }
-  return pianoReverbNode;
-}
-
-function createSynthForPreset(
-  preset: SoundPresetId,
-  onLoaded?: () => void,
-): Synth {
-  const { compressor } = getEffectsChain();
-
-  switch (preset) {
-    case "piano": {
-      // Real piano samples (Salamander Grand Piano) via Tone.Sampler
-      const sampler = new Tone.Sampler({
-        urls: {
-          A1: "A1.mp3",
-          A2: "A2.mp3",
-          A3: "A3.mp3",
-          A4: "A4.mp3",
-          A5: "A5.mp3",
-          C2: "C2.mp3",
-          C3: "C3.mp3",
-          C4: "C4.mp3",
-          C5: "C5.mp3",
-          C6: "C6.mp3",
-          "D#2": "Ds2.mp3",
-          "D#3": "Ds3.mp3",
-          "D#4": "Ds4.mp3",
-          "D#5": "Ds5.mp3",
-          "F#2": "Fs2.mp3",
-          "F#3": "Fs3.mp3",
-          "F#4": "Fs4.mp3",
-          "F#5": "Fs5.mp3",
-        },
-        baseUrl: "https://tonejs.github.io/audio/salamander/",
-        release: 1,
-        volume: -6,
-        onload: () => onLoaded?.(),
-      });
-      sampler.connect(compressor);
-      sampler.connect(getPianoReverb());
-      return sampler;
-    }
-    case "mellow":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -14,
-        oscillator: { type: "triangle" },
-        envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
-      }).connect(compressor);
-    case "bell":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -12,
-        oscillator: { type: "sine" },
-        envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.6 },
-      }).connect(compressor);
-    case "bright":
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -16,
-        oscillator: { type: "sawtooth" },
-        envelope: { attack: 0.01, decay: 0.15, sustain: 0.4, release: 0.4 },
-      }).connect(compressor);
-    default:
-      onLoaded?.();
-      return new Tone.PolySynth(Tone.Synth, {
-        volume: -14,
-        oscillator: { type: "triangle" },
-        envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
-      }).connect(compressor);
   }
 }
 
@@ -218,7 +110,7 @@ export default function HarmoniaPage() {
   /* ─── Synth lifecycle ─── */
 
   useEffect(() => {
-    setIsSynthLoading(soundPreset === "piano");
+    setIsSynthLoading(presetNeedsLoading(soundPreset));
     const synth = createSynthForPreset(soundPreset, () => {
       setIsSynthLoading(false);
     });
