@@ -12,6 +12,7 @@ import {
 } from "@/lib/theory/midiUtils";
 import type { Chord } from "@/lib/theory/progressionTypes";
 import type { ChordSourceType } from "@/lib/creative/types";
+import type { MelodyNote } from "@/lib/music/generators/melody/types";
 
 export type InteractivePianoRollProps = {
   chords: Chord[];
@@ -28,10 +29,11 @@ export type InteractivePianoRollProps = {
   onResetChord?: (chordIndex: number) => void;
   chordSourceTypes?: ChordSourceType[];
   playheadRef?: React.Ref<HTMLDivElement>;
+  melodyNotes?: MelodyNote[];
 };
 
-/** Compute the MIDI range needed to display all notes, with padding. */
-function computeAutoRange(chords: Chord[]): { low: number; high: number } {
+/** Compute the MIDI range needed to display all notes (chord + melody), with padding. */
+function computeAutoRange(chords: Chord[], melodyNotes?: MelodyNote[]): { low: number; high: number } {
   let minMidi = Infinity;
   let maxMidi = -Infinity;
 
@@ -41,6 +43,13 @@ function computeAutoRange(chords: Chord[]): { low: number; high: number } {
         if (m < minMidi) minMidi = m;
         if (m > maxMidi) maxMidi = m;
       }
+    }
+  }
+
+  if (melodyNotes) {
+    for (const mn of melodyNotes) {
+      if (mn.midi < minMidi) minMidi = mn.midi;
+      if (mn.midi > maxMidi) maxMidi = mn.midi;
     }
   }
 
@@ -96,6 +105,7 @@ export function InteractivePianoRoll({
   onResetChord,
   chordSourceTypes,
   playheadRef,
+  melodyNotes,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
@@ -109,7 +119,22 @@ export function InteractivePianoRoll({
     }
   }, [selectedIndex]);
 
-  const autoRange = useMemo(() => computeAutoRange(chords), [chords]);
+  // Build per-chord melody note lookup
+  const melodyByChord = useMemo(() => {
+    const map = new Map<number, Set<number>>();
+    if (!melodyNotes) return map;
+    for (const mn of melodyNotes) {
+      let set = map.get(mn.chordIndex);
+      if (!set) {
+        set = new Set<number>();
+        map.set(mn.chordIndex, set);
+      }
+      set.add(mn.midi);
+    }
+    return map;
+  }, [melodyNotes]);
+
+  const autoRange = useMemo(() => computeAutoRange(chords, melodyNotes), [chords, melodyNotes]);
 
   const noteRange = useMemo(() => {
     const range = generateMidiRange(autoRange.low, autoRange.high);
@@ -375,6 +400,7 @@ export function InteractivePianoRoll({
                   const isWhite = isWhiteKey(midi);
                   const pClass = midiToPitchClass(midi);
                   const hasNote = midiSet ? midiSet.has(midi) : chordPcs!.has(pClass);
+                  const hasMelody = melodyByChord.get(colIdx)?.has(midi) ?? false;
                   const isRoot = midiSet
                     ? hasNote && pClass === rootPc
                     : pClass === rootPc;
@@ -390,10 +416,12 @@ export function InteractivePianoRoll({
                         !isWhite && "black-row",
                         hasNote && "has-note",
                         isRoot && "is-root",
+                        hasMelody && !hasNote && "melody-note",
+                        hasMelody && hasNote && "melody-chord-overlap",
                         isFlashing && "triggered",
                         isNoteSelected && "note-selected",
                         isDragTarget && "cursor-ns-resize",
-                        !hasNote && isSelected && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
+                        !hasNote && !hasMelody && isSelected && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
                       )}
                       data-note={pClass}
                       onClick={() => handleNoteClick(midi, colIdx, hasNote)}

@@ -519,6 +519,26 @@
   animation: noteFlash 0.25s ease-out;
 }
 
+/* ── Melody Overlay Notes ── */
+.note-cell.melody-note::after {
+  content: "";
+  position: absolute;
+  inset: 3px 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  opacity: 0.75;
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+  transition: opacity 0.15s;
+}
+.note-cell.melody-note:hover::after {
+  opacity: 1;
+}
+.note-cell.melody-chord-overlap::after {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 6px rgba(99, 102, 241, 0.5);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* ── Custom Range Input (BPM slider) ── */
 input[type="range"] {
   -webkit-appearance: none;

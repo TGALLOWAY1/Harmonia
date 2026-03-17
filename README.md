@@ -18,6 +18,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **Voicing controls** — Choose voicing style (Tight, Balanced, Open) and density (Sparse 3-voice, Standard 4-voice, Rich 5-voice) via a collapsible panel
 - **Inversion labels** — Each chord card shows its current inversion (Root, 1st inv, 2nd inv, 3rd inv)
 - **Voicing feedback** — Rate generated voicings with thumbs up/down; view approval trends over time in the feedback chart
+- **Melody overlay** — Toggle melody generation to hear a monophonic melody line over chords. Three styles: Lyrical (stepwise, longer notes), Rhythmic (shorter notes, syncopation), and Arpeggiated (chord-tone focused). Melody notes are displayed on the piano roll with distinct styling and play on a separate synth voice
 - **Adjustable BPM** — 60–180 BPM with looping playback
 
 ### Creative Iteration Tools
@@ -77,6 +78,7 @@ Open [http://localhost:3000](http://localhost:3000) to start generating progress
 8. Click the **substitute icon** on a chord card to browse theory-guided replacement options
 9. Use the **Mutate** slider and button to introduce controlled variation to the whole progression
 10. **Double-click** the piano roll grid to add or remove individual notes — chord labels update automatically
+11. Click **Melody** to enable melody generation — choose a style (Lyrical, Rhythmic, Arpeggio) and click **Regenerate Melody** for a new line
 
 ### Harmonic Sketchpad
 

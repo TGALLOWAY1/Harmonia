@@ -22,6 +22,7 @@ import {
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
+import type { MelodyStyle } from "@/lib/music/generators/melody/types";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: { value: Mode; label: string }[] = [
@@ -43,6 +44,12 @@ const VOICE_COUNTS: { value: VoiceCount; label: string }[] = [
   { value: 3, label: "Sparse" },
   { value: 4, label: "Standard" },
   { value: 5, label: "Rich" },
+];
+
+const MELODY_STYLES: { value: MelodyStyle; label: string }[] = [
+  { value: "lyrical", label: "Lyrical" },
+  { value: "rhythmic", label: "Rhythmic" },
+  { value: "arpeggiated", label: "Arpeggio" },
 ];
 
 /** Map durationClass to a flex multiplier for column width alignment. */
@@ -93,6 +100,13 @@ export default function HarmoniaPage() {
     removeNote,
     moveNote,
     resetChord,
+    // Melody
+    melody,
+    melodyEnabled,
+    melodyStyle,
+    setMelodyEnabled,
+    setMelodyStyle,
+    generateMelodyForProgression,
   } = useProgressionStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
@@ -103,6 +117,7 @@ export default function HarmoniaPage() {
   const [showVoicingControls, setShowVoicingControls] = useState(false);
 
   const synthRef = useRef<Synth | null>(null);
+  const melodySynthRef = useRef<Tone.Synth | null>(null);
   const playbackIndexRef = useRef(0);
   const playheadRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -122,6 +137,28 @@ export default function HarmoniaPage() {
       synthRef.current = null;
     };
   }, [soundPreset]);
+
+  /* ─── Melody synth lifecycle ─── */
+
+  useEffect(() => {
+    if (!melodyEnabled) {
+      if (melodySynthRef.current) {
+        melodySynthRef.current.dispose();
+        melodySynthRef.current = null;
+      }
+      return;
+    }
+    const synth = new Tone.Synth({
+      volume: -8,
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.02, decay: 0.15, sustain: 0.3, release: 0.4 },
+    }).toDestination();
+    melodySynthRef.current = synth;
+    return () => {
+      synth.dispose();
+      melodySynthRef.current = null;
+    };
+  }, [melodyEnabled]);
 
   /* ─── Transport BPM ─── */
 
@@ -213,6 +250,22 @@ export default function HarmoniaPage() {
       beatOffset += beats;
     }
 
+    // Schedule melody notes
+    if (melody && melodyEnabled && melodySynthRef.current) {
+      for (const mn of melody.notes) {
+        const mBars = Math.floor(mn.startBeat / 4);
+        const mQuarters = Math.floor(mn.startBeat % 4);
+        const mSixteenths = (mn.startBeat % 1) * 4;
+        const mTimeStr = `${mBars}:${mQuarters}:${mSixteenths}`;
+        const mDuration = beatsToDuration(mn.durationBeats);
+
+        const mid = Tone.getTransport().schedule((time) => {
+          melodySynthRef.current?.triggerAttackRelease(mn.noteWithOctave, mDuration, time);
+        }, mTimeStr);
+        ids.push(mid);
+      }
+    }
+
     scheduleIdsRef.current = ids;
 
     // Set loop points so the progression repeats
@@ -230,7 +283,7 @@ export default function HarmoniaPage() {
       Tone.getTransport().loop = false;
       Tone.getDraw().cancel(0);
     };
-  }, [isPlaying, currentProgression, durationToBeats, beatsToDuration]);
+  }, [isPlaying, currentProgression, durationToBeats, beatsToDuration, melody, melodyEnabled]);
 
   /* ─── Playhead animation ─── */
 
@@ -539,6 +592,19 @@ export default function HarmoniaPage() {
               <ChevronDown className={`w-3 h-3 transition-transform ${showVoicingControls ? "rotate-180" : ""}`} />
             </button>
 
+            {/* Melody toggle */}
+            <button
+              onClick={() => setMelodyEnabled(!melodyEnabled)}
+              className={`flex items-center gap-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                melodyEnabled
+                  ? "border-accent/30 bg-accent/5 text-foreground"
+                  : "border-border-subtle bg-surface-muted text-muted hover:text-foreground"
+              }`}
+            >
+              Melody
+              {melodyEnabled && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
+            </button>
+
             {/* Spacer */}
             <div className="flex-1" />
 
@@ -630,6 +696,43 @@ export default function HarmoniaPage() {
               <p className="text-[10px] text-muted/50 self-end pb-1">
                 Changes apply on next Generate
               </p>
+            </div>
+          )}
+
+          {/* Melody controls (collapsible) */}
+          {melodyEnabled && (
+            <div className="mt-4 pt-4 border-t border-border-subtle flex flex-wrap items-end gap-4">
+              {/* Melody Style */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-muted uppercase tracking-wider">
+                  Melody Style
+                </label>
+                <div className="flex rounded-lg border border-border-subtle overflow-hidden">
+                  {MELODY_STYLES.map((ms) => (
+                    <button
+                      key={ms.value}
+                      onClick={() => setMelodyStyle(ms.value)}
+                      className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                        melodyStyle === ms.value
+                          ? "bg-accent text-white"
+                          : "bg-surface-muted hover:bg-surface text-muted"
+                      }`}
+                    >
+                      {ms.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Regenerate melody */}
+              <button
+                onClick={generateMelodyForProgression}
+                disabled={!currentProgression}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-subtle bg-surface-muted hover:bg-accent/10 hover:border-accent/30 text-xs font-medium text-muted hover:text-foreground transition-all disabled:opacity-40"
+              >
+                <Sparkles className="w-3 h-3" />
+                Regenerate Melody
+              </button>
             </div>
           )}
         </section>
@@ -804,6 +907,7 @@ export default function HarmoniaPage() {
                   onResetChord={resetChord}
                   chordSourceTypes={chordSourceTypes}
                   playheadRef={playheadRef}
+                  melodyNotes={melodyEnabled ? melody?.notes : undefined}
                 />
 
                 {/* Creative Iteration Tools */}
