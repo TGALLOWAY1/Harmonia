@@ -85,6 +85,7 @@ export default function HarmoniaPage() {
     shiftNote,
     setIsPlaying,
     exportMidi,
+    exportMelodyMidi,
     loadProgression,
     // Creative iteration
     chordSourceTypes,
@@ -978,6 +979,7 @@ export default function HarmoniaPage() {
                   melodyNotes={melodyEnabled && melody ? melody.notes : undefined}
                   showMelody={melodyEnabled && showMelodyOnRoll}
                   onToggleMelody={melodyEnabled ? () => setShowMelodyOnRoll(!showMelodyOnRoll) : undefined}
+                  onExportMelodyMidi={melodyEnabled && melody ? exportMelodyMidi : undefined}
                 />
 
                 {/* Substitution Panel */}

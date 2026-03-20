@@ -32,6 +32,7 @@ export type InteractivePianoRollProps = {
   melodyNotes?: MelodyNote[];
   showMelody?: boolean;
   onToggleMelody?: () => void;
+  onExportMelodyMidi?: () => void;
 };
 
 /** Compute the MIDI range needed to display all chord notes, with padding. */
@@ -71,6 +72,17 @@ function durationFlex(dc?: string): number {
   }
 }
 
+/** Convert durationClass to beat count. */
+function durationToBeats(dc?: string): number {
+  switch (dc) {
+    case "full": return 4;
+    case "half": return 2;
+    case "quarter": return 1;
+    case "eighth": return 0.5;
+    default: return 4;
+  }
+}
+
 const SOURCE_BADGE_COLORS: Record<ChordSourceType, string> = {
   generated: "bg-blue-500/20 text-blue-300",
   substituted: "bg-purple-500/20 text-purple-300",
@@ -101,6 +113,7 @@ export function InteractivePianoRoll({
   melodyNotes,
   showMelody,
   onToggleMelody,
+  onExportMelodyMidi,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
@@ -114,16 +127,28 @@ export function InteractivePianoRoll({
     }
   }, [selectedIndex]);
 
-  // Build a set of melody MIDI notes per chord index for quick lookup
+  // Group melody notes by chord index for overlay rendering
   const melodyByChord = useMemo(() => {
-    if (!showMelody || !melodyNotes) return new Map<number, Set<number>>();
-    const map = new Map<number, Set<number>>();
+    if (!showMelody || !melodyNotes) return new Map<number, MelodyNote[]>();
+    const map = new Map<number, MelodyNote[]>();
     for (const mn of melodyNotes) {
-      if (!map.has(mn.chordIndex)) map.set(mn.chordIndex, new Set());
-      map.get(mn.chordIndex)!.add(mn.midi);
+      const list = map.get(mn.chordIndex) ?? [];
+      list.push(mn);
+      map.set(mn.chordIndex, list);
     }
     return map;
   }, [showMelody, melodyNotes]);
+
+  // Beat offsets per chord for melody bar positioning
+  const chordBeatOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let beat = 0;
+    for (const chord of chords) {
+      offsets.push(beat);
+      beat += durationToBeats(chord.durationClass);
+    }
+    return offsets;
+  }, [chords]);
 
   const autoRange = useMemo(() => {
     const range = computeAutoRange(chords);
@@ -341,6 +366,15 @@ export function InteractivePianoRoll({
               Export MIDI
             </button>
           )}
+          {onExportMelodyMidi && showMelody && (
+            <button
+              onClick={onExportMelodyMidi}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/30 bg-surface hover:bg-amber-500/10 text-xs font-medium transition-colors text-amber-300 hover:text-amber-200"
+            >
+              <Download className="w-3 h-3" />
+              Export Melody
+            </button>
+          )}
         </div>
       </div>
 
@@ -411,41 +445,68 @@ export function InteractivePianoRoll({
                   </div>
                 </div>
 
-                {noteRange.map((midi) => {
-                  const isWhite = isWhiteKey(midi);
-                  const pClass = midiToPitchClass(midi);
-                  const hasNote = midiSet ? midiSet.has(midi) : chordPcs!.has(pClass);
-                  const hasMelodyNote = melodyByChord.get(colIdx)?.has(midi) ?? false;
-                  const isRoot = midiSet
-                    ? hasNote && pClass === rootPc
-                    : pClass === rootPc;
-                  const isFlashing = flashingNote === midi && hoveredColumnIdx === colIdx;
-                  const isNoteSelected = selectedNote?.chordIndex === colIdx && selectedNote?.midi === midi;
-                  const isDragTarget = isDragging && dragStart?.chordIndex === colIdx;
+                <div className="roll-col-cells">
+                  {noteRange.map((midi) => {
+                    const isWhite = isWhiteKey(midi);
+                    const pClass = midiToPitchClass(midi);
+                    const hasNote = midiSet ? midiSet.has(midi) : chordPcs!.has(pClass);
+                    const isRoot = midiSet
+                      ? hasNote && pClass === rootPc
+                      : pClass === rootPc;
+                    const isFlashing = flashingNote === midi && hoveredColumnIdx === colIdx;
+                    const isNoteSelected = selectedNote?.chordIndex === colIdx && selectedNote?.midi === midi;
+                    const isDragTarget = isDragging && dragStart?.chordIndex === colIdx;
 
-                  return (
-                    <div
-                      key={midi}
-                      className={clsx(
-                        "note-cell",
-                        !isWhite && "black-row",
-                        hasNote && "has-note",
-                        isRoot && "is-root",
-                        hasMelodyNote && !hasNote && "melody-note",
-                        hasMelodyNote && hasNote && "melody-chord-overlap",
-                        isFlashing && "triggered",
-                        isNoteSelected && "note-selected",
-                        isDragTarget && "cursor-ns-resize",
-                        !hasNote && !hasMelodyNote && isSelected && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
-                      )}
-                      data-note={pClass}
-                      onClick={() => handleNoteClick(midi, colIdx, hasNote)}
-                      onDoubleClick={() => handleDoubleClick(midi, colIdx, hasNote)}
-                      onMouseDown={() => handleMouseDown(midi, colIdx, hasNote)}
-                      onMouseEnter={() => handleMouseEnterCell(midi, colIdx)}
-                    />
-                  );
-                })}
+                    return (
+                      <div
+                        key={midi}
+                        className={clsx(
+                          "note-cell",
+                          !isWhite && "black-row",
+                          hasNote && "has-note",
+                          isRoot && "is-root",
+                          isFlashing && "triggered",
+                          isNoteSelected && "note-selected",
+                          isDragTarget && "cursor-ns-resize",
+                          !hasNote && isSelected && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
+                        )}
+                        data-note={pClass}
+                        onClick={() => handleNoteClick(midi, colIdx, hasNote)}
+                        onDoubleClick={() => handleDoubleClick(midi, colIdx, hasNote)}
+                        onMouseDown={() => handleMouseDown(midi, colIdx, hasNote)}
+                        onMouseEnter={() => handleMouseEnterCell(midi, colIdx)}
+                      />
+                    );
+                  })}
+
+                  {/* Melody note bar overlays */}
+                  {showMelody && (melodyByChord.get(colIdx) ?? []).map((mn) => {
+                    const chordBeats = durationToBeats(chord.durationClass);
+                    const localBeat = mn.startBeat - chordBeatOffsets[colIdx];
+                    const leftPct = (localBeat / chordBeats) * 100;
+                    const widthPct = (mn.durationBeats / chordBeats) * 100;
+                    const rowIdx = noteRange.indexOf(mn.midi);
+                    if (rowIdx === -1) return null;
+                    const topPct = (rowIdx / noteRange.length) * 100;
+                    const heightPct = (1 / noteRange.length) * 100;
+
+                    return (
+                      <div
+                        key={mn.id}
+                        className={clsx("melody-overlay-bar", mn.isChordTone && "chord-tone")}
+                        style={{
+                          left: `${leftPct}%`,
+                          width: `${Math.max(widthPct, 2)}%`,
+                          top: `${topPct}%`,
+                          height: `${heightPct}%`,
+                        }}
+                        title={`${mn.noteWithOctave} (${mn.durationBeats}b)`}
+                      >
+                        <span className="melody-bar-label">{mn.noteWithOctave}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}

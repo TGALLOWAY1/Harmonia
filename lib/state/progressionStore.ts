@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Progression, Chord } from "../theory/progressionTypes";
 import type { Mode } from "../theory/harmonyEngine";
 import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
-import { progressionToMidi } from "../progressionMidiExport";
+import { progressionToMidi, melodyToMidi } from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { AdvancedProgressionOptions, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
 import type { ChordSourceType, SubstitutionOption } from "../creative/types";
@@ -56,6 +56,7 @@ interface ProgressionState {
     setIsPlaying: (playing: boolean) => void;
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
+    exportMelodyMidi: () => void;
     loadProgression: (progression: Progression) => void;
 
     // Creative iteration actions
@@ -311,6 +312,19 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         const a = document.createElement("a");
         a.href = url;
         a.download = `harmonia-${rootKey}-${mode}-${Date.now()}.mid`;
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+
+    exportMelodyMidi: () => {
+        const { melody, bpm, rootKey, mode } = get();
+        if (!melody || melody.notes.length === 0) return;
+
+        const blob = melodyToMidi(melody.notes, bpm);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `harmonia-melody-${rootKey}-${mode}-${Date.now()}.mid`;
         a.click();
         URL.revokeObjectURL(url);
     },

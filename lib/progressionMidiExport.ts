@@ -1,6 +1,7 @@
 import { Midi } from "@tonejs/midi";
 import { Note } from "@tonaljs/tonal";
 import type { DurationClass } from "./music/generators/advanced/types";
+import type { MelodyNote } from "./music/generators/melody/types";
 
 export type ProgressionChord = {
   symbol: string;
@@ -69,6 +70,32 @@ export function progressionToMidi(
 
     currentBeat += beats;
   });
+
+  const bytes = midi.toArray();
+  return new Blob([bytes as BlobPart], { type: "audio/midi" });
+}
+
+/**
+ * Export melody notes to a MIDI file.
+ * Each melody note is placed at its exact beat position with proper duration.
+ */
+export function melodyToMidi(notes: MelodyNote[], bpm: number): Blob {
+  const midi = new Midi();
+  midi.header.setTempo(bpm);
+  midi.header.name = "Harmonia Melody";
+
+  const track = midi.addTrack();
+  track.name = "Harmonia Melody";
+  const secondsPerBeat = 60 / bpm;
+
+  for (const note of notes) {
+    track.addNote({
+      midi: note.midi,
+      time: note.startBeat * secondsPerBeat,
+      duration: note.durationBeats * secondsPerBeat * 0.95,
+      velocity: note.isChordTone ? 0.75 : 0.68,
+    });
+  }
 
   const bytes = midi.toArray();
   return new Blob([bytes as BlobPart], { type: "audio/midi" });
