@@ -10,7 +10,7 @@ import type { DurationClass } from "../music/generators/advanced/types";
 
 // ─── Source Tracking ───
 
-export type ChordSourceType = "generated" | "substituted" | "mutated" | "manual";
+export type ChordSourceType = "generated" | "substituted" | "manual";
 export type NoteSourceType = "generated" | "user_added" | "user_moved";
 
 // ─── Progression Chord (extended) ───
@@ -57,24 +57,6 @@ export interface SubstitutionOption {
   category: SubstitutionCategory;
   reason: string;
   confidenceScore: number;       // 0-1
-}
-
-// ─── Mutation Record ───
-
-export interface MutationChange {
-  chordIndex: number;
-  changeType: "inversion" | "voicing" | "register" | "extension" | "substitution" | "color";
-  description: string;
-  before: string;
-  after: string;
-}
-
-export interface MutationRecord {
-  id: string;
-  progressionId: string;
-  mutationIntensity: number;    // 0-100
-  changes: MutationChange[];
-  createdAt: number;
 }
 
 // ─── Note Event ───

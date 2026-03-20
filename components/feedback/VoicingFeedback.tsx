@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { ThumbsUp, ThumbsDown } from "lucide-react";
 import { useFeedbackStore, type FeedbackEntry, type FeedbackRating } from "@/lib/feedback/feedbackStore";
 import type { Progression } from "@/lib/theory/progressionTypes";
@@ -27,13 +27,21 @@ export function VoicingFeedback({
   voiceCount,
 }: VoicingFeedbackProps) {
   const addFeedback = useFeedbackStore((s) => s.addFeedback);
-  const [submitted, setSubmitted] = useState<FeedbackRating | null>(null);
+  const entries = useFeedbackStore((s) => s.entries);
+
+  // Derive persisted rating for the current progression
+  const persistedRating = useMemo(() => {
+    const existing = entries.find((e) => e.progressionId === progression.id);
+    return existing ? existing.rating : null;
+  }, [entries, progression.id]);
+
+  const [submitted, setSubmitted] = useState<FeedbackRating | null>(persistedRating);
   const [fadeKey, setFadeKey] = useState(progression.id);
 
-  // Reset when progression changes
+  // Reset when progression changes, restoring any persisted rating
   if (fadeKey !== progression.id) {
     setFadeKey(progression.id);
-    setSubmitted(null);
+    setSubmitted(persistedRating);
   }
 
   const handleRate = useCallback(

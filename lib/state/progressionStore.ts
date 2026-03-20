@@ -5,9 +5,8 @@ import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClas
 import { progressionToMidi } from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { AdvancedProgressionOptions, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
-import type { ChordSourceType, MutationChange, SubstitutionOption } from "../creative/types";
+import type { ChordSourceType, SubstitutionOption } from "../creative/types";
 import { getSubstitutions } from "../creative/substitutionEngine";
-import { mutateProgression } from "../creative/mutationEngine";
 import { interpretChord } from "../creative/chordInterpreter";
 import { generateMelody } from "../music/generators/melody/generateMelody";
 import type { Melody, MelodyNote, MelodyStyle } from "../music/generators/melody/types";
@@ -44,10 +43,6 @@ interface ProgressionState {
     originalChords: Map<number, Chord>;     // Original chord data for revert, keyed by index
     substitutionTarget: number | null;       // Index of chord being substituted
     substitutionOptions: SubstitutionOption[];
-    mutationIntensity: number;
-    lastMutationChanges: MutationChange[];
-    undoStack: Progression[];
-
     // Melody state
     melody: Melody | null;
     melodyEnabled: boolean;
@@ -61,14 +56,13 @@ interface ProgressionState {
     setIsPlaying: (playing: boolean) => void;
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
+    loadProgression: (progression: Progression) => void;
 
     // Creative iteration actions
     openSubstitution: (chordIndex: number) => void;
     closeSubstitution: () => void;
     applySubstitution: (option: SubstitutionOption, chordIndex: number) => void;
     revertChord: (chordIndex: number) => void;
-    mutate: (intensity: number) => void;
-    undoMutation: () => void;
     addNote: (chordIndex: number, midi: number) => void;
     removeNote: (chordIndex: number, midi: number) => void;
     moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => void;
@@ -147,10 +141,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     originalChords: new Map(),
     substitutionTarget: null,
     substitutionOptions: [],
-    mutationIntensity: 30,
-    lastMutationChanges: [],
-    undoStack: [],
-
     // Melody initial state
     melody: null,
     melodyEnabled: false,
@@ -220,8 +210,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             originalChords: new Map(),
             substitutionTarget: null,
             substitutionOptions: [],
-            lastMutationChanges: [],
-            undoStack: [],
             melody: null,
         });
         get().addToHistory(progression);
@@ -327,6 +315,21 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         URL.revokeObjectURL(url);
     },
 
+    loadProgression: (progression: Progression) => {
+        const sourceTypes: ChordSourceType[] = progression.chords.map(() => "generated");
+        set({
+            currentProgression: progression,
+            chordSourceTypes: sourceTypes,
+            originalChords: new Map(),
+            substitutionTarget: null,
+            substitutionOptions: [],
+            melody: null,
+        });
+        if (get().melodyEnabled) {
+            get().generateMelodyForProgression();
+        }
+    },
+
     // ─── Creative Iteration Actions ───
 
     openSubstitution: (chordIndex: number) => {
@@ -412,57 +415,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             currentProgression: { ...currentProgression, chords },
             originalChords: newOriginals,
             chordSourceTypes: newSourceTypes,
-        });
-    },
-
-    mutate: (intensity: number) => {
-        const { currentProgression, rootKey, mode, chordSourceTypes } = get();
-        if (!currentProgression) return;
-
-        // Save current state for undo
-        const undoStack = [...get().undoStack, { ...currentProgression, chords: [...currentProgression.chords] }].slice(-10);
-
-        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
-        const lockedIndices = new Set(
-            currentProgression.chords
-                .map((c, i) => c.isLocked ? i : -1)
-                .filter(i => i >= 0)
-        );
-
-        const result = mutateProgression(
-            currentProgression.chords,
-            intensity,
-            rootPC,
-            mode,
-            lockedIndices,
-        );
-
-        const newSourceTypes = [...chordSourceTypes];
-        while (newSourceTypes.length < result.chords.length) newSourceTypes.push("generated");
-        for (const change of result.record.changes) {
-            newSourceTypes[change.chordIndex] = "mutated";
-        }
-
-        set({
-            currentProgression: { ...currentProgression, chords: result.chords },
-            chordSourceTypes: newSourceTypes,
-            lastMutationChanges: result.record.changes,
-            mutationIntensity: intensity,
-            undoStack,
-        });
-    },
-
-    undoMutation: () => {
-        const { undoStack } = get();
-        if (undoStack.length === 0) return;
-
-        const previous = undoStack[undoStack.length - 1];
-        const newStack = undoStack.slice(0, -1);
-
-        set({
-            currentProgression: previous,
-            undoStack: newStack,
-            lastMutationChanges: [],
         });
     },
 

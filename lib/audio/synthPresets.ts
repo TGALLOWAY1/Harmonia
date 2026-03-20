@@ -11,6 +11,7 @@ import * as Tone from "tone";
 
 export type SoundPresetId = "piano" | "electric-piano" | "organ";
 export type Synth = Tone.PolySynth | Tone.Sampler;
+export type MelodySynth = Tone.Synth | Tone.FMSynth | Tone.Sampler;
 
 export const SOUND_PRESETS: ReadonlyArray<{ id: SoundPresetId; label: string }> = [
   { id: "piano", label: "Piano" },
@@ -158,6 +159,76 @@ export function createSynthForPreset(
       onLoaded?.();
       return new Tone.PolySynth(Tone.Synth, {
         volume: -14,
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
+      }).connect(compressor);
+    }
+  }
+}
+
+/**
+ * Create a melody synth that matches the given preset timbre.
+ * Uses the same samples/synthesis as chords but configured for monophonic melody.
+ */
+export function createMelodySynthForPreset(
+  preset: SoundPresetId,
+  onLoaded?: () => void,
+): MelodySynth {
+  const { compressor } = getEffectsChain();
+
+  switch (preset) {
+    case "piano": {
+      const sampler = new Tone.Sampler({
+        urls: {
+          A1: "A1.mp3", A2: "A2.mp3", A3: "A3.mp3", A4: "A4.mp3", A5: "A5.mp3",
+          C2: "C2.mp3", C3: "C3.mp3", C4: "C4.mp3", C5: "C5.mp3", C6: "C6.mp3",
+          "D#2": "Ds2.mp3", "D#3": "Ds3.mp3", "D#4": "Ds4.mp3", "D#5": "Ds5.mp3",
+          "F#2": "Fs2.mp3", "F#3": "Fs3.mp3", "F#4": "Fs4.mp3", "F#5": "Fs5.mp3",
+        },
+        baseUrl: "https://tonejs.github.io/audio/salamander/",
+        release: 1,
+        volume: -4,
+        onload: () => onLoaded?.(),
+      });
+      sampler.connect(compressor);
+      sampler.connect(getPianoReverb());
+      return sampler;
+    }
+
+    case "electric-piano": {
+      const sampler = new Tone.Sampler({
+        urls: {
+          A1: "A1.mp3", A2: "A2.mp3", A3: "A3.mp3", A4: "A4.mp3", A5: "A5.mp3",
+          C2: "C2.mp3", C3: "C3.mp3", C4: "C4.mp3", C5: "C5.mp3", C6: "C6.mp3",
+          "D#2": "Ds2.mp3", "D#3": "Ds3.mp3", "D#4": "Ds4.mp3", "D#5": "Ds5.mp3",
+          "F#2": "Fs2.mp3", "F#3": "Fs3.mp3", "F#4": "Fs4.mp3", "F#5": "Fs5.mp3",
+        },
+        baseUrl: "https://tonejs.github.io/audio/casio/",
+        release: 0.8,
+        volume: -6,
+        onload: () => onLoaded?.(),
+      });
+      sampler.connect(getEPChorus());
+      return sampler;
+    }
+
+    case "organ": {
+      onLoaded?.();
+      return new Tone.FMSynth({
+        volume: -12,
+        harmonicity: 1,
+        modulationIndex: 0.5,
+        oscillator: { type: "sine" },
+        modulation: { type: "sine" },
+        envelope: { attack: 0.04, decay: 0.1, sustain: 0.9, release: 0.3 },
+        modulationEnvelope: { attack: 0.02, decay: 0.1, sustain: 0.8, release: 0.3 },
+      }).connect(compressor);
+    }
+
+    default: {
+      onLoaded?.();
+      return new Tone.Synth({
+        volume: -12,
         oscillator: { type: "triangle" },
         envelope: { attack: 0.06, decay: 0.2, sustain: 0.6, release: 0.8 },
       }).connect(compressor);

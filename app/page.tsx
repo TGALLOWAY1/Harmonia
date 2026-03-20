@@ -4,21 +4,22 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Replace, Undo2, RotateCcw, ChevronDown } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Replace, RotateCcw, ChevronDown, Heart, Trash2, Upload } from "lucide-react";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
-import { MelodyLane } from "@/components/creative/MelodyLane";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
-import { MutationControls } from "@/components/creative/MutationControls";
 import { VoicingFeedback } from "@/components/feedback/VoicingFeedback";
 import { FeedbackChart } from "@/components/feedback/FeedbackChart";
 import { getInversionLabel } from "@/lib/theory/inversionLabel";
+import { useFavoritesStore } from "@/lib/favorites/favoritesStore";
 import {
   SOUND_PRESETS,
   createSynthForPreset,
+  createMelodySynthForPreset,
   presetNeedsLoading,
   type SoundPresetId,
   type Synth,
+  type MelodySynth,
 } from "@/lib/audio/synthPresets";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
@@ -84,19 +85,16 @@ export default function HarmoniaPage() {
     shiftNote,
     setIsPlaying,
     exportMidi,
+    loadProgression,
     // Creative iteration
     chordSourceTypes,
     originalChords,
     substitutionTarget,
     substitutionOptions,
-    lastMutationChanges,
-    undoStack,
     openSubstitution,
     closeSubstitution,
     applySubstitution,
     revertChord,
-    mutate,
-    undoMutation,
     addNote,
     removeNote,
     moveNote,
@@ -108,11 +106,9 @@ export default function HarmoniaPage() {
     setMelodyEnabled,
     setMelodyStyle,
     generateMelodyForProgression,
-    addMelodyNote,
-    moveMelodyNote,
-    resizeMelodyNote,
-    deleteMelodyNote,
   } = useProgressionStore();
+
+  const { favorites, addFavorite, removeFavorite } = useFavoritesStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
   const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
@@ -120,9 +116,11 @@ export default function HarmoniaPage() {
   const [isSynthLoading, setIsSynthLoading] = useState(false);
   const [selectedChordIndex, setSelectedChordIndex] = useState<number | null>(null);
   const [showVoicingControls, setShowVoicingControls] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
 
   const synthRef = useRef<Synth | null>(null);
-  const melodySynthRef = useRef<Tone.Synth | null>(null);
+  const melodySynthRef = useRef<MelodySynth | null>(null);
   const playbackIndexRef = useRef(0);
   const playheadRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -153,17 +151,13 @@ export default function HarmoniaPage() {
       }
       return;
     }
-    const synth = new Tone.Synth({
-      volume: -8,
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.02, decay: 0.15, sustain: 0.3, release: 0.4 },
-    }).toDestination();
+    const synth = createMelodySynthForPreset(soundPreset);
     melodySynthRef.current = synth;
     return () => {
       synth.dispose();
       melodySynthRef.current = null;
     };
-  }, [melodyEnabled]);
+  }, [melodyEnabled, soundPreset]);
 
   /* ─── Transport BPM ─── */
 
@@ -220,7 +214,8 @@ export default function HarmoniaPage() {
     for (const chord of chords) {
       totalBeats += durationToBeats(chord.durationClass);
     }
-    const totalMeasures = totalBeats / 4; // in Tone.js "measures" at 4/4
+    const releaseBuffer = 1; // 1 beat buffer for note release tails
+    const totalMeasures = Math.ceil((totalBeats + releaseBuffer) / 4); // in Tone.js "measures" at 4/4
 
     // Schedule each chord at its correct beat offset using musical time (bars:quarters:sixteenths)
     let beatOffset = 0;
@@ -407,15 +402,6 @@ export default function HarmoniaPage() {
     if (substitutionTarget === null) return;
     revertChord(substitutionTarget);
   }, [substitutionTarget, revertChord]);
-
-  // ─── Mutation handler ───
-  const handleMutate = useCallback(
-    (intensity: number) => {
-      if (isPlaying) setIsPlaying(false);
-      mutate(intensity);
-    },
-    [isPlaying, setIsPlaying, mutate]
-  );
 
   // Keyboard handler for chord deletion on selected chord card
   useEffect(() => {
@@ -649,6 +635,32 @@ export default function HarmoniaPage() {
               <Sparkles className="w-4 h-4" />
               Generate
             </button>
+
+            {/* Save to Favorites */}
+            <button
+              onClick={() => {
+                if (!currentProgression) return;
+                const name = `${rootKey} ${mode} — ${currentProgression.chords.map(c => c.symbol).join(" · ")}`;
+                addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
+              }}
+              disabled={!currentProgression}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors disabled:opacity-40"
+              title="Save to favorites"
+            >
+              <Heart className="w-3.5 h-3.5" />
+              Save
+            </button>
+
+            {/* Show Favorites */}
+            <button
+              onClick={() => setShowFavorites(!showFavorites)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full border border-border-subtle text-xs font-medium transition-colors ${
+                showFavorites ? "bg-accent/10 text-accent border-accent/30" : "bg-surface hover:bg-surface-muted"
+              }`}
+            >
+              <Heart className="w-3.5 h-3.5" />
+              Favorites{favorites.length > 0 && ` (${favorites.length})`}
+            </button>
           </div>
 
           {/* Voicing controls (collapsible) */}
@@ -742,6 +754,58 @@ export default function HarmoniaPage() {
           )}
         </section>
 
+        {/* ── Favorites Panel ── */}
+        {showFavorites && (
+          <section className="surface-section rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <Heart className="w-4 h-4 text-accent" />
+              Saved Progressions
+            </h3>
+            {favorites.length === 0 ? (
+              <p className="text-xs text-muted py-4 text-center">
+                No favorites yet. Save a progression to see it here.
+              </p>
+            ) : (
+              <div className="grid gap-2 max-h-64 overflow-y-auto">
+                {favorites.map((fav) => (
+                  <div
+                    key={fav.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border-subtle bg-surface-muted/50 hover:bg-surface-muted transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{fav.name}</div>
+                      <div className="text-[10px] text-muted">
+                        {fav.rootKey} {fav.mode} · {fav.progression.chords.length} chords · {fav.bpm} bpm
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          if (isPlaying) setIsPlaying(false);
+                          setSettings({ rootKey: fav.rootKey, mode: fav.mode as Mode, complexity: fav.complexity as ComplexityLevel, bpm: fav.bpm });
+                          loadProgression(fav.progression);
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+                        title="Load this progression"
+                      >
+                        <Upload className="w-3 h-3" />
+                        Load
+                      </button>
+                      <button
+                        onClick={() => removeFavorite(fav.id)}
+                        className="p-1 rounded text-muted/50 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Remove from favorites"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ── Chord Cards + Piano Roll + Creative Tools ── */}
         <section>
           <AnimatePresence mode="wait">
@@ -769,7 +833,6 @@ export default function HarmoniaPage() {
                       const SOURCE_BADGE: Record<ChordSourceType, { color: string; label: string }> = {
                         generated: { color: "", label: "" },
                         substituted: { color: "bg-purple-500/20 text-purple-300", label: "Substituted" },
-                        mutated: { color: "bg-amber-500/20 text-amber-300", label: "Mutated" },
                         manual: { color: "bg-emerald-500/20 text-emerald-300", label: "Edited" },
                       };
 
@@ -912,51 +975,26 @@ export default function HarmoniaPage() {
                   onResetChord={resetChord}
                   chordSourceTypes={chordSourceTypes}
                   playheadRef={playheadRef}
+                  melodyNotes={melodyEnabled && melody ? melody.notes : undefined}
+                  showMelody={melodyEnabled && showMelodyOnRoll}
+                  onToggleMelody={melodyEnabled ? () => setShowMelodyOnRoll(!showMelodyOnRoll) : undefined}
                 />
 
-                {/* Melody Lane */}
-                {melodyEnabled && melody && (
-                  <MelodyLane
-                    chords={currentProgression.chords}
-                    melodyNotes={melody.notes}
-                    playingIndex={playbackIndex}
-                    onAddNote={addMelodyNote}
-                    onMoveNote={moveMelodyNote}
-                    onResizeNote={resizeMelodyNote}
-                    onDeleteNote={deleteMelodyNote}
-                    onPlayNote={handlePlayNote}
-                  />
-                )}
-
-                {/* Creative Iteration Tools */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-                  {/* Substitution Panel */}
-                  {substitutionTarget !== null && currentProgression.chords[substitutionTarget] && (
-                    <div className="lg:col-span-1">
-                      <SubstitutionPanel
-                        chord={currentProgression.chords[substitutionTarget]}
-                        chordIndex={substitutionTarget}
-                        substitutions={substitutionOptions}
-                        onPreview={handleSubstitutionPreview}
-                        onApply={handleSubstitutionApply}
-                        onRevert={handleSubstitutionRevert}
-                        onClose={closeSubstitution}
-                        canRevert={originalChords.has(substitutionTarget)}
-                      />
-                    </div>
-                  )}
-
-                  {/* Mutation Controls */}
-                  <div className={substitutionTarget !== null ? "lg:col-span-1" : "lg:col-span-2 max-w-md"}>
-                    <MutationControls
-                      onMutate={handleMutate}
-                      onUndo={undoMutation}
-                      canUndo={undoStack.length > 0}
-                      lastChanges={lastMutationChanges}
-                      disabled={!currentProgression}
+                {/* Substitution Panel */}
+                {substitutionTarget !== null && currentProgression.chords[substitutionTarget] && (
+                  <div className="mt-4 max-w-md">
+                    <SubstitutionPanel
+                      chord={currentProgression.chords[substitutionTarget]}
+                      chordIndex={substitutionTarget}
+                      substitutions={substitutionOptions}
+                      onPreview={handleSubstitutionPreview}
+                      onApply={handleSubstitutionApply}
+                      onRevert={handleSubstitutionRevert}
+                      onClose={closeSubstitution}
+                      canRevert={originalChords.has(substitutionTarget)}
                     />
                   </div>
-                </div>
+                )}
               </motion.div>
             ) : (
               <motion.div
