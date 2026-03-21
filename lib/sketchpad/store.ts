@@ -123,6 +123,7 @@ interface SketchpadState {
 
   // Actions - Sections
   addSection: (sectionType?: SectionType) => void;
+  addSectionFromProgression: (progression: any, name: string) => void;
   renameSection: (sectionId: string, name: string) => void;
   updateSectionType: (sectionId: string, sectionType: SectionType) => void;
   updateSectionBars: (sectionId: string, bars: number) => void;
@@ -299,6 +300,57 @@ export const useSketchpadStore = create<SketchpadState>((set, get) => ({
       project.globalKeyRoot,
       project.globalScaleType
     );
+    set((state) => {
+      const result = updateProject(state, project.id, (p) => ({
+        ...p,
+        sections: [...p.sections, section],
+      }));
+      saveProjects(result.projects!);
+      return { ...result, activeSectionId: section.id };
+    });
+  },
+
+  addSectionFromProgression: (progression, name) => {
+    const state = get();
+    const project = getActiveProject(state);
+    if (!project) return;
+    const section = createDefaultSection(
+      project.id,
+      project.sections.length,
+      "Custom",
+      project.globalKeyRoot,
+      project.globalScaleType
+    );
+    section.name = name;
+    
+    // Replace the default variant with the progression's chords
+    const variantId = section.variants[0].id;
+    const events: HarmonicEvent[] = progression.chords.map((c: any, i: number) => {
+      let durationBeats = 4;
+      if (c.durationClass === "half") durationBeats = 2;
+      else if (c.durationClass === "quarter") durationBeats = 1;
+      
+      return {
+        id: uid(),
+        variantId,
+        order: i,
+        chordRoot: c.root as PitchClass,
+        chordQuality: c.quality,
+        chordSymbol: `${c.root}${c.quality === "maj" ? "" : c.quality === "min" ? "m" : c.quality}`,
+        romanNumeral: c.numeral,
+        durationBeats,
+        inversion: 0,
+        notes: c.notes,
+        notesWithOctave: c.notesWithOctave || c.notes.map((n: string) => `${n}3`),
+        midiNotes: c.midiNotes || []
+      };
+    });
+    
+    section.variants[0].events = events;
+    // Guess bars based on total beats
+    const totalBeats = events.reduce((sum, e) => sum + e.durationBeats, 0);
+    section.bars = Math.ceil(totalBeats / 4);
+
     set((state) => {
       const result = updateProject(state, project.id, (p) => ({
         ...p,

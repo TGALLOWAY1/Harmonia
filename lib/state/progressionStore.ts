@@ -47,6 +47,7 @@ interface ProgressionState {
     melody: Melody | null;
     melodyEnabled: boolean;
     melodyStyle: MelodyStyle;
+    chordsEnabled: boolean;
 
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
     generateNew: () => void;
@@ -71,6 +72,7 @@ interface ProgressionState {
 
     // Melody actions
     setMelodyEnabled: (enabled: boolean) => void;
+    setChordsEnabled: (enabled: boolean) => void;
     setMelodyStyle: (style: MelodyStyle) => void;
     generateMelodyForProgression: () => void;
     clearMelody: () => void;
@@ -146,6 +148,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     melody: null,
     melodyEnabled: false,
     melodyStyle: "lyrical",
+    chordsEnabled: true,
 
     setSettings: (settings) => {
         set((state) => ({ ...state, ...settings }));
@@ -568,14 +571,14 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
     // ─── Melody Actions ───
 
+    setChordsEnabled: (enabled: boolean) => set({ chordsEnabled: enabled }),
+
     setMelodyEnabled: (enabled: boolean) => {
         set({ melodyEnabled: enabled });
         if (enabled && !get().melody && get().currentProgression) {
             get().generateMelodyForProgression();
         }
-        if (!enabled) {
-            set({ melody: null });
-        }
+        // Do NOT delete melody on mute, just let the UI handle the boolean flag
     },
 
     setMelodyStyle: (style: MelodyStyle) => {
@@ -614,7 +617,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             octave: 5,
         });
 
-        set({ melody });
+        set({ melody, melodyEnabled: true });
     },
 
     clearMelody: () => {

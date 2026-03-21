@@ -404,7 +404,7 @@ export function generateAdvancedProgression(
     }
   }
 
-  planned = limitLength(planned, Math.max(numChords, 4) + 4);
+  planned = limitLength(planned, numChords);
 
   // --- Voice each chord ---
   const { low, high } = clampVoiceRange(options.rangeLow, options.rangeHigh);
