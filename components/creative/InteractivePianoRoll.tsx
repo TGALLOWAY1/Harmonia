@@ -10,6 +10,7 @@ import {
   generateMidiRange,
   type PitchClass,
 } from "@/lib/theory/midiUtils";
+import { Heart } from "lucide-react";
 import type { Chord } from "@/lib/theory/progressionTypes";
 import type { ChordSourceType } from "@/lib/creative/types";
 import type { MelodyNote } from "@/lib/music/generators/melody/types";
@@ -33,6 +34,10 @@ export type InteractivePianoRollProps = {
   showMelody?: boolean;
   onToggleMelody?: () => void;
   onExportMelodyMidi?: () => void;
+  onSave?: () => void;
+  onToggleFavorites?: () => void;
+  favoritesCount?: number;
+  isFavoritesOpen?: boolean;
 };
 
 /** Compute the MIDI range needed to display all chord notes, with padding. */
@@ -113,6 +118,10 @@ export function InteractivePianoRoll({
   showMelody,
   onToggleMelody,
   onExportMelodyMidi,
+  onSave,
+  onToggleFavorites,
+  favoritesCount = 0,
+  isFavoritesOpen = false,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
@@ -355,7 +364,30 @@ export function InteractivePianoRoll({
               Melody
             </button>
           )}
-          <div className="range-toggle">{rangeLabel}</div>
+          {onSave && (
+            <button
+              onClick={onSave}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
+              title="Save to favorites"
+            >
+              <Heart className="w-3 h-3" />
+              Save
+            </button>
+          )}
+          {onToggleFavorites && (
+            <button
+              onClick={onToggleFavorites}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-colors",
+                isFavoritesOpen
+                  ? "bg-accent/10 text-accent border-accent/30"
+                  : "border-border-subtle bg-surface hover:bg-surface-muted text-muted hover:text-foreground"
+              )}
+            >
+              <Heart className="w-3 h-3" />
+              Favorites{favoritesCount > 0 && ` (${favoritesCount})`}
+            </button>
+          )}
           {onExportMidi && (
             <button
               onClick={onExportMidi}

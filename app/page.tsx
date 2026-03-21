@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX } from "lucide-react";
 import Link from "next/link";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Replace, RotateCcw, ChevronDown, Heart, Trash2, Upload } from "lucide-react";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
@@ -569,93 +569,11 @@ export default function HarmoniaPage() {
 
             {/* Spacer */}
             <div className="flex-1" />
-
-            {/* Play / Stop */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider opacity-0 cursor-default hidden sm:block">
-                Action
-              </label>
-              <button
-                onClick={handleTogglePlayback}
-                disabled={!currentProgression || isSynthLoading}
-                className={`flex items-center gap-2 px-5 py-2 rounded-full font-medium text-sm transition-all disabled:opacity-40 ${
-                  isPlaying
-                    ? "bg-surface-muted border border-border-subtle text-foreground"
-                    : "bg-accent text-white shadow-sm"
-                }`}
-              >
-                {isSynthLoading ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Loading
-                  </>
-                ) : isPlaying ? (
-                  <>
-                    <Square className="w-3.5 h-3.5" />
-                    Stop
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5" />
-                    Play
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Generate */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider opacity-0 cursor-default hidden sm:block">
-                Action
-              </label>
-              <button
-                onClick={handleGenerate}
-                className="flex items-center gap-2 px-6 py-2 rounded-full bg-accent text-white font-medium transition-all hover:opacity-90 active:scale-[0.97] shadow-sm"
-              >
-                <Sparkles className="w-4 h-4" />
-                Generate
-              </button>
-            </div>
             
-            {/* Save to Favorites */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider opacity-0 cursor-default hidden sm:block">
-                Action
-              </label>
-              <button
-                onClick={() => {
-                  if (!currentProgression) return;
-                  const name = `${rootKey} ${mode} — ${currentProgression.chords.map(c => c.symbol).join(" · ")}`;
-                  addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
-                }}
-                disabled={!currentProgression}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors disabled:opacity-40 h-9"
-                title="Save to favorites"
-              >
-                <Heart className="w-3.5 h-3.5" />
-                Save
-              </button>
-            </div>
-
-            {/* Show Favorites */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider opacity-0 cursor-default hidden sm:block">
-                Action
-              </label>
-              <button
-                onClick={() => setShowFavorites(!showFavorites)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-full border border-border-subtle text-xs font-medium transition-colors h-9 ${
-                  showFavorites ? "bg-accent/10 text-accent border-accent/30" : "bg-surface hover:bg-surface-muted"
-                }`}
-              >
-                <Heart className="w-3.5 h-3.5" />
-                Favorites{favorites.length > 0 && ` (${favorites.length})`}
-              </button>
-            </div>
           </div>
 
           {/* Second Row: Generation Styles */}
-          <div className="pt-4 border-t border-border-subtle flex flex-wrap items-center gap-4">
+          <div className="pt-4 border-t border-border-subtle flex items-center gap-4 overflow-x-auto flex-nowrap pb-2 w-full no-scrollbar">
             {/* Chord Style */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted uppercase tracking-wider">
@@ -826,10 +744,84 @@ export default function HarmoniaPage() {
                 key={generationKey}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="space-y-2"
+                className="space-y-4"
               >
+                {/* ── Action Controls Bar ── */}
+                <div className="flex flex-wrap items-center gap-4 bg-surface-muted/30 border border-border-subtle rounded-xl p-3 shadow-sm mx-auto max-w-fit">
+                  {/* Play / Stop */}
+                  <button
+                    onClick={handleTogglePlayback}
+                    disabled={!currentProgression || isSynthLoading}
+                    className={`flex items-center justify-center gap-2 w-28 py-2 rounded-full font-medium text-sm transition-all disabled:opacity-40 ${
+                      isPlaying
+                        ? "bg-surface-muted border border-border-subtle text-foreground hover:bg-surface-muted/80"
+                        : "bg-accent text-white shadow-sm hover:opacity-90 active:scale-[0.97]"
+                    }`}
+                  >
+                    {isSynthLoading ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Loading
+                      </>
+                    ) : isPlaying ? (
+                      <>
+                        <Square className="w-3.5 h-3.5" />
+                        Stop
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        Play
+                      </>
+                    )}
+                  </button>
+
+                  <div className="w-px h-6 bg-border-subtle mx-1" />
+
+                  {/* Generate Chords */}
+                  <button
+                    onClick={handleGenerate}
+                    className="flex items-center gap-2 px-5 py-2 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-foreground font-medium transition-all active:scale-[0.97] text-sm"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-accent" />
+                    Gen Chords
+                  </button>
+
+                  {/* Silence Chords */}
+                  <button
+                    onClick={() => { /* TODO: implement mute chords state in store */ }}
+                    className="flex items-center justify-center w-9 h-9 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-muted hover:text-foreground transition-all"
+                    title="Mute chords"
+                  >
+                    <VolumeX className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-px h-6 bg-border-subtle mx-1" />
+
+                  {/* Generate Melody */}
+                  {melodyEnabled && (
+                    <>
+                      <button
+                        onClick={generateMelodyForProgression}
+                        disabled={!currentProgression}
+                        className="flex items-center gap-2 px-5 py-2 rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 font-medium transition-all active:scale-[0.97] text-sm disabled:opacity-40"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Gen Melody
+                      </button>
+                      {/* Silence Melody */}
+                      <button
+                        onClick={() => { /* TODO: implement mute melody state in store */ }}
+                        className="flex items-center justify-center w-9 h-9 rounded-full border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-amber-500/60 hover:text-amber-500 transition-all"
+                        title="Mute melody"
+                      >
+                        <VolumeX className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+
                 {/* Chord cards row — offset by piano key width, flex-matched to roll columns */}
                 <div className="flex" style={{ paddingLeft: 53 }}>
                   <div className="flex flex-1 gap-1.5">
@@ -897,7 +889,7 @@ export default function HarmoniaPage() {
                               className="p-1 rounded-md text-muted/30 hover:text-accent/70 transition-colors"
                               title="Substitute chord"
                             >
-                              <Replace className="w-3 h-3" />
+                              <Shuffle className="w-3 h-3" />
                             </button>
                             <button
                               onClick={(e) => {
@@ -991,6 +983,17 @@ export default function HarmoniaPage() {
                   showMelody={melodyEnabled && showMelodyOnRoll}
                   onToggleMelody={melodyEnabled ? () => setShowMelodyOnRoll(!showMelodyOnRoll) : undefined}
                   onExportMelodyMidi={melodyEnabled && melody ? exportMelodyMidi : undefined}
+                  onSave={
+                    currentProgression
+                      ? () => {
+                          const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
+                          addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
+                        }
+                      : undefined
+                  }
+                  onToggleFavorites={() => setShowFavorites(!showFavorites)}
+                  favoritesCount={favorites.length}
+                  isFavoritesOpen={showFavorites}
                 />
 
                 {/* Substitution Panel */}
