@@ -34,10 +34,7 @@ export type InteractivePianoRollProps = {
   showMelody?: boolean;
   onToggleMelody?: () => void;
   onExportMelodyMidi?: () => void;
-  onSave?: () => void;
-  onToggleFavorites?: () => void;
-  favoritesCount?: number;
-  isFavoritesOpen?: boolean;
+  onMoveMelodyNote?: (noteId: string, toMidi: number) => void;
 };
 
 /** Compute the MIDI range needed to display all chord notes, with padding. */
@@ -118,16 +115,14 @@ export function InteractivePianoRoll({
   showMelody,
   onToggleMelody,
   onExportMelodyMidi,
-  onSave,
-  onToggleFavorites,
-  favoritesCount = 0,
-  isFavoritesOpen = false,
+  onMoveMelodyNote,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
   const [flashingNote, setFlashingNote] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ chordIndex: number; midi: number } | null>(null);
+  const [draggingMelodyId, setDraggingMelodyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedIndex === null) {
@@ -256,11 +251,15 @@ export function InteractivePianoRoll({
       onMoveNote?.(colIdx, dragStart.midi, midi);
       setDragStart({ chordIndex: colIdx, midi });
     }
-  }, [isDragging, dragStart, onMoveNote]);
+    if (draggingMelodyId && onMoveMelodyNote) {
+      onMoveMelodyNote(draggingMelodyId, midi);
+    }
+  }, [isDragging, dragStart, onMoveNote, draggingMelodyId, onMoveMelodyNote]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
     setDragStart(null);
+    setDraggingMelodyId(null);
   }, []);
 
   useEffect(() => {
@@ -362,39 +361,6 @@ export function InteractivePianoRoll({
               )}
             >
               Melody
-            </button>
-          )}
-          {onSave && (
-            <button
-              onClick={onSave}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
-              title="Save to favorites"
-            >
-              <Heart className="w-3 h-3" />
-              Save
-            </button>
-          )}
-          {onToggleFavorites && (
-            <button
-              onClick={onToggleFavorites}
-              className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-colors",
-                isFavoritesOpen
-                  ? "bg-accent/10 text-accent border-accent/30"
-                  : "border-border-subtle bg-surface hover:bg-surface-muted text-muted hover:text-foreground"
-              )}
-            >
-              <Heart className="w-3 h-3" />
-              Favorites{favoritesCount > 0 && ` (${favoritesCount})`}
-            </button>
-          )}
-          {onExportMidi && (
-            <button
-              onClick={onExportMidi}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
-            >
-              <Download className="w-3 h-3" />
-              Export MIDI
             </button>
           )}
           {onExportMelodyMidi && showMelody && (
@@ -524,7 +490,13 @@ export function InteractivePianoRoll({
                     return (
                       <div
                         key={mn.id}
-                        className={clsx("melody-overlay-bar", mn.isChordTone && "chord-tone")}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          if (onMoveMelodyNote) {
+                            setDraggingMelodyId(mn.id);
+                          }
+                        }}
+                        className={clsx("melody-overlay-bar", mn.isChordTone && "chord-tone", draggingMelodyId === mn.id && "dragging cursor-grabbing hover:cursor-grabbing")}
                         style={{
                           left: `${leftPct}%`,
                           width: `${Math.max(widthPct, 2)}%`,

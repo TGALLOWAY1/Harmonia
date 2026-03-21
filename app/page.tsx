@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Activity } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Activity, Save } from "lucide-react";
 import Link from "next/link";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
@@ -100,6 +100,9 @@ export default function HarmoniaPage() {
     removeNote,
     moveNote,
     resetChord,
+    // chords mute
+    chordsEnabled,
+    setChordsEnabled,
     // Melody
     melody,
     melodyEnabled,
@@ -235,11 +238,13 @@ export default function HarmoniaPage() {
       const id = Tone.getTransport().schedule((time) => {
         if (!synthRef.current) return;
 
-        const notes =
-          chord.notesWithOctave && chord.notesWithOctave.length > 0
-            ? chord.notesWithOctave
-            : chord.notes.map((n) => `${n}3`);
-        synthRef.current.triggerAttackRelease(notes, duration, time);
+        if (chordsEnabled) {
+          const notes =
+            chord.notesWithOctave && chord.notesWithOctave.length > 0
+              ? chord.notesWithOctave
+              : chord.notes.map((n) => `${n}3`);
+          synthRef.current.triggerAttackRelease(notes, duration, time);
+        }
 
         Tone.getDraw().schedule(() => {
           setPlaybackIndex(chordIdx);
@@ -446,6 +451,44 @@ export default function HarmoniaPage() {
               Chord Progression Generator
             </p>
             <FeedbackChart />
+            
+            <div className="flex items-center gap-2 border-r border-border-subtle pr-4 mr-1">
+              {currentProgression && (
+                <button
+                  onClick={() => {
+                    const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
+                    addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
+                  title="Save to favorites"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Save
+                </button>
+              )}
+              <button
+                onClick={() => setShowFavorites(!showFavorites)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                  showFavorites
+                    ? "bg-accent/10 text-accent border-accent/30"
+                    : "border-border-subtle bg-surface hover:bg-surface-muted text-muted hover:text-foreground"
+                }`}
+              >
+                <Heart className="w-3.5 h-3.5" />
+                Favorites{favorites.length > 0 && ` (${favorites.length})`}
+              </button>
+              {currentProgression && (
+                <button
+                  onClick={exportMidi}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
+                  title="Export Chords MIDI"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export MIDI
+                </button>
+              )}
+            </div>
+
             <Link
               href="/sketchpad"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface-muted hover:bg-accent/10 hover:border-accent/30 text-xs font-medium text-muted hover:text-foreground transition-all"
@@ -651,79 +694,91 @@ export default function HarmoniaPage() {
 
         {/* ── Action Controls Bar ── */}
         <section className="flex justify-center mb-6">
-          <div className="flex flex-wrap items-center gap-4 bg-surface-muted/30 border border-border-subtle rounded-xl p-3 shadow-sm max-w-fit">
+          <div className="flex flex-wrap items-center gap-3 bg-surface/50 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-full p-2 shadow-xl relative z-10 before:absolute before:inset-0 before:rounded-full before:bg-gradient-to-b before:from-white/5 before:to-transparent before:pointer-events-none">
+            
             {/* Play / Stop */}
             <button
               onClick={handleTogglePlayback}
               disabled={!currentProgression || isSynthLoading}
-              className={`flex items-center justify-center gap-2 w-28 py-2 rounded-full font-medium text-sm transition-all disabled:opacity-40 ${
+              className={`relative flex items-center justify-center gap-2 w-28 py-2.5 rounded-full font-semibold text-sm transition-all duration-300 disabled:opacity-40 overflow-hidden group ${
                 isPlaying
-                  ? "bg-surface-muted border border-border-subtle text-foreground hover:bg-surface-muted/80"
-                  : "bg-accent text-white shadow-sm hover:opacity-90 active:scale-[0.97]"
+                  ? "bg-surface text-foreground shadow-inner border border-border-subtle"
+                  : "bg-accent text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
               }`}
             >
-              {isSynthLoading ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Loading
-                </>
-              ) : isPlaying ? (
-                <>
-                  <Square className="w-3.5 h-3.5" />
-                  Stop
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  Play
-                </>
+              {!isPlaying && (
+                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
               )}
+              <div className="relative flex items-center gap-2">
+                {isSynthLoading ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading
+                  </>
+                ) : isPlaying ? (
+                  <>
+                    <Square className="w-4 h-4" />
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 ml-0.5 fill-current" />
+                    Play
+                  </>
+                )}
+              </div>
             </button>
 
-            <div className="w-px h-6 bg-border-subtle mx-1" />
+            <div className="w-px h-8 bg-border-subtle/50 mx-1" />
 
-            {/* Generate Chords */}
-            <button
-              onClick={handleGenerate}
-              className="flex items-center gap-2 px-5 py-2 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-foreground font-medium transition-all active:scale-[0.97] text-sm"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-accent" />
-              Gen Chords
-            </button>
+            {/* Chords Group */}
+            <div className="flex items-center bg-surface-muted/50 rounded-full border border-border-subtle p-0.5">
+              <button
+                onClick={handleGenerate}
+                className="flex items-center gap-2 px-5 py-2 rounded-full hover:bg-surface text-foreground font-medium transition-all active:scale-95 text-sm"
+              >
+                <Sparkles className="w-4 h-4 text-accent" />
+                Gen Chords
+              </button>
+              <div className="w-px h-5 bg-border-subtle mx-0.5" />
+              <button
+                onClick={() => setChordsEnabled(!chordsEnabled)}
+                className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
+                  chordsEnabled
+                    ? "bg-transparent text-muted hover:bg-surface hover:text-foreground"
+                    : "bg-accent/10 text-accent/50 hover:bg-accent/20 hover:text-accent"
+                }`}
+                title={chordsEnabled ? "Mute chords" : "Unmute chords"}
+              >
+                {chordsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+            </div>
 
-            {/* Silence Chords */}
-            <button
-              onClick={() => { /* TODO: implement mute chords state in store */ }}
-              className="flex items-center justify-center w-9 h-9 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-muted hover:text-foreground transition-all"
-              title="Mute chords"
-            >
-              <VolumeX className="w-3.5 h-3.5" />
-            </button>
+            {/* Melody Group */}
+            <div className="flex items-center bg-amber-500/5 rounded-full border border-amber-500/10 p-0.5">
+              <button
+                onClick={generateMelodyForProgression}
+                disabled={!currentProgression}
+                className="flex items-center gap-2 px-5 py-2 rounded-full hover:bg-amber-500/10 text-amber-500 font-medium transition-all active:scale-95 text-sm disabled:opacity-40"
+              >
+                <Sparkles className="w-4 h-4" />
+                Gen Melody
+              </button>
+              <div className="w-px h-5 bg-amber-500/20 mx-0.5" />
+              <button
+                onClick={() => setMelodyEnabled(!melodyEnabled)}
+                disabled={!melody}
+                className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors disabled:opacity-40 ${
+                  melodyEnabled
+                    ? "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+                    : "bg-transparent text-amber-500/40 hover:bg-amber-500/10"
+                }`}
+                title={melodyEnabled ? "Mute melody" : "Unmute melody"}
+              >
+                {melodyEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+            </div>
 
-            <div className="w-px h-6 bg-border-subtle mx-1" />
-
-            {/* Generate Melody */}
-            <button
-              onClick={generateMelodyForProgression}
-              disabled={!currentProgression}
-              className="flex items-center gap-2 px-5 py-2 rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 font-medium transition-all active:scale-[0.97] text-sm disabled:opacity-40"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Gen Melody
-            </button>
-            {/* Mute/Unmute Melody */}
-            <button
-              onClick={() => setMelodyEnabled(!melodyEnabled)}
-              disabled={!melody}
-              className={`flex items-center justify-center w-9 h-9 rounded-full border transition-all ${
-                melodyEnabled
-                  ? "border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500"
-                  : "border-amber-500/10 bg-surface hover:bg-amber-500/5 text-amber-500/40"
-              } disabled:opacity-40`}
-              title={melodyEnabled ? "Mute melody" : "Unmute melody"}
-            >
-              {melodyEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
           </div>
         </section>
 
@@ -900,17 +955,10 @@ export default function HarmoniaPage() {
                   showMelody={melodyEnabled && showMelodyOnRoll}
                   onToggleMelody={melodyEnabled ? () => setShowMelodyOnRoll(!showMelodyOnRoll) : undefined}
                   onExportMelodyMidi={melodyEnabled && melody ? exportMelodyMidi : undefined}
-                  onSave={
-                    currentProgression
-                      ? () => {
-                          const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
-                          addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
-                        }
-                      : undefined
-                  }
-                  onToggleFavorites={() => setShowFavorites(!showFavorites)}
-                  favoritesCount={favorites.length}
-                  isFavoritesOpen={showFavorites}
+                  onMoveMelodyNote={melodyEnabled && melody ? (noteId, toMidi) => {
+                    const note = melody.notes.find(n => n.id === noteId);
+                    if (note) useProgressionStore.getState().moveMelodyNote(noteId, toMidi, note.startBeat);
+                  } : undefined}
                 />
 
                 {/* Substitution Panel */}
