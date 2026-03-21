@@ -449,9 +449,7 @@ export default function HarmoniaPage() {
             <h1 className="text-lg font-semibold tracking-tight">Harmonia</h1>
           </div>
           <div className="flex items-center gap-4">
-            <p className="text-sm text-muted hidden sm:block">
-              Chord Progression Generator
-            </p>
+
             <FeedbackChart />
             
             <div className="flex items-center gap-2 border-r border-border-subtle pr-4 mr-1">
@@ -461,11 +459,10 @@ export default function HarmoniaPage() {
                     const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
                     addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
+                  className="flex items-center justify-center w-8 h-8 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted transition-colors text-muted hover:text-foreground"
                   title="Save to favorites"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  Save
+                  <Save className="w-4 h-4" />
                 </button>
               )}
               <button
@@ -486,17 +483,17 @@ export default function HarmoniaPage() {
                   title="Export Chords MIDI"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Export MIDI
+                  Chords
                 </button>
               )}
               {melodyEnabled && melody && (
                 <button
                   onClick={exportMelodyMidi}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-500/30 bg-surface hover:bg-amber-500/10 text-xs font-medium transition-colors text-amber-500 hover:text-amber-400"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
                   title="Export Melody MIDI"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Export Melody
+                  Melody
                 </button>
               )}
             </div>
