@@ -545,7 +545,7 @@ export default function HarmoniaPage() {
                     max={180}
                     value={bpm}
                     onChange={(e) => setSettings({ bpm: Number(e.target.value) })}
-                    className="w-full bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none text-center rounded-lg transition-colors"
+                    className="w-full bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none text-center rounded-lg transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted opacity-50 pointer-events-none group-hover:opacity-100 transition-opacity">BPM</span>
                 </div>
