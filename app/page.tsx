@@ -489,6 +489,16 @@ export default function HarmoniaPage() {
                   Export MIDI
                 </button>
               )}
+              {melodyEnabled && melody && (
+                <button
+                  onClick={exportMelodyMidi}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-500/30 bg-surface hover:bg-amber-500/10 text-xs font-medium transition-colors text-amber-500 hover:text-amber-400"
+                  title="Export Melody MIDI"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Melody
+                </button>
+              )}
             </div>
 
             <Link
@@ -781,6 +791,22 @@ export default function HarmoniaPage() {
               </button>
             </div>
 
+            <div className="w-px h-8 bg-border-subtle/50 mx-1" />
+
+            {/* Rate Voicing Inline */}
+            {currentProgression && (
+              <VoicingFeedback
+                progression={currentProgression}
+                rootKey={rootKey}
+                mode={mode}
+                complexity={complexity}
+                numChords={numChords}
+                bpm={bpm}
+                voicingStyle={voicingStyle}
+                voiceCount={voiceCount}
+              />
+            )}
+
           </div>
         </section>
 
@@ -923,19 +949,7 @@ export default function HarmoniaPage() {
                   </div>
                 </div>
 
-                {/* Voicing feedback */}
-                <div className="flex justify-end px-1">
-                  <VoicingFeedback
-                    progression={currentProgression}
-                    rootKey={rootKey}
-                    mode={mode}
-                    complexity={complexity}
-                    numChords={numChords}
-                    bpm={bpm}
-                    voicingStyle={voicingStyle}
-                    voiceCount={voiceCount}
-                  />
-                </div>
+                {/* Voicing feedback removed and added to controls bar */}
 
                 {/* Interactive Piano Roll */}
                 <InteractivePianoRoll
@@ -955,8 +969,6 @@ export default function HarmoniaPage() {
                   playheadRef={playheadRef}
                   melodyNotes={melodyEnabled && melody ? melody.notes : undefined}
                   showMelody={melodyEnabled && showMelodyOnRoll}
-                  onToggleMelody={melodyEnabled ? () => setShowMelodyOnRoll(!showMelodyOnRoll) : undefined}
-                  onExportMelodyMidi={melodyEnabled && melody ? exportMelodyMidi : undefined}
                   onMoveMelodyNote={melodyEnabled && melody ? (noteId, toMidi) => {
                     const note = melody.notes.find(n => n.id === noteId);
                     if (note) useProgressionStore.getState().moveMelodyNote(noteId, toMidi, note.startBeat);

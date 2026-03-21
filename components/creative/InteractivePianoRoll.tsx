@@ -32,8 +32,6 @@ export type InteractivePianoRollProps = {
   playheadRef?: React.Ref<HTMLDivElement>;
   melodyNotes?: MelodyNote[];
   showMelody?: boolean;
-  onToggleMelody?: () => void;
-  onExportMelodyMidi?: () => void;
   onMoveMelodyNote?: (noteId: string, toMidi: number) => void;
 };
 
@@ -113,8 +111,6 @@ export function InteractivePianoRoll({
   playheadRef,
   melodyNotes,
   showMelody,
-  onToggleMelody,
-  onExportMelodyMidi,
   onMoveMelodyNote,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
@@ -319,62 +315,6 @@ export function InteractivePianoRoll({
 
   return (
     <div className="piano-roll-section">
-      <div className="flex items-center justify-between mb-2.5">
-        <div className="piano-roll-label">Piano Roll</div>
-        <div className="flex items-center gap-3">
-          {selectedNote && (
-            <div className="text-xs text-muted flex items-center gap-2">
-              <span className="opacity-60">Note: {selectedNoteLabel}</span>
-              <span className="opacity-40">|</span>
-              <span className="opacity-60">Del to remove · Dbl-click to add/remove</span>
-              <span className="opacity-40">|</span>
-              <span className="opacity-60">{typeof navigator !== "undefined" && navigator.platform?.includes("Mac") ? "\u2318" : "Ctrl"}+\u2191\u2193 octave</span>
-            </div>
-          )}
-          {selectedIndex !== null && !selectedNote && (
-            <div className="text-xs text-muted flex items-center gap-2">
-              <span className="opacity-60">{chords[selectedIndex]?.symbol}</span>
-              <span className="opacity-40">|</span>
-              <span className="opacity-60">Dbl-click grid to add note · Click note to select</span>
-              {onResetChord && (
-                <>
-                  <span className="opacity-40">|</span>
-                  <button
-                    onClick={() => onResetChord(selectedIndex)}
-                    className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    Reset
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-          {onToggleMelody && (
-            <button
-              onClick={onToggleMelody}
-              className={clsx(
-                "px-2.5 py-0.5 rounded-full text-[10px] font-medium border transition-colors",
-                showMelody
-                  ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                  : "bg-surface-muted text-muted border-border-subtle hover:border-amber-500/30 hover:text-amber-300"
-              )}
-            >
-              Melody
-            </button>
-          )}
-          {onExportMelodyMidi && showMelody && (
-            <button
-              onClick={onExportMelodyMidi}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/30 bg-surface hover:bg-amber-500/10 text-xs font-medium transition-colors text-amber-300 hover:text-amber-200"
-            >
-              <Download className="w-3 h-3" />
-              Export Melody
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="piano-roll-wrap">
         {/* LEFT PIANO KEYBOARD */}
         <div className="piano-keys">
