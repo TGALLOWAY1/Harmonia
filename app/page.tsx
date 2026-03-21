@@ -545,16 +545,16 @@ export default function HarmoniaPage() {
                   ))}
                 </select>
                 <div className="w-px h-4 bg-border-subtle mx-1" />
-                <div className="relative flex-1 group" title="BPM (Tempo)">
+                <div className="flex flex-1 items-center justify-center hover:bg-surface rounded-lg transition-colors group px-1" title="BPM (Tempo)">
                   <input
                     type="number"
                     min={60}
                     max={180}
                     value={bpm}
                     onChange={(e) => setSettings({ bpm: Number(e.target.value) })}
-                    className="w-full bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none text-center rounded-lg transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-8 bg-transparent py-1.5 text-sm font-medium outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted opacity-50 pointer-events-none group-hover:opacity-100 transition-opacity">BPM</span>
+                  <span className="ml-1 text-[10px] text-muted opacity-50 pointer-events-none group-hover:opacity-100 transition-opacity mt-0.5">BPM</span>
                 </div>
               </div>
             </div>
