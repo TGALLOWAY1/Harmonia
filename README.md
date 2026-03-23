@@ -2,8 +2,7 @@
 
 Generate musically coherent chord progressions in any key and mode. Refine them with theory-guided substitutions and direct note-level editing. Save your favorite progressions, rate voicings with persistent feedback, and plan the harmonic structure of entire songs with the Harmonic Sketchpad. Hear everything instantly with real piano samples and export to MIDI.
 
-[![Harmonia screenshot](public/screenshot.png)
-](https://private-user-images.githubusercontent.com/30303176/567310099-e6f3a36c-e848-4366-8840-62473ca45560.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NzQyODYwNTIsIm5iZiI6MTc3NDI4NTc1MiwicGF0aCI6Ii8zMDMwMzE3Ni81NjczMTAwOTktZTZmM2EzNmMtZTg0OC00MzY2LTg4NDAtNjI0NzNjYTQ1NTYwLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNjAzMjMlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjYwMzIzVDE3MDkxMlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWFhM2ZhZWNhZWNiOTM2NDg1NDFkNTA2ZWQwNjA1MzZmY2UwNGRhMjdlZGYwNTZjYjQwMDAyODBlNTM3NTk1NGEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.9kXVkKiH6GRYdT2he-K9Aycn2CQcO_W61pQK__SPj3g)
+<img width="1042" height="1287" alt="image" src="https://github.com/user-attachments/assets/4ac60a95-8dcd-4ba3-a10a-1323475d3199" />
 
 ## Features
 
