@@ -12,6 +12,12 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **4 complexity levels** — Simple triads through altered dominants, tritone substitutions, and passing chords
 - **Variable-duration chords** — Full, half, quarter, and eighth-note durations assigned contextually
 - **Multiple sound presets** — Salamander Grand Piano, Casio Electric Piano (with chorus), and FM Organ via Tone.js
+- **Natural, humanized playback** — Chords are played note-by-note with subtle per-note velocity and timing variation (±~12 ms) so progressions feel hand-played rather than software-triggered. Configurable via the **Audio** menu:
+  - **Velocity** — base chord loudness, 20–100% (default 70%)
+  - **Humanize** — amount of velocity + timing variation, Off → Natural (default 50%); at 0% playback is perfectly quantized for reference
+  - **Sustain** — *Natural* lets notes ring slightly, *Off* tightens releases for clarity
+  - **Soft Strum** — optional articulation that lightly rolls chord notes in (~18 ms apart), like a pianist easing into a chord; disabled by default
+  - All playback settings persist across sessions via localStorage
 - **Interactive piano roll** — Click notes to preview, select and shift individual notes up/down by octave
 - **Chord locking** — Lock specific chords to preserve them while regenerating the rest
 - **MIDI export** — Download your progression as a standard MIDI file
@@ -64,6 +70,12 @@ Open [http://localhost:3000](http://localhost:3000) to start generating progress
 - [Framer Motion](https://motion.dev) — Animations
 - TypeScript
 
+### Audio architecture & performance
+
+Instruments are defined in a small registry (`lib/audio/synthPresets.ts`) so new instruments (Strings, Pad, …) can be added as a single entry without touching playback code. Playback humanization is a pure, dependency-free module (`lib/audio/humanization.ts`) that the scheduler applies per note.
+
+The piano and electric piano are **sampled** (Salamander Grand / Casio) and stream from the Tone.js CDN — humanization adds **no bundle or asset weight**, no new downloads, and negligible CPU. A "Loading Piano…" state covers the brief sample preload on first selection. (Note: the Salamander set is single-velocity, so velocity changes loudness rather than timbre — a deliberate trade for fast load, small footprint, and mobile/browser compatibility.)
+
 ## Usage
 
 ### Chord Progression Generator
@@ -77,7 +89,7 @@ Open [http://localhost:3000](http://localhost:3000) to start generating progress
 7. **Export MIDI** to bring your progression into a DAW
 8. Click the **substitute icon** on a chord card to browse theory-guided replacement options
 9. **Double-click** the piano roll grid to add or remove individual notes — chord labels update automatically
-10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio) and click **Melody** again for a new line. Use the **Audio** button in the action bar to mute or unmute chords and melody
+10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio) and click **Melody** again for a new line. Use the **Audio** button in the action bar to mute/unmute chords and melody and to adjust playback feel — **Velocity**, **Humanize**, **Sustain**, and **Soft Strum** vs **Block Chord**
 11. Click **Save** to bookmark a progression to your favorites. Click **Favorites** to view, load, or remove saved progressions
 
 ### Harmonic Sketchpad

@@ -54,7 +54,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   // Synth lifecycle
   useEffect(() => {
     setIsSynthLoading(presetNeedsLoading(soundPreset));
-    const synth = createSynthForPreset(soundPreset, () => setIsSynthLoading(false));
+    const synth = createSynthForPreset(soundPreset, { onLoaded: () => setIsSynthLoading(false) });
     synthRef.current = synth;
     return () => {
       synth.releaseAll();

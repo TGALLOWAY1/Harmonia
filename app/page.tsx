@@ -6,6 +6,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
+import {
+  usePlaybackSettingsStore,
+  CHORD_VELOCITY_MIN,
+  CHORD_VELOCITY_MAX,
+} from "@/lib/state/playbackSettingsStore";
+import { buildChordEvents, humanizeVelocity } from "@/lib/audio/humanization";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
 import { VoicingFeedback } from "@/components/feedback/VoicingFeedback";
@@ -113,6 +119,17 @@ export default function HarmoniaPage() {
 
   const { favorites, addFavorite, removeFavorite } = useFavoritesStore();
 
+  const {
+    chordVelocity,
+    humanize,
+    sustainMode,
+    playbackStyle,
+    setChordVelocity,
+    setHumanize,
+    setSustainMode,
+    setPlaybackStyle,
+  } = usePlaybackSettingsStore();
+
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
   const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
   const [generationKey, setGenerationKey] = useState(0);
@@ -125,6 +142,8 @@ export default function HarmoniaPage() {
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
 
+  const presetLabel = SOUND_PRESETS.find((p) => p.id === soundPreset)?.label ?? "Instrument";
+
   const synthRef = useRef<Synth | null>(null);
   const melodySynthRef = useRef<MelodySynth | null>(null);
   const playbackIndexRef = useRef(0);
@@ -135,8 +154,9 @@ export default function HarmoniaPage() {
 
   useEffect(() => {
     setIsSynthLoading(presetNeedsLoading(soundPreset));
-    const synth = createSynthForPreset(soundPreset, () => {
-      setIsSynthLoading(false);
+    const synth = createSynthForPreset(soundPreset, {
+      sustainMode,
+      onLoaded: () => setIsSynthLoading(false),
     });
     synthRef.current = synth;
 
@@ -145,7 +165,7 @@ export default function HarmoniaPage() {
       synth.dispose();
       synthRef.current = null;
     };
-  }, [soundPreset]);
+  }, [soundPreset, sustainMode]);
 
   /* ─── Melody synth lifecycle ─── */
 
@@ -245,7 +265,21 @@ export default function HarmoniaPage() {
             chord.notesWithOctave && chord.notesWithOctave.length > 0
               ? chord.notesWithOctave
               : chord.notes.map((n) => `${n}3`);
-          synthRef.current.triggerAttackRelease(notes, duration, time);
+          // Read live settings so velocity/humanize/style changes apply mid-loop.
+          const ps = usePlaybackSettingsStore.getState();
+          const events = buildChordEvents(notes, {
+            baseVelocity: ps.chordVelocity,
+            humanize: ps.humanize,
+            style: ps.playbackStyle,
+          });
+          for (const ev of events) {
+            synthRef.current.triggerAttackRelease(
+              ev.note,
+              duration,
+              time + ev.timeOffset,
+              ev.velocity,
+            );
+          }
         }
 
         Tone.getDraw().schedule(() => {
@@ -269,7 +303,9 @@ export default function HarmoniaPage() {
 
         const mid = Tone.getTransport().schedule((time) => {
           if (useProgressionStore.getState().melodyEnabled) {
-            melodySynthRef.current?.triggerAttackRelease(mn.noteWithOctave, mDuration, time);
+            const ps = usePlaybackSettingsStore.getState();
+            const velocity = humanizeVelocity(ps.chordVelocity, ps.humanize);
+            melodySynthRef.current?.triggerAttackRelease(mn.noteWithOctave, mDuration, time, velocity);
           }
         }, mTimeStr);
         ids.push(mid);
@@ -360,10 +396,29 @@ export default function HarmoniaPage() {
     addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
   }, [currentProgression, rootKey, mode, complexity, bpm, addFavorite]);
 
+  /**
+   * Play a one-off chord preview with humanized per-note velocity (no strum,
+   * so previews stay snappy). Reads live settings via getState.
+   */
+  const playChordPreview = useCallback((notesWithOctave: string[], duration: string) => {
+    if (!synthRef.current) return;
+    const ps = usePlaybackSettingsStore.getState();
+    const events = buildChordEvents(notesWithOctave, {
+      baseVelocity: ps.chordVelocity,
+      humanize: ps.humanize,
+      style: "block",
+    });
+    for (const ev of events) {
+      synthRef.current.triggerAttackRelease(ev.note, duration, undefined, ev.velocity);
+    }
+  }, []);
+
   const handlePlayNote = useCallback(
     (noteWithOctave: string) => {
       if (synthRef.current) {
-        synthRef.current.triggerAttackRelease(noteWithOctave, "4n");
+        const ps = usePlaybackSettingsStore.getState();
+        const velocity = humanizeVelocity(ps.chordVelocity, ps.humanize);
+        synthRef.current.triggerAttackRelease(noteWithOctave, "4n", undefined, velocity);
       }
     },
     []
@@ -379,7 +434,7 @@ export default function HarmoniaPage() {
         synthRef.current.releaseAll();
         // Small delay to let releaseAll take effect before new attack
         setTimeout(() => {
-          synthRef.current?.triggerAttackRelease(notesWithOctave, "2n");
+          playChordPreview(notesWithOctave, "2n");
         }, 10);
       }
       // Set this chord as the new loop start position and select it
@@ -387,7 +442,7 @@ export default function HarmoniaPage() {
       setPlaybackIndex(chordIndex);
       setSelectedChordIndex(chordIndex);
     },
-    [isPlaying, setIsPlaying]
+    [isPlaying, setIsPlaying, playChordPreview]
   );
 
   // ─── Substitution handlers ───
@@ -396,11 +451,11 @@ export default function HarmoniaPage() {
       if (synthRef.current) {
         synthRef.current.releaseAll();
         setTimeout(() => {
-          synthRef.current?.triggerAttackRelease(option.candidateNotesWithOctave, "2n");
+          playChordPreview(option.candidateNotesWithOctave, "2n");
         }, 10);
       }
     },
-    []
+    [playChordPreview]
   );
 
   const handleSubstitutionApply = useCallback(
@@ -411,11 +466,11 @@ export default function HarmoniaPage() {
       if (synthRef.current) {
         synthRef.current.releaseAll();
         setTimeout(() => {
-          synthRef.current?.triggerAttackRelease(option.candidateNotesWithOctave, "2n");
+          playChordPreview(option.candidateNotesWithOctave, "2n");
         }, 10);
       }
     },
-    [substitutionTarget, applySubstitution]
+    [substitutionTarget, applySubstitution, playChordPreview]
   );
 
   const handleSubstitutionRevert = useCallback(() => {
@@ -822,7 +877,7 @@ export default function HarmoniaPage() {
               {isSynthLoading ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Loading
+                  Loading {presetLabel}…
                 </>
               ) : isPlaying ? (
                 <>
@@ -888,7 +943,7 @@ export default function HarmoniaPage() {
               {audioMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setAudioMenuOpen(false)} />
-                  <div className="absolute top-full right-0 mt-2 z-50 w-44 rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
+                  <div className="absolute top-full right-0 mt-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
                     <button
                       onClick={() => setChordsEnabled(!chordsEnabled)}
                       className="flex items-center justify-between gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-foreground hover:bg-surface-muted transition-colors"
@@ -914,6 +969,95 @@ export default function HarmoniaPage() {
                         {!melody ? "None" : melodyEnabled ? "On" : "Muted"}
                       </span>
                     </button>
+
+                    {/* ── Playback settings ── */}
+                    <div className="my-1 h-px bg-border-subtle" />
+                    <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
+                      Playback
+                    </span>
+
+                    {/* Chord Velocity */}
+                    <div className="px-3 py-1.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs font-medium text-foreground">
+                        <span>Velocity</span>
+                        <span className="text-muted tabular-nums">{Math.round(chordVelocity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={CHORD_VELOCITY_MIN}
+                        max={CHORD_VELOCITY_MAX}
+                        step={0.01}
+                        value={chordVelocity}
+                        onChange={(e) => setChordVelocity(Number(e.target.value))}
+                        className="w-full accent-accent cursor-pointer"
+                        aria-label="Chord velocity"
+                      />
+                      <div className="flex justify-between text-[9px] uppercase tracking-wide text-muted/60">
+                        <span>Soft</span>
+                        <span>Loud</span>
+                      </div>
+                    </div>
+
+                    {/* Humanization */}
+                    <div className="px-3 py-1.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs font-medium text-foreground">
+                        <span>Humanize</span>
+                        <span className="text-muted tabular-nums">{Math.round(humanize * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.25}
+                        value={humanize}
+                        onChange={(e) => setHumanize(Number(e.target.value))}
+                        className="w-full accent-accent cursor-pointer"
+                        aria-label="Humanization amount"
+                      />
+                      <div className="flex justify-between text-[9px] uppercase tracking-wide text-muted/60">
+                        <span>Off</span>
+                        <span>Natural</span>
+                      </div>
+                    </div>
+
+                    {/* Sustain */}
+                    <div className="px-3 py-1.5 flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-foreground">Sustain</span>
+                      <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
+                        {(["off", "natural"] as const).map((m) => (
+                          <button
+                            key={m}
+                            onClick={() => setSustainMode(m)}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors ${
+                              sustainMode === m ? "bg-accent text-white shadow-sm" : "text-muted hover:text-foreground"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Playback Style */}
+                    <div className="px-3 py-1.5 flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-foreground">Style</span>
+                      <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
+                        {([
+                          { value: "block", label: "Block" },
+                          { value: "strum", label: "Soft Strum" },
+                        ] as const).map((s) => (
+                          <button
+                            key={s.value}
+                            onClick={() => setPlaybackStyle(s.value)}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                              playbackStyle === s.value ? "bg-accent text-white shadow-sm" : "text-muted hover:text-foreground"
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
