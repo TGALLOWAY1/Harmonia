@@ -17,7 +17,13 @@ exports[`advanced generator > is deterministic with a fixed seed 1`] = `
       "E4",
       "B4",
     ],
-    "symbol": "Cmaj7(9)",
+    "roles": [
+      "bass",
+      "chordTone",
+      "chordTone",
+      "chordTone",
+    ],
+    "symbol": "Cmaj7",
   },
   {
     "degreeLabel": "ii",
@@ -34,7 +40,13 @@ exports[`advanced generator > is deterministic with a fixed seed 1`] = `
       "F4",
       "C5",
     ],
-    "symbol": "Dm7(9)",
+    "roles": [
+      "bass",
+      "chordTone",
+      "chordTone",
+      "chordTone",
+    ],
+    "symbol": "Dm7",
   },
   {
     "degreeLabel": "V/vi(sus4)",
@@ -49,7 +61,12 @@ exports[`advanced generator > is deterministic with a fixed seed 1`] = `
       "D4",
       "A4",
     ],
-    "symbol": "Esus4",
+    "roles": [
+      "bass",
+      "chordTone",
+      "extension",
+    ],
+    "symbol": "E7sus4",
   },
   {
     "degreeLabel": "V/vi",
@@ -66,41 +83,13 @@ exports[`advanced generator > is deterministic with a fixed seed 1`] = `
       "D4",
       "G#4",
     ],
+    "roles": [
+      "bass",
+      "chordTone",
+      "chordTone",
+      "chordTone",
+    ],
     "symbol": "E7",
-  },
-  {
-    "degreeLabel": "vi",
-    "durationClass": "full",
-    "midi": [
-      55,
-      59,
-      60,
-      69,
-    ],
-    "notes": [
-      "G3",
-      "B3",
-      "C4",
-      "A4",
-    ],
-    "symbol": "Am7(9)",
-  },
-  {
-    "degreeLabel": "I",
-    "durationClass": "full",
-    "midi": [
-      52,
-      60,
-      62,
-      71,
-    ],
-    "notes": [
-      "E3",
-      "C4",
-      "D4",
-      "B4",
-    ],
-    "symbol": "Cmaj7(9)",
   },
 ]
 `;

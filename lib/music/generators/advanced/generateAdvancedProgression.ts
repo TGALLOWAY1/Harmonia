@@ -5,7 +5,8 @@ import {
   type SeventhQuality,
   type TriadQuality,
 } from "@/lib/theory/chord";
-import { midiToNoteName, PITCH_CLASSES, type PitchClass } from "@/lib/theory/midiUtils";
+import { midiToNoteName, pitchClassToMidi, PITCH_CLASSES, type PitchClass } from "@/lib/theory/midiUtils";
+import { getChordPitchClasses, toPitchClass } from "@/lib/theory/chordSymbol";
 import { getScaleDefinition } from "@/lib/theory/scale";
 import type { ScaleType } from "@/lib/theory/types";
 
@@ -22,10 +23,11 @@ import type {
   AdvancedProgressionOptions,
   AdvancedProgressionResult,
   DurationClass,
+  NoteRole,
   PlannedAdvancedChord,
 } from "./types";
 import { pickBestVoiceLedCandidate } from "./voiceLeading";
-import { generateVoicingCandidates } from "./voicing";
+import { generateVoicingCandidates, normalizeVoicingToRange } from "./voicing";
 
 const MODE_TO_SCALE_TYPE: Record<AdvancedProgressionOptions["mode"], ScaleType> = {
   ionian: "major",
@@ -229,6 +231,23 @@ function qualityHintFromTriad(quality: TriadQuality, isDominant: boolean): Quali
   return "min";
 }
 
+/**
+ * Derive the extension quality hint from the *seventh* quality rather than the
+ * triad. This is critical: a chord like D7 (♭VII in E minor) has a major triad
+ * but a dominant seventh — keying off the triad would push a major 7th (C#) on
+ * top of the dom7 (C), producing notes that contradict the "D7" symbol.
+ */
+function qualityHintFromSeventh(quality: SeventhQuality, isDominant: boolean): QualityHint {
+  if (isDominant) return "dom";
+  switch (quality) {
+    case "maj7": return "maj";
+    case "dom7": return "dom";
+    case "dim7": return "dim";
+    // min7 and half-dim7 both carry a minor 7th (interval 10)
+    default: return "min";
+  }
+}
+
 function buildDiatonicChordPlan(params: {
   root: PitchClass;
   degreeLabel: string;
@@ -247,16 +266,26 @@ function buildDiatonicChordPlan(params: {
 
   const isDominant = degreeIndex === 4 || degreeLabel.startsWith("V/") || degreeLabel.startsWith("sub(V");
   const triadQuality = isDominant ? "maj" : triad.quality;
-  const qualityHint = qualityHintFromTriad(triad.quality, isDominant);
+  // For complexity 1 (triads), key the hint off the triad; for seventh chords
+  // and beyond, key it off the actual seventh quality so we never add a 7th
+  // that contradicts the chord symbol.
+  const qualityHint =
+    complexity === 1
+      ? qualityHintFromTriad(triad.quality, isDominant)
+      : qualityHintFromSeventh(seventh.quality, isDominant);
 
   const basePitchClasses =
     complexity === 1
-      ? buildTriadFromScale(scale, degreeIndex).pitchClasses
+      ? // Dominant degrees are labelled major (raised leading tone) — build a
+        // major triad so the notes match the symbol; otherwise use the diatonic triad.
+        isDominant
+        ? [root, transposePitchClass(root, 4), transposePitchClass(root, 7)]
+        : buildTriadFromScale(scale, degreeIndex).pitchClasses
       : isDominant
         ? dominantPitchClasses(root)
         : buildSeventhFromScale(scale, degreeIndex).pitchClasses;
 
-  const expandedPitchClasses = applyComplexityExtensions({
+  const extension = applyComplexityExtensions({
     root,
     basePitchClasses,
     complexity,
@@ -265,6 +294,7 @@ function buildDiatonicChordPlan(params: {
     random,
     tensionLevel: tensionLevel ?? 0.5,
   });
+  const expandedPitchClasses = extension.pitchClasses;
 
   let symbolQuality: string;
   if (complexity === 1) {
@@ -275,18 +305,15 @@ function buildDiatonicChordPlan(params: {
     symbolQuality = mapSeventhToSymbolQuality(seventh.quality);
   }
 
-  let symbol = formatChordSymbol(root, symbolQuality);
-
-  if (complexity === 3 && qualityHint !== "dim") {
-    symbol = `${symbol}(9)`;
-  }
-
-  if (complexity >= 4 && isDominant) {
+  // Build the symbol from what the extension step *actually* added, so the
+  // symbol and the pitch classes always agree (required for validation).
+  let symbol: string;
+  if (complexity >= 4 && isDominant && extension.addedAlteration) {
     symbol = `${root}7alt`;
-  }
-
-  if (complexity >= 3 && qualityHint === "maj" && (tensionLevel ?? 0.5) > 0.4 && random() > 0.72) {
-    symbol = `${symbol}(13)`;
+  } else {
+    symbol = formatChordSymbol(root, symbolQuality);
+    if (extension.addedNinth) symbol = `${symbol}(9)`;
+    if (extension.addedThirteenth) symbol = `${symbol}(13)`;
   }
 
   return {
@@ -320,6 +347,53 @@ function durationToBeats(dc: DurationClass | undefined): number {
     case "eighth": return 0.5;
     default: return 4;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Validation, safe fallback, and note roles
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a safe, in-range closed voicing directly from a chord symbol's pitch
+ * classes. Used as a fallback when a generated voicing fails validation, so the
+ * chord symbol is always the source of truth for the notes that get committed.
+ */
+function buildSafeVoicing(pitchClasses: PitchClass[], rangeLow: number, rangeHigh: number): number[] {
+  const baseOctave = Math.floor((rangeLow + rangeHigh) / 2 / 12) - 1;
+  const midi = pitchClasses.map((pc) => pitchClassToMidi(pc, baseOctave));
+  // Stack ascending so notes don't collide.
+  midi.sort((a, b) => a - b);
+  for (let i = 1; i < midi.length; i++) {
+    while (midi[i] <= midi[i - 1]) midi[i] += 12;
+  }
+  const normalized = normalizeVoicingToRange(midi, rangeLow, rangeHigh);
+  return normalized ?? midi.sort((a, b) => a - b);
+}
+
+/** Classify a note's role relative to a chord root (sharp-only intervals). */
+function roleForInterval(interval: number): NoteRole {
+  const mod = ((interval % 12) + 12) % 12;
+  // Core chord tones: root (0), 3rd (3/4), 5th (7), 7th (9/10/11).
+  if (mod === 0 || mod === 3 || mod === 4 || mod === 7 || mod === 9 || mod === 10 || mod === 11) {
+    return "chordTone";
+  }
+  // Natural extensions: 9th (2), 11th (5), 13th (9 handled above as 6th/13th).
+  if (mod === 2 || mod === 5) return "extension";
+  // Everything else (b9, #9, b5/#11, #5/b13) is an alteration.
+  return "alteration";
+}
+
+/**
+ * Assign a role to each voiced note. The lowest note is tagged "bass"; the rest
+ * are classified by their interval from the chord root.
+ */
+function assignRoles(midiAscending: number[], root: PitchClass): NoteRole[] {
+  const rootIndex = PITCH_CLASSES.indexOf(root);
+  return midiAscending.map((midi, idx) => {
+    if (idx === 0) return "bass";
+    const interval = (PITCH_CLASSES.indexOf(toPitchClass(midi)) - rootIndex + 12) % 12;
+    return roleForInterval(interval);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -423,13 +497,36 @@ export function generateAdvancedProgression(
     });
 
     const selection = pickBestVoiceLedCandidate(previousVoicing, candidates, center);
-    const finalVoicing = [...selection.voicing].sort((a, b) => a - b);
+    let finalVoicing = [...selection.voicing].sort((a, b) => a - b);
+
+    // --- Validation: every voiced pitch class must be implied by the symbol ---
+    // The chord symbol is the single source of truth. If the voicing somehow
+    // contains a tone the symbol doesn't allow, log a structured warning and
+    // fall back to a safe voicing built directly from the symbol.
+    const allowed = getChordPitchClasses(chord.symbol);
+    if (allowed.length > 0) {
+      const offending = finalVoicing
+        .map((m) => toPitchClass(m))
+        .filter((pc) => !allowed.includes(pc));
+      if (offending.length > 0) {
+        console.warn("[harmonia] invalid chord voicing — falling back to safe voicing", {
+          symbol: chord.symbol,
+          degree: chord.degreeLabel,
+          expected: allowed,
+          got: finalVoicing.map((m) => toPitchClass(m)),
+          offending,
+          seed,
+        });
+        finalVoicing = buildSafeVoicing(allowed, low, high);
+      }
+    }
 
     voiced.push({
       degreeLabel: chord.degreeLabel,
       symbol: chord.symbol,
       midi: finalVoicing,
       notes: finalVoicing.map((midi) => midiToNoteName(midi)),
+      roles: assignRoles(finalVoicing, chord.root),
       durationClass: chord.durationClass ?? "full",
     });
 

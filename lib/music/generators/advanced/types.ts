@@ -42,6 +42,20 @@ export type PhraseRole =
   | "dominant"
   | "cadence";
 
+/**
+ * The harmonic role of an individual note within (or against) a chord. Used to
+ * keep sustained chord tones separate from non-chord tones (melody, passing
+ * tones, etc.) so they are never silently mixed into the chord voicing.
+ */
+export type NoteRole =
+  | "chordTone"
+  | "extension"
+  | "alteration"
+  | "passingTone"
+  | "melody"
+  | "approachTone"
+  | "bass";
+
 export type PlannedAdvancedChord = {
   degreeLabel: string;
   symbol: string;
@@ -78,6 +92,8 @@ export type VoicedChord = {
   symbol: string;
   midi: number[];
   notes: string[];
+  /** Per-note harmonic role, parallel to `midi`/`notes`. */
+  roles: NoteRole[];
   durationClass?: DurationClass;
 };
 
