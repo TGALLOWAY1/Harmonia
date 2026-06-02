@@ -1079,8 +1079,8 @@ export default function HarmoniaPage() {
               >
 
                 {/* Chord cards row — offset by piano key width, flex-matched to roll columns */}
-                <div className="flex" style={{ paddingLeft: 53 }}>
-                  <div className="flex flex-1 gap-1.5">
+                <div className="relative flex" style={{ paddingLeft: 53 }}>
+                  <div className="chord-card-row">
                     {currentProgression.chords.map((chord, index) => {
                       const isActive = playbackIndex === index;
                       const previewNotes =
@@ -1106,72 +1106,76 @@ export default function HarmoniaPage() {
                             duration: 0.35,
                             ease: [0.22, 1, 0.36, 1],
                           }}
-                          style={{ flex: colFlex, minWidth: 0 }}
+                          style={{ "--card-flex": colFlex } as React.CSSProperties}
                           onClick={() => handleChordClick(previewNotes, index)}
-                          className={`relative flex flex-col items-center justify-center rounded-xl px-2.5 py-3 lg:px-3 lg:py-5 border transition-all duration-200 cursor-pointer select-none ${
+                          className={`chord-card relative flex flex-col rounded-xl px-2.5 py-3 lg:px-3 lg:py-4 border transition-all duration-200 cursor-pointer select-none ${
                             isActive
-                              ? "bg-accent/10 border-accent shadow-md ring-2 ring-accent/20"
+                              ? "bg-accent/10 border-accent shadow-md ring-2 ring-inset ring-accent/20"
                               : selectedChordIndex === index
-                                ? "bg-accent/5 border-accent ring-2 ring-accent/40 shadow-sm"
+                                ? "bg-accent/5 border-accent ring-2 ring-inset ring-accent/40 shadow-sm"
                                 : chord.isLocked
-                                  ? "bg-surface border-accent/30 ring-1 ring-accent/10"
+                                  ? "bg-surface border-accent/30 ring-1 ring-inset ring-accent/10"
                                   : "bg-surface border-border-subtle shadow-sm hover:border-accent/60 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm"
                           }`}
                         >
                           {/* Playback glow pulse */}
                           {isActive && (
                             <motion.div
-                              className="absolute inset-0 rounded-xl bg-accent/5"
+                              className="absolute inset-0 rounded-xl bg-accent/5 pointer-events-none"
                               animate={{ opacity: [0.3, 0.08, 0.3] }}
                               transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
                             />
                           )}
 
-                          {/* Top-left: source badge */}
-                          {sourceType !== "generated" && (
-                            <div className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-semibold ${SOURCE_BADGE[sourceType].color}`}>
-                              {SOURCE_BADGE[sourceType].label}
+                          {/* Top meta row: source badge (left) + controls (right) */}
+                          <div className="relative z-10 flex w-full items-center justify-between gap-1 min-h-[20px]">
+                            {sourceType !== "generated" ? (
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-semibold whitespace-nowrap ${SOURCE_BADGE[sourceType].color}`}>
+                                {SOURCE_BADGE[sourceType].label}
+                              </span>
+                            ) : (
+                              <span aria-hidden className="block w-px" />
+                            )}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSubstitution(index);
+                                  setSelectedChordIndex(index);
+                                }}
+                                className="p-1.5 lg:p-1 rounded-md text-muted/30 hover:text-accent/70 transition-colors"
+                                title="Substitute chord"
+                              >
+                                <Shuffle className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleLock(index);
+                                }}
+                                className={`p-1.5 lg:p-1 rounded-md transition-colors ${
+                                  chord.isLocked
+                                    ? "text-accent hover:text-accent/80"
+                                    : "text-muted/30 hover:text-muted/60"
+                                }`}
+                                title={chord.isLocked ? "Unlock chord" : "Lock chord"}
+                              >
+                                {chord.isLocked ? (
+                                  <Lock className="w-3 h-3" />
+                                ) : (
+                                  <Unlock className="w-3 h-3" />
+                                )}
+                              </button>
                             </div>
-                          )}
-
-                          {/* Top-right: Lock toggle + Substitute button */}
-                          <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSubstitution(index);
-                                setSelectedChordIndex(index);
-                              }}
-                              className="p-1.5 lg:p-1 rounded-md text-muted/30 hover:text-accent/70 transition-colors"
-                              title="Substitute chord"
-                            >
-                              <Shuffle className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleLock(index);
-                              }}
-                              className={`p-1.5 lg:p-1 rounded-md transition-colors ${
-                                chord.isLocked
-                                  ? "text-accent hover:text-accent/80"
-                                  : "text-muted/30 hover:text-muted/60"
-                              }`}
-                              title={chord.isLocked ? "Unlock chord" : "Lock chord"}
-                            >
-                              {chord.isLocked ? (
-                                <Lock className="w-3 h-3" />
-                              ) : (
-                                <Unlock className="w-3 h-3" />
-                              )}
-                            </button>
                           </div>
 
+                          {/* Centered chord content */}
+                          <div className="relative z-10 flex flex-1 flex-col items-center justify-center text-center">
                           <div className="text-xs font-mono text-muted mb-0.5 lg:mb-1 tracking-wider">
                             {chord.romanNumeral}
                           </div>
-                          <div className="text-lg lg:text-xl font-semibold mb-1 lg:mb-1.5">{chord.symbol}</div>
-                          <div className="text-[10px] text-muted opacity-70">
+                          <div className="text-lg lg:text-xl font-semibold mb-1 lg:mb-1.5 whitespace-nowrap">{chord.symbol}</div>
+                          <div className="text-[10px] text-muted opacity-70 whitespace-nowrap">
                             {chord.notes.join(" · ")}
                           </div>
                           {chord.durationClass && chord.durationClass !== "full" && (
@@ -1194,10 +1198,13 @@ export default function HarmoniaPage() {
                               revert
                             </button>
                           )}
+                          </div>
                         </motion.div>
                       );
                     })}
                   </div>
+                  {/* Mobile scroll affordance */}
+                  <div className="lg:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-5 bg-gradient-to-l from-black/10 to-transparent" />
                 </div>
 
                 {/* Voicing feedback removed and added to controls bar */}
