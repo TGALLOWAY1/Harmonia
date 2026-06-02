@@ -37,6 +37,26 @@ function preferredSeventh(qualityHint: QualityHint): number {
   return 10;
 }
 
+/** Whether an interval (mod 12) is some kind of 7th (dim=9, min=10, maj=11). */
+function hasSeventh(intervals: number[]): boolean {
+  return intervals.some((i) => {
+    const mod = ((i % 12) + 12) % 12;
+    return mod === 9 || mod === 10 || mod === 11;
+  });
+}
+
+/**
+ * Result of extension application. The added-degree flags let the caller build
+ * a chord symbol that exactly describes the pitch classes produced here, so the
+ * symbol and the voiced notes never diverge.
+ */
+export type ExtensionResult = {
+  pitchClasses: PitchClass[];
+  addedNinth: boolean;
+  addedThirteenth: boolean;
+  addedAlteration: boolean;
+};
+
 /**
  * Apply complexity extensions gated by tension level.
  *
@@ -46,17 +66,26 @@ function preferredSeventh(qualityHint: QualityHint): number {
  * - Tension 0.5-0.7: 9th + 13th allowed (building tension)
  * - Tension > 0.7: all extensions + alterations (maximum tension)
  * - Dominant chords get richer treatment than tonic/subdominant
+ *
+ * Note: the 7th is only added when the base chord does not already contain one.
+ * `basePitchClasses` for complexity >= 2 is already a seventh chord, so the
+ * function never stacks a second (wrongly-derived) 7th on top — this is what
+ * fixes the "C#-on-a-D7" class of bugs.
  */
-export function applyComplexityExtensions(input: ExtensionInput): PitchClass[] {
+export function applyComplexityExtensions(input: ExtensionInput): ExtensionResult {
   const { root, basePitchClasses, complexity, qualityHint, isDominant, random } = input;
   const tension = input.tensionLevel ?? 0.5; // default to mid-tension for backwards compat
 
   const intervals = basePitchClasses.map((pc) => intervalFromRoot(root, pc));
 
-  // Complexity 2+: add 7th
-  if (complexity >= 2) {
+  // Complexity 2+: add a 7th, but only if the base chord lacks one.
+  if (complexity >= 2 && !hasSeventh(intervals)) {
     intervals.push(preferredSeventh(qualityHint));
   }
+
+  let addedNinth = false;
+  let addedThirteenth = false;
+  let addedAlteration = false;
 
   // Complexity 3+: selectively add 9th and 13th, gated by tension
   if (complexity >= 3 && qualityHint !== "dim") {
@@ -66,6 +95,7 @@ export function applyComplexityExtensions(input: ExtensionInput): PitchClass[] {
     const ninthThreshold = isDominant ? 0.3 : 0.55 - tension * 0.3;
     if (random() > ninthThreshold) {
       intervals.push(2); // add9
+      addedNinth = true;
     }
 
     // 13th: only on major/dominant chords, at higher tension
@@ -73,6 +103,7 @@ export function applyComplexityExtensions(input: ExtensionInput): PitchClass[] {
       const thirteenthThreshold = isDominant ? 0.6 : 0.8;
       if (random() > thirteenthThreshold) {
         intervals.push(9); // add13
+        addedThirteenth = true;
       }
     }
   }
@@ -82,13 +113,19 @@ export function applyComplexityExtensions(input: ExtensionInput): PitchClass[] {
     const alterations = [1, 3, 8] as const; // b9, #9, b13
     const picked = alterations[Math.floor(random() * alterations.length)] ?? 1;
     intervals.push(picked);
+    addedAlteration = true;
     // Second alteration only at very high tension
     if (tension > 0.7 && random() > 0.6) {
       intervals.push(1);
     }
   }
 
-  return uniquePitchClasses(root, intervals);
+  return {
+    pitchClasses: uniquePitchClasses(root, intervals),
+    addedNinth,
+    addedThirteenth,
+    addedAlteration,
+  };
 }
 
 export function getComplexitySuffix(complexity: AdvancedComplexity, isDominant: boolean): string {

@@ -6,16 +6,10 @@ function transposePitchClass(root: PitchClass, semitones: number): PitchClass {
   return PITCH_CLASSES[(index + semitones + 120) % 12];
 }
 
-function toIntervals(root: PitchClass, notes: PitchClass[]): number[] {
-  const rootIndex = PITCH_CLASSES.indexOf(root);
-  return notes.map((note) => {
-    const noteIndex = PITCH_CLASSES.indexOf(note);
-    return (noteIndex - rootIndex + 12) % 12;
-  });
-}
-
 function fromIntervals(root: PitchClass, intervals: number[]): PitchClass[] {
-  return Array.from(new Set(intervals.map((interval) => transposePitchClass(root, interval))));
+  // De-duplicate and sort by interval so pitch-class order is deterministic.
+  const unique = Array.from(new Set(intervals.map((i) => ((i % 12) + 12) % 12))).sort((a, b) => a - b);
+  return unique.map((interval) => transposePitchClass(root, interval));
 }
 
 function buildDominant(root: PitchClass, degreeLabel: string, kind: PlannedAdvancedChord["kind"]): PlannedAdvancedChord {
@@ -139,14 +133,14 @@ export function applyTritoneSubstitutions(
     // Don't tritone-sub protected chords
     if (chord.isProtected) return chord;
 
-    const originalIntervals = toIntervals(chord.root, chord.pitchClasses);
     const substitutedRoot = transposePitchClass(chord.root, 6);
 
     return {
       degreeLabel: `sub(${chord.degreeLabel})`,
       symbol: `${substitutedRoot}7`,
       root: substitutedRoot,
-      pitchClasses: fromIntervals(substitutedRoot, originalIntervals),
+      // Plain dominant 7th so the notes always match the "7" symbol.
+      pitchClasses: fromIntervals(substitutedRoot, [0, 4, 7, 10]),
       kind: "tritone-substitution",
       isDominant: true,
       role: chord.role,
@@ -230,7 +224,7 @@ export function insertSuspensions(
     if (chord.isDominant && insertions < maxInsertions && tension > 0.4 && random() > 0.55) {
       result.push({
         degreeLabel: `${chord.degreeLabel}(sus4)`,
-        symbol: `${chord.root}sus4`,
+        symbol: `${chord.root}7sus4`,
         root: chord.root,
         pitchClasses: fromIntervals(chord.root, [0, 5, 7, 10]),
         kind: "suspension",
