@@ -1108,7 +1108,7 @@ export default function HarmoniaPage() {
                           }}
                           style={{ "--card-flex": colFlex } as React.CSSProperties}
                           onClick={() => handleChordClick(previewNotes, index)}
-                          className={`chord-card relative flex flex-col rounded-xl px-2.5 py-3 lg:px-3 lg:py-4 border transition-all duration-200 cursor-pointer select-none ${
+                          className={`chord-card relative flex flex-col rounded-xl px-2 py-2.5 sm:px-2.5 sm:py-3 lg:px-3 lg:py-4 border transition-all duration-200 cursor-pointer select-none ${
                             isActive
                               ? "bg-accent/10 border-accent shadow-md ring-2 ring-inset ring-accent/20"
                               : selectedChordIndex === index
@@ -1127,8 +1127,10 @@ export default function HarmoniaPage() {
                             />
                           )}
 
-                          {/* Top meta row: source badge (left) + controls (right) */}
-                          <div className="relative z-10 flex w-full items-center justify-between gap-1 min-h-[20px]">
+                          {/* Top meta row: source badge (left) + controls (right).
+                              Hidden on phones (< sm) so cards can shrink to just
+                              the chord name and the whole progression fits. */}
+                          <div className="relative z-10 hidden sm:flex w-full items-center justify-between gap-1 min-h-[20px]">
                             {sourceType !== "generated" ? (
                               <span className={`px-1.5 py-0.5 rounded text-[8px] font-semibold whitespace-nowrap ${SOURCE_BADGE[sourceType].color}`}>
                                 {SOURCE_BADGE[sourceType].label}
@@ -1175,11 +1177,11 @@ export default function HarmoniaPage() {
                             {chord.romanNumeral}
                           </div>
                           <div className="text-lg lg:text-xl font-semibold mb-1 lg:mb-1.5 whitespace-nowrap">{chord.symbol}</div>
-                          <div className="text-[10px] text-muted opacity-70 whitespace-nowrap">
+                          <div className="hidden sm:block text-[10px] text-muted opacity-70 whitespace-nowrap">
                             {chord.notes.join(" · ")}
                           </div>
                           {chord.durationClass && chord.durationClass !== "full" && (
-                            <div className="mt-1 text-[9px] font-mono text-muted/50 uppercase tracking-widest">
+                            <div className="mt-1 hidden sm:block text-[9px] font-mono text-muted/50 uppercase tracking-widest">
                               {chord.durationClass === "half" ? "2 beats" : chord.durationClass === "quarter" ? "1 beat" : "\u00BD beat"}
                             </div>
                           )}
@@ -1203,8 +1205,6 @@ export default function HarmoniaPage() {
                       );
                     })}
                   </div>
-                  {/* Mobile scroll affordance */}
-                  <div className="lg:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-5 bg-gradient-to-l from-black/10 to-transparent" />
                 </div>
 
                 {/* Voicing feedback removed and added to controls bar */}
@@ -1212,7 +1212,7 @@ export default function HarmoniaPage() {
                 {/* Interactive Piano Roll */}
                 <p className="lg:hidden flex items-center gap-1.5 px-1 mb-1.5 text-[11px] text-muted/70">
                   <Music className="w-3 h-3 shrink-0 text-accent/60" />
-                  Piano roll — tap a note to hear it, drag to edit · scroll for more
+                  Piano roll — tap a note to hear it, drag to edit
                 </p>
                 <div className="relative">
                 <InteractivePianoRoll
