@@ -309,6 +309,40 @@
   --vert-key-active-w: #fde8e1;
   --vert-key-active-b: #5a2d22;
   --vert-col-hover:    rgba(232, 133, 106, 0.06);
+  /* Fixed roll header height keeps the playhead below the header row and
+     keeps every column header aligned. */
+  --roll-header-h:     30px;
+}
+
+/* ─────────────────────────────────────────────
+   CHORD CARD ROW (PROGRESSION PAGE)
+   Mirrors the piano-roll column flex pattern via a --card-flex variable.
+───────────────────────────────────────────── */
+.chord-card-row {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+.chord-card {
+  flex: var(--card-flex, 1);
+  min-width: 0;
+}
+/* Mobile: uniform, readable, horizontally-scrollable cards (no shrinking,
+   no overlap). Desktop keeps the duration-proportional flex layout above. */
+@media (max-width: 1023px) {
+  .chord-card-row {
+    flex: none;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+  }
+  .chord-card {
+    flex: 1 1 0;
+    min-width: 150px;
+    scroll-snap-align: start;
+  }
 }
 
 .piano-roll-section {
@@ -393,10 +427,11 @@
   position: relative;
 }
 
-/* Playhead line during playback */
+/* Playhead line during playback — starts below the header row so it never
+   draws through chord labels / badges / the header border. */
 .playhead-line {
   position: absolute;
-  top: 0;
+  top: var(--roll-header-h);
   bottom: 0;
   width: 2px;
   background: var(--vert-accent-coral);
@@ -415,6 +450,13 @@
   cursor: pointer;
   transition: background 0.1s;
   position: relative;
+}
+/* Mobile: wider columns so headers stay readable and align with the uniform
+   150px chord cards; engages horizontal scroll with the right-edge fade. */
+@media (max-width: 1023px) {
+  .roll-column {
+    min-width: 150px;
+  }
 }
 .roll-col-cells {
   position: relative;
@@ -436,6 +478,12 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  /* Fixed height keeps headers aligned and matches the playhead top offset. */
+  height: var(--roll-header-h);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
 }
 .roll-col-header .col-numeral {
   font-family: var(--font-geist-mono), monospace;
@@ -446,6 +494,15 @@
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.2;
+  min-width: 0;
+  width: 100%;
+}
+/* Chord symbol truncates instead of colliding with the badge/dot. */
+.roll-col-header .col-chord-symbol {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .roll-column.playing .roll-col-header {

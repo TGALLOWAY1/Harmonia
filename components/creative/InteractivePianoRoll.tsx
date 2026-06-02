@@ -94,6 +94,14 @@ const SOURCE_BADGE_LABELS: Record<ChordSourceType, string> = {
   manual: "Edit",
 };
 
+// Compact dot indicator used on narrow (mobile) columns where a text badge
+// would overlap the chord name.
+const SOURCE_DOT_COLORS: Record<ChordSourceType, string> = {
+  generated: "bg-blue-400",
+  substituted: "bg-purple-400",
+  manual: "bg-emerald-400",
+};
+
 export function InteractivePianoRoll({
   chords,
   playingIndex,
@@ -383,11 +391,19 @@ export function InteractivePianoRoll({
                   title={`${chord.romanNumeral} \u2014 ${chord.symbol}`}
                 >
                   <div className="col-chord-name flex items-center gap-1">
-                    {chord.symbol}
+                    <span className="col-chord-symbol">{chord.symbol}</span>
                     {sourceType && sourceType !== "generated" && (
-                      <span className={`inline-block px-1 py-0 rounded text-[8px] font-semibold ${SOURCE_BADGE_COLORS[sourceType]}`}>
-                        {SOURCE_BADGE_LABELS[sourceType]}
-                      </span>
+                      <>
+                        {/* Mobile: compact dot so the badge never overlaps the name */}
+                        <span
+                          className={`lg:hidden inline-block w-1.5 h-1.5 rounded-full shrink-0 ${SOURCE_DOT_COLORS[sourceType]}`}
+                          title={SOURCE_BADGE_LABELS[sourceType]}
+                        />
+                        {/* Desktop: full text badge */}
+                        <span className={`hidden lg:inline-block px-1 py-0 rounded text-[8px] font-semibold shrink-0 ${SOURCE_BADGE_COLORS[sourceType]}`}>
+                          {SOURCE_BADGE_LABELS[sourceType]}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
