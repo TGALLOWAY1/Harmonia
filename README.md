@@ -62,6 +62,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to start generating progressions, or navigate to [http://localhost:3000/sketchpad](http://localhost:3000/sketchpad) to open the Harmonic Sketchpad.
 
+### App icons & "Add to Home Screen"
+
+The favicon is an SVG (`app/icon.svg`) for crisp browser tabs. Because iOS Safari ignores SVG icons when adding a site to the home screen, the project also ships PNG raster icons (`public/apple-icon.png` plus `icon-192.png` / `icon-512.png`) and a `public/manifest.webmanifest`, wired up via the `icons`/`manifest`/`appleWebApp` metadata in `app/layout.tsx`. The PNGs are regenerated from `app/icon.svg` — re-run the raster step (e.g. with `sharp`) if you change the source SVG.
+
 ## Tech Stack
 
 - [Next.js 14](https://nextjs.org) — React framework

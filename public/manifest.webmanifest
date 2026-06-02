@@ -1,0 +1,23 @@
+{
+  "name": "Harmonia — Chord Progression Generator",
+  "short_name": "Harmonia",
+  "description": "Generate musically coherent chord progressions in any key and mode. Hear them instantly, export as MIDI.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121715",
+  "theme_color": "#121715",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
