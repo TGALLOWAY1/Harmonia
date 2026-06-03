@@ -29,7 +29,7 @@ import {
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
-import type { MelodyStyle } from "@/lib/music/generators/melody/types";
+import type { MelodyStyle, MelodyHarmony } from "@/lib/music/generators/melody/types";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: { value: Mode; label: string }[] = [
@@ -57,6 +57,11 @@ const MELODY_STYLES: { value: MelodyStyle; label: string }[] = [
   { value: "lyrical", label: "Lyrical" },
   { value: "rhythmic", label: "Rhythmic" },
   { value: "arpeggiated", label: "Arpeggio" },
+];
+
+const MELODY_HARMONIES: { value: MelodyHarmony; label: string }[] = [
+  { value: "expressive", label: "Expressive" },
+  { value: "strict", label: "Strict" },
 ];
 
 /** Map durationClass to a flex multiplier for column width alignment. */
@@ -112,8 +117,10 @@ export default function HarmoniaPage() {
     melody,
     melodyEnabled,
     melodyStyle,
+    melodyHarmony,
     setMelodyEnabled,
     setMelodyStyle,
+    setMelodyHarmony,
     generateMelodyForProgression,
   } = useProgressionStore();
 
@@ -801,6 +808,17 @@ export default function HarmoniaPage() {
                 >
                   {MELODY_STYLES.map((ms) => (
                     <option key={ms.value} value={ms.value}>{ms.label}</option>
+                  ))}
+                </select>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <select
+                  value={melodyHarmony}
+                  onChange={(e) => setMelodyHarmony(e.target.value as any)}
+                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  title="Melody Harmony — how tightly the melody follows the chord tones"
+                >
+                  {MELODY_HARMONIES.map((mh) => (
+                    <option key={mh.value} value={mh.value}>{mh.label}</option>
                   ))}
                 </select>
                 <div className="w-px h-4 bg-border-subtle mx-1" />
