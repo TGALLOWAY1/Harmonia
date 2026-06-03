@@ -7,12 +7,8 @@ import { useSketchpadStore } from "@/lib/sketchpad/store";
 import { SongStructurePanel } from "./SongStructurePanel";
 import { SectionEditorPanel } from "./SectionEditorPanel";
 import { HarmonicPreviewPanel } from "./HarmonicPreviewPanel";
-import {
-  createSynthForPreset,
-  presetNeedsLoading,
-  type SoundPresetId,
-  type Synth,
-} from "@/lib/audio/synthPresets";
+import { type SoundPresetId, type Synth } from "@/lib/audio/synthPresets";
+import { useInstrument } from "@/lib/audio/useInstrument";
 
 function beatsToDuration(beats: number): string {
   switch (beats) {
@@ -37,8 +33,12 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   } = useSketchpadStore();
 
   const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
-  const [isSynthLoading, setIsSynthLoading] = useState(false);
   const synthRef = useRef<Synth | null>(null);
+  const {
+    isLoading: isSynthLoading,
+    loadError: synthLoadError,
+    dismissError: dismissSynthError,
+  } = useInstrument(soundPreset, { synthRef });
   const scheduleIdsRef = useRef<number[]>([]);
 
   const activeSection = useMemo(
@@ -51,17 +51,6 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
     return activeSection.variants.find((v) => v.id === activeSection.activeVariantId) ?? null;
   }, [activeSection]);
 
-  // Synth lifecycle
-  useEffect(() => {
-    setIsSynthLoading(presetNeedsLoading(soundPreset));
-    const synth = createSynthForPreset(soundPreset, { onLoaded: () => setIsSynthLoading(false) });
-    synthRef.current = synth;
-    return () => {
-      synth.releaseAll();
-      synth.dispose();
-      synthRef.current = null;
-    };
-  }, [soundPreset]);
 
   // BPM sync
   useEffect(() => {
@@ -301,6 +290,8 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
         soundPreset={soundPreset}
         onSoundPresetChange={setSoundPreset}
         isSynthLoading={isSynthLoading}
+        synthLoadError={synthLoadError}
+        onDismissSynthError={dismissSynthError}
       />
     </div>
   );

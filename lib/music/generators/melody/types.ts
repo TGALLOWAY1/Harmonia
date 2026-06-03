@@ -29,6 +29,16 @@ export type Melody = {
 /** Style of melody generation. */
 export type MelodyStyle = "lyrical" | "rhythmic" | "arpeggiated";
 
+/**
+ * How tightly the melody is bound to the underlying chord's tones.
+ *   - expressive: chord tones (incl. chromatic ones) are reachable and strongly
+ *                 preferred on strong beats; diatonic notes a semitone off a
+ *                 chord tone are avoided, but scale/passing tones remain allowed.
+ *   - strict:     every strong-beat note must be an actual chord tone; scale and
+ *                 passing tones are only permitted on weak beats.
+ */
+export type MelodyHarmony = "expressive" | "strict";
+
 /** Options for the melody generator. */
 export type MelodyGenerationOptions = {
   /** Scale pitch classes (7 notes) in order. */
@@ -41,6 +51,8 @@ export type MelodyGenerationOptions = {
     durationClass?: DurationClass;
   }[];
   style: MelodyStyle;
+  /** How tightly the melody follows the chord tones (default "expressive"). */
+  harmony?: MelodyHarmony;
   /** Tension curve (0-1 per chord) — drives contour and note density. */
   tensionCurve?: number[];
   /** Octave for the melody (default 5). */

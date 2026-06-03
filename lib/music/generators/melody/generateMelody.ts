@@ -14,7 +14,7 @@
 
 import { pitchClassToMidi, midiToNoteName, midiToPitchClass, type PitchClass } from "@/lib/theory/midiUtils";
 import type { DurationClass } from "../advanced/types";
-import type { Melody, MelodyNote, MelodyGenerationOptions } from "./types";
+import type { Melody, MelodyNote, MelodyGenerationOptions, MelodyHarmony } from "./types";
 
 /* ─── Helpers ─── */
 
@@ -55,6 +55,22 @@ function buildScaleMidiSet(scalePitchClasses: PitchClass[], octave: number): num
   return notes.sort((a, b) => a - b);
 }
 
+/**
+ * Build an ordered set of chord-tone MIDI notes spanning the target range.
+ * Mirrors buildScaleMidiSet but for a chord's pitch classes — crucially this
+ * materialises chromatic chord tones (e.g. the F# of a D7 in C major) that are
+ * absent from the diatonic scale set, so the melody can actually reach them.
+ */
+function buildChordMidiSet(chordPitchClasses: PitchClass[], octave: number): number[] {
+  const notes: number[] = [];
+  for (let oct = octave - 1; oct <= octave + 1; oct++) {
+    for (const pc of chordPitchClasses) {
+      notes.push(pitchClassToMidi(pc, oct));
+    }
+  }
+  return notes.sort((a, b) => a - b);
+}
+
 /** Find the closest scale tone to a target MIDI note. */
 function closestScaleTone(target: number, scaleMidi: number[]): number {
   let best = scaleMidi[0];
@@ -82,6 +98,20 @@ function stepByDegrees(current: number, degrees: number, scaleMidi: number[]): n
 
 function isChordTone(midi: number, chordPitchClasses: PitchClass[]): boolean {
   return chordPitchClasses.includes(midiToPitchClass(midi));
+}
+
+/**
+ * Whether `midi` is a non-chord-tone sitting a semitone away from a chord tone.
+ * These are the worst offenders harmonically (e.g. a diatonic F natural a
+ * semitone below the F# third of a D7) and are penalised / avoided on strong
+ * beats so the melody stops clashing with the now-correct chord notes.
+ */
+function isSemitoneClash(midi: number, chordPitchClasses: PitchClass[]): boolean {
+  if (isChordTone(midi, chordPitchClasses)) return false;
+  return (
+    isChordTone(midi - 1, chordPitchClasses) ||
+    isChordTone(midi + 1, chordPitchClasses)
+  );
 }
 
 /* ─── Smoothness cost (adapted from voiceLeading.ts) ─── */
@@ -186,7 +216,9 @@ function pickNextPitch(
   current: number,
   chordPCs: PitchClass[],
   scaleMidi: number[],
+  chordMidi: number[],
   style: "lyrical" | "rhythmic" | "arpeggiated",
+  harmony: MelodyHarmony,
   tension: number,
   prevDirection: number,
   rng: () => number,
@@ -196,10 +228,26 @@ function pickNextPitch(
   const baseRange = style === "arpeggiated" ? 12 : style === "lyrical" ? 7 : 5;
   const range = baseRange + Math.floor(tension * 5); // tension widens range
 
-  // Gather candidates
-  const candidates = scaleMidi.filter(
-    (m) => Math.abs(m - current) <= range,
+  // Candidate universe: scale tones unioned with chord tones, so chromatic
+  // chord tones (outside the diatonic scale) are reachable. De-duplicate.
+  const universe = Array.from(new Set([...scaleMidi, ...chordMidi])).sort(
+    (a, b) => a - b,
   );
+
+  // Gather candidates within range
+  let candidates = universe.filter((m) => Math.abs(m - current) <= range);
+
+  // Strict harmony: on strong beats restrict to actual chord tones. If none are
+  // in range, fall back to the nearest chord tone so the beat still lands true.
+  if (harmony === "strict" && isStrongBeat) {
+    const chordCandidates = candidates.filter((m) => isChordTone(m, chordPCs));
+    if (chordCandidates.length > 0) {
+      candidates = chordCandidates;
+    } else if (chordMidi.length > 0) {
+      return { midi: closestScaleTone(current, chordMidi), direction: 0 };
+    }
+  }
+
   if (candidates.length === 0) {
     return { midi: current, direction: 0 };
   }
@@ -208,14 +256,20 @@ function pickNextPitch(
   const scored = candidates.map((m) => {
     let score = melodicCost(current, m, prevDirection);
 
-    // Chord tone bonus on strong beats
+    // Chord tone bonus on strong beats (stronger pull toward chord tones)
     if (isStrongBeat && isChordTone(m, chordPCs)) {
-      score -= 3;
+      score -= 5;
     }
 
     // Non-strong beat: mild chord tone preference
     if (!isStrongBeat && isChordTone(m, chordPCs)) {
       score -= 1;
+    }
+
+    // Avoid-note penalty: a non-chord-tone a semitone off a chord tone clashes
+    // hard against the chord. Penalise heavily on strong beats, mildly elsewhere.
+    if (isSemitoneClash(m, chordPCs)) {
+      score += isStrongBeat ? 6 : 2;
     }
 
     // Penalise staying on same note in lyrical style
@@ -303,6 +357,7 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     scalePitchClasses,
     chords,
     style,
+    harmony = "expressive",
     tensionCurve,
     octave = 5,
     seed,
@@ -326,6 +381,7 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     const chord = chords[ci];
     const chordBeats = durationClassToBeats(chord.durationClass);
     const chordPCs = chord.pitchClasses;
+    const chordMidi = buildChordMidiSet(chordPCs, octave);
     const tension = tensions[ci] ?? 0.3;
 
     const rhythm = generateRhythm(chordBeats, style, tension, rng);
@@ -348,7 +404,9 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
           currentPitch,
           chordPCs,
           scaleMidi,
+          chordMidi,
           style,
+          harmony,
           tension,
           prevDirection,
           rng,
@@ -364,6 +422,23 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
       const high = pitchClassToMidi(scalePitchClasses[0], octave + 1);
       if (currentPitch < low) currentPitch = closestScaleTone(low, scaleMidi);
       if (currentPitch > high) currentPitch = closestScaleTone(high, scaleMidi);
+
+      // Harmony correction on strong beats. This is the final say, so it also
+      // catches notes produced by the leap-recovery branch (which steps through
+      // the scale and could otherwise land a clash on a downbeat):
+      //   - strict:     snap any non-chord-tone to the nearest chord tone.
+      //   - expressive: only snap a semitone clash (e.g. F natural under F#).
+      const inRangeChord = chordMidi.filter((m) => m >= low && m <= high);
+      if (isStrongBeat && inRangeChord.length > 0) {
+        const needsSnap =
+          harmony === "strict"
+            ? !isChordTone(currentPitch, chordPCs)
+            : isSemitoneClash(currentPitch, chordPCs);
+        if (needsSnap) {
+          currentPitch = closestScaleTone(currentPitch, inRangeChord);
+          prevPitch = currentPitch;
+        }
+      }
 
       const pc = midiToPitchClass(currentPitch);
 

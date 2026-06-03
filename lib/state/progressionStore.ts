@@ -9,7 +9,8 @@ import type { ChordSourceType, SubstitutionOption } from "../creative/types";
 import { getSubstitutions } from "../creative/substitutionEngine";
 import { interpretChord } from "../creative/chordInterpreter";
 import { generateMelody } from "../music/generators/melody/generateMelody";
-import type { Melody, MelodyNote, MelodyStyle } from "../music/generators/melody/types";
+import type { Melody, MelodyNote, MelodyStyle, MelodyHarmony } from "../music/generators/melody/types";
+import { getChordPitchClasses } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 
@@ -62,6 +63,7 @@ interface ProgressionState {
     melody: Melody | null;
     melodyEnabled: boolean;
     melodyStyle: MelodyStyle;
+    melodyHarmony: MelodyHarmony;
     chordsEnabled: boolean;
 
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
@@ -89,6 +91,7 @@ interface ProgressionState {
     setMelodyEnabled: (enabled: boolean) => void;
     setChordsEnabled: (enabled: boolean) => void;
     setMelodyStyle: (style: MelodyStyle) => void;
+    setMelodyHarmony: (harmony: MelodyHarmony) => void;
     generateMelodyForProgression: () => void;
     clearMelody: () => void;
     addMelodyNote: (note: MelodyNote) => void;
@@ -163,6 +166,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     melody: null,
     melodyEnabled: false,
     melodyStyle: "lyrical",
+    melodyHarmony: "expressive",
     chordsEnabled: true,
 
     setSettings: (settings) => {
@@ -603,23 +607,38 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         }
     },
 
+    setMelodyHarmony: (harmony: MelodyHarmony) => {
+        set({ melodyHarmony: harmony });
+        if (get().melodyEnabled && get().currentProgression) {
+            get().generateMelodyForProgression();
+        }
+    },
+
     generateMelodyForProgression: () => {
-        const { currentProgression, rootKey, mode, melodyStyle } = get();
+        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony } = get();
         if (!currentProgression) return;
 
         const scalePitchClasses = getScalePitchClasses(rootKey, mode);
 
-        const chords = currentProgression.chords.map((c) => ({
-            midiNotes: c.midiNotes ?? [],
-            pitchClasses: (c.notes ?? []) as PitchClass[],
-            root: (c.root ?? c.notes[0] ?? "C") as PitchClass,
-            durationClass: c.durationClass,
-        }));
+        const chords = currentProgression.chords.map((c) => {
+            // Derive chord tones from the chord symbol — the single source of
+            // truth established by the voicing fix. Fall back to the voiced
+            // pitch classes only when the symbol can't be parsed.
+            const canonical = getChordPitchClasses(c.symbol);
+            const pitchClasses = (canonical.length ? canonical : (c.notes ?? [])) as PitchClass[];
+            return {
+                midiNotes: c.midiNotes ?? [],
+                pitchClasses,
+                root: (c.root ?? c.notes[0] ?? "C") as PitchClass,
+                durationClass: c.durationClass,
+            };
+        });
 
         const melody = generateMelody({
             scalePitchClasses,
             chords,
             style: melodyStyle,
+            harmony: melodyHarmony,
             octave: 5,
         });
 
