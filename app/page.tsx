@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical, X } from "lucide-react";
 import Link from "next/link";
-import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
+import { useProgressionStore, COMPLEXITY_LABELS, getScalePitchClasses, type ComplexityLevel } from "@/lib/state/progressionStore";
 import {
   usePlaybackSettingsStore,
   CHORD_VELOCITY_MIN,
@@ -811,10 +811,20 @@ export default function HarmoniaPage() {
         {/* ── Favorites Panel ── */}
         {showFavorites && (
           <section className="surface-section rounded-xl p-4">
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <Heart className="w-4 h-4 text-accent" />
-              Saved Progressions
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Heart className="w-4 h-4 text-accent" />
+                Saved Progressions
+              </h3>
+              <button
+                onClick={() => setShowFavorites(false)}
+                className="flex items-center justify-center w-7 h-7 rounded-full text-muted hover:text-foreground hover:bg-surface-muted transition-colors"
+                title="Hide saved progressions"
+                aria-label="Hide saved progressions"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             {favorites.length === 0 ? (
               <p className="text-xs text-muted py-4 text-center">
                 No favorites yet. Save a progression to see it here.
@@ -1213,10 +1223,60 @@ export default function HarmoniaPage() {
 
                 {/* Voicing feedback removed and added to controls bar */}
 
+                {/* Contextual chord actions — lock / substitute / revert for the
+                    selected chord. The canonical surface on mobile (the per-card
+                    icons are hidden < sm) and a handy shortcut on desktop. */}
+                {selectedChordIndex !== null && currentProgression.chords[selectedChordIndex] && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border-subtle bg-surface-muted/50 px-3 py-2">
+                    <span className="text-xs text-muted">
+                      Chord{" "}
+                      <span className="font-semibold text-foreground">
+                        {currentProgression.chords[selectedChordIndex].symbol}
+                      </span>
+                    </span>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        onClick={() => openSubstitution(selectedChordIndex)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle bg-surface hover:border-accent/50 hover:text-accent text-xs font-medium text-muted transition-colors"
+                        title="Change this chord"
+                      >
+                        <Shuffle className="w-3.5 h-3.5" />
+                        Substitute
+                      </button>
+                      <button
+                        onClick={() => toggleLock(selectedChordIndex)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                          currentProgression.chords[selectedChordIndex].isLocked
+                            ? "border-accent/40 bg-accent/10 text-accent"
+                            : "border-border-subtle bg-surface text-muted hover:border-accent/50 hover:text-accent"
+                        }`}
+                        title={currentProgression.chords[selectedChordIndex].isLocked ? "Unlock chord" : "Lock chord"}
+                      >
+                        {currentProgression.chords[selectedChordIndex].isLocked ? (
+                          <Lock className="w-3.5 h-3.5" />
+                        ) : (
+                          <Unlock className="w-3.5 h-3.5" />
+                        )}
+                        {currentProgression.chords[selectedChordIndex].isLocked ? "Locked" : "Lock"}
+                      </button>
+                      {originalChords.has(selectedChordIndex) && (
+                        <button
+                          onClick={() => revertChord(selectedChordIndex)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle bg-surface hover:border-accent/50 hover:text-accent text-xs font-medium text-muted transition-colors"
+                          title="Revert to original"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Revert
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Interactive Piano Roll */}
                 <p className="lg:hidden flex items-center gap-1.5 px-1 mb-1.5 text-[11px] text-muted/70">
                   <Music className="w-3 h-3 shrink-0 text-accent/60" />
-                  Piano roll — tap a note to hear it, drag to edit
+                  Piano roll — tap a note to hear it, then use the up/down arrows to move it
                 </p>
                 <div className="relative">
                 <InteractivePianoRoll
@@ -1232,6 +1292,7 @@ export default function HarmoniaPage() {
                   onRemoveNote={removeNote}
                   onMoveNote={moveNote}
                   onResetChord={resetChord}
+                  scalePitchClasses={getScalePitchClasses(rootKey, mode)}
                   chordSourceTypes={chordSourceTypes}
                   playheadRef={playheadRef}
                   melodyNotes={melodyEnabled && melody ? melody.notes : undefined}

@@ -18,8 +18,8 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
   - **Sustain** — *Natural* lets notes ring slightly, *Off* tightens releases for clarity
   - **Soft Strum** — optional articulation that lightly rolls chord notes in (~18 ms apart), like a pianist easing into a chord; disabled by default
   - All playback settings persist across sessions via localStorage
-- **Interactive piano roll** — Click notes to preview, select and shift individual notes up/down by octave
-- **Chord locking** — Lock specific chords to preserve them while regenerating the rest
+- **Interactive piano roll** — Click a note to preview and select it, then nudge it up/down to the next in-key note with the on-screen ▲/▼ arrows (or Arrow keys). Desktop also supports mouse drag-and-drop for free chromatic placement
+- **Chord locking & substitution** — Select any chord to reveal a contextual action bar (Substitute · Lock · Revert) that works on both desktop and mobile
 - **MIDI export** — Download your progression as a standard MIDI file
 - **Voicing controls** — Choose voicing style (Tight, Balanced, Open) and density (Sparse 3-voice, Standard 4-voice, Rich 5-voice) via a collapsible panel
 - **Validated chord voicings** — Every generated chord is checked against a single source of truth (`getChordPitchClasses` in `lib/theory/chordSymbol.ts`), which derives the allowed pitch classes directly from the chord symbol (e.g. `D7` → D F♯ A C) across all 12 roots, keys, modes, and qualities. Voicings that would contain a note the symbol does not imply are logged and rebuilt from a safe voicing, so the notes you see and hear always match the chord label. Each voiced note also carries a harmonic role (chord tone, extension, alteration, bass), keeping chord tones distinct from non-chord tones
@@ -34,7 +34,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 Two complementary forms of control for refining generated progressions:
 
 - **Manual Chord Substitution** — Click any chord card to open a substitution panel with theory-approved alternatives. Options are grouped by category (diatonic, relative, dominant-function, tritone, modal mixture, inversion) with explanations of why each works. Preview before applying, and revert any time.
-- **Interactive Piano Roll Editing** — Double-click empty grid cells to add notes, double-click existing notes to remove them, and drag notes vertically to change pitch. Harmonia re-interprets the chord label in real time after edits. Source badges (Generated, Substituted, Edited) track the provenance of each chord. Reset any chord to its original state.
+- **Interactive Piano Roll Editing** — Double-click empty grid cells to add notes, double-click existing notes to remove them. Tap/click a note to select it, then move it up/down to the next in-key note with the ▲/▼ steppers or Arrow keys; on desktop you can also drag notes vertically for free chromatic placement. On mobile the roll scrolls naturally (drag is desktop-only), so editing stays precise. Harmonia re-interprets the chord label in real time after edits. Source badges (Generated, Substituted, Edited) track the provenance of each chord. Reset any chord to its original state.
 
 ### Harmonic Sketchpad
 
@@ -89,13 +89,13 @@ The piano and electric piano are **sampled** (Salamander Grand / Casio) and stre
 2. Set **complexity** (Simple → Altered) and number of chords
 3. Click **Chords** to create a progression
 4. Click any chord card to preview it, or hit **Play** to loop the full progression
-5. Use the piano roll to inspect voicings — click a note then **Cmd/Ctrl + Arrow Up/Down** to shift it by octave
-6. **Lock** chords you like, then regenerate to replace only the unlocked ones
+5. Use the piano roll to inspect voicings — click a note to select it, then use the **▲/▼ arrows** (or Arrow keys) to move it up/down to the next in-key note, or **Cmd/Ctrl + Arrow Up/Down** to shift it by a full octave. On desktop you can also drag notes with the mouse
+6. **Lock** chords you like (select a chord and use the **Lock** action), then regenerate to replace only the unlocked ones
 7. **Export MIDI** to bring your progression into a DAW
-8. Click the **substitute icon** on a chord card to browse theory-guided replacement options
+8. Select a chord and click **Substitute** in the action bar to browse theory-guided replacement options
 9. **Double-click** the piano roll grid to add or remove individual notes — chord labels update automatically
 10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio) and click **Melody** again for a new line. Use the **Audio** button in the action bar to mute/unmute chords and melody and to adjust playback feel — **Velocity**, **Humanize**, **Sustain**, and **Soft Strum** vs **Block Chord**
-11. Click **Save** to bookmark a progression to your favorites. Click **Favorites** to view, load, or remove saved progressions
+11. Click **Save** to bookmark a progression to your favorites. Click **Favorites** to view, load, or remove saved progressions, and the **✕** in the panel (or the Favorites button again) to hide it
 
 ### Harmonic Sketchpad
 
