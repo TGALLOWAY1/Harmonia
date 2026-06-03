@@ -26,6 +26,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **Streamlined action bar** — A single horizontal row of actions (Play · Chords · Melody · Save · Audio) keeps every primary control visible at once. Compact, clutter-free chord cards on mobile give the piano roll more room, while desktop retains its roomier spacing
 - **Voicing feedback** — Rate generated voicings with thumbs up/down in a lightweight card below the action bar; ratings persist across sessions via localStorage. View approval trends over time in the feedback chart
 - **Melody overlay** — Toggle melody generation to hear a monophonic melody line over chords. Three styles: Lyrical (stepwise, longer notes), Rhythmic (shorter notes, syncopation), and Arpeggiated (chord-tone focused). Melody notes are displayed directly on the piano roll with a toggle button and distinct amber styling. Melody uses the same sound preset as chords (Piano, EP, or Organ)
+- **Chord-aware melody** — Melody chord tones are derived from the same single source of truth as the voicings (`getChordPitchClasses`), so the melody follows the actual chord notes — including chromatic chord tones such as the F♯ of a `D7` secondary dominant that the diatonic scale alone can't reach. Two harmony modes control how tightly the melody hugs the chords: **Expressive** (default) keeps scale/passing-tone freedom while strongly preferring chord tones on strong beats and avoiding notes a semitone off a chord tone, and **Strict** pins every strong-beat note to an actual chord tone
 - **Favorite progressions** — Save progressions to a persistent favorites list. Load or delete saved progressions at any time
 - **Adjustable BPM** — 60–180 BPM with looping playback
 
@@ -94,7 +95,7 @@ The piano and electric piano are **sampled** (Salamander Grand / Casio) and stre
 7. **Export MIDI** to bring your progression into a DAW
 8. Click the **substitute icon** on a chord card to browse theory-guided replacement options
 9. **Double-click** the piano roll grid to add or remove individual notes — chord labels update automatically
-10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio) and click **Melody** again for a new line. Use the **Audio** button in the action bar to mute/unmute chords and melody and to adjust playback feel — **Velocity**, **Humanize**, **Sustain**, and **Soft Strum** vs **Block Chord**
+10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio) and a harmony mode (**Expressive** or **Strict**), then click **Melody** again for a new line. Use the **Audio** button in the action bar to mute/unmute chords and melody and to adjust playback feel — **Velocity**, **Humanize**, **Sustain**, and **Soft Strum** vs **Block Chord**
 11. Click **Save** to bookmark a progression to your favorites. Click **Favorites** to view, load, or remove saved progressions
 
 ### Harmonic Sketchpad
