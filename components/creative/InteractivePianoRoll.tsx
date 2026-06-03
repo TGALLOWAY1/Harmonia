@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import clsx from "clsx";
-import { Download, RotateCcw } from "lucide-react";
+import { Download, RotateCcw, ChevronUp, ChevronDown } from "lucide-react";
 import {
   isWhiteKey,
   midiToNoteName,
@@ -22,6 +22,8 @@ export type InteractivePianoRollProps = {
   onPlayNote?: (note: string) => void;
   onDeleteChord?: (index: number) => void;
   onShiftNote?: (chordIndex: number, midiNote: number, direction: "up" | "down") => void;
+  /** Pitch classes of the active key/scale; up/down steppers snap to these. */
+  scalePitchClasses?: PitchClass[];
   onSelectChord?: (index: number | null) => void;
   onExportMidi?: () => void;
   onAddNote?: (chordIndex: number, midi: number) => void;
@@ -109,6 +111,7 @@ export function InteractivePianoRoll({
   onPlayNote,
   onDeleteChord,
   onShiftNote,
+  scalePitchClasses,
   onSelectChord,
   onExportMidi,
   onAddNote,
@@ -242,10 +245,11 @@ export function InteractivePianoRoll({
     }
   }, [onAddNote, onRemoveNote, onPlayNote]);
 
-  // Drag handling for pitch changes. Uses pointer events so it works for mouse,
-  // touch and pen. Releasing the implicit pointer capture on pointerdown lets
-  // onPointerEnter fire on neighbouring cells while dragging on touch devices.
+  // Drag handling for pitch changes. Mouse/pen only — on touch a vertical drag
+  // is reserved for scrolling the roll (touch editing uses tap-to-select plus
+  // the up/down steppers instead, which keep notes in the scale).
   const handlePointerDown = useCallback((e: React.PointerEvent, midi: number, colIdx: number, hasNote: boolean) => {
+    if (e.pointerType === "touch") return;
     if (hasNote && onMoveNote) {
       if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -270,6 +274,37 @@ export function InteractivePianoRoll({
     setDragStart(null);
     setDraggingMelodyId(null);
   }, []);
+
+  // Move the selected note to the next/previous pitch in the active scale,
+  // skipping pitches already used by the chord. Works the same on desktop and
+  // touch — the intuitive "keep it in key" up/down control. Falls back to a
+  // chromatic step if no scale is supplied.
+  const stepSelectedNote = useCallback((direction: "up" | "down") => {
+    if (!selectedNote || !onMoveNote) return;
+    const { chordIndex, midi } = selectedNote;
+    const occupied = new Set(chords[chordIndex]?.midiNotes ?? []);
+    const scaleSet = scalePitchClasses && scalePitchClasses.length > 0
+      ? new Set<PitchClass>(scalePitchClasses)
+      : null;
+    const delta = direction === "up" ? 1 : -1;
+    const limit = direction === "up" ? 108 : 21;
+
+    let candidate = midi + delta;
+    while (direction === "up" ? candidate <= limit : candidate >= limit) {
+      const inScale = !scaleSet || scaleSet.has(midiToPitchClass(candidate));
+      if (inScale && !occupied.has(candidate)) {
+        onMoveNote(chordIndex, midi, candidate);
+        setSelectedNote({ chordIndex, midi: candidate });
+        if (onPlayNote) {
+          onPlayNote(midiToNoteName(candidate));
+          setFlashingNote(candidate);
+          setTimeout(() => setFlashingNote(null), 250);
+        }
+        return;
+      }
+      candidate += delta;
+    }
+  }, [selectedNote, onMoveNote, chords, scalePitchClasses, onPlayNote]);
 
   const isDraggingActive = isDragging || draggingMelodyId !== null;
   useEffect(() => {
@@ -320,11 +355,21 @@ export function InteractivePianoRoll({
         }
         return;
       }
+
+      // Plain Arrow Up/Down steps the selected note to the next in-scale pitch.
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        if (selectedNote) {
+          if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "SELECT") return;
+          e.preventDefault();
+          stepSelectedNote(e.key === "ArrowUp" ? "up" : "down");
+        }
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIndex, selectedNote, onDeleteChord, onShiftNote, onSelectChord, onRemoveNote]);
+  }, [selectedIndex, selectedNote, onDeleteChord, onShiftNote, onSelectChord, onRemoveNote, stepSelectedNote]);
 
   const selectedNoteLabel = useMemo(() => {
     if (!selectedNote) return null;
@@ -333,6 +378,35 @@ export function InteractivePianoRoll({
 
   return (
     <div className="piano-roll-section">
+      {/* Selected-note stepper: tap a note, then nudge it up/down within the
+          key. The primary editing control on touch (where drag is disabled). */}
+      {selectedNote && (
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <span className="text-[11px] text-muted">
+            Note <span className="font-semibold text-foreground font-mono">{selectedNoteLabel}</span>
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => stepSelectedNote("up")}
+              className="flex items-center justify-center w-10 h-10 rounded-lg border border-border-subtle bg-surface hover:bg-surface-muted hover:border-accent/50 text-muted hover:text-accent transition-colors"
+              title="Move note up (in key)"
+              aria-label="Move note up"
+            >
+              <ChevronUp className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => stepSelectedNote("down")}
+              className="flex items-center justify-center w-10 h-10 rounded-lg border border-border-subtle bg-surface hover:bg-surface-muted hover:border-accent/50 text-muted hover:text-accent transition-colors"
+              title="Move note down (in key)"
+              aria-label="Move note down"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="piano-roll-wrap">
         {/* LEFT PIANO KEYBOARD */}
         <div className="piano-keys">
@@ -457,6 +531,7 @@ export function InteractivePianoRoll({
                       <div
                         key={mn.id}
                         onPointerDown={(e) => {
+                          if (e.pointerType === "touch") return;
                           e.stopPropagation();
                           if (onMoveMelodyNote) {
                             if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {

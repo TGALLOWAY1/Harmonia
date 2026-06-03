@@ -14,6 +14,21 @@ import { getChordPitchClasses } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 
+const MODE_TO_SCALE: Record<Mode, ScaleType> = {
+    ionian: "major",
+    aeolian: "natural_minor",
+    dorian: "dorian",
+    mixolydian: "mixolydian",
+    phrygian: "phrygian",
+};
+
+/** Pitch classes of the active key/scale for the given root + mode. */
+export function getScalePitchClasses(rootKey: string, mode: Mode): PitchClass[] {
+    const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
+    const scaleType = MODE_TO_SCALE[mode] ?? "major";
+    return getScaleDefinition(rootPC, scaleType).pitchClasses;
+}
+
 export type ComplexityLevel = 1 | 2 | 3 | 4;
 
 export const COMPLEXITY_LABELS: Record<ComplexityLevel, string> = {
@@ -603,16 +618,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony } = get();
         if (!currentProgression) return;
 
-        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
-        const MODE_TO_SCALE: Record<Mode, ScaleType> = {
-            ionian: "major",
-            aeolian: "natural_minor",
-            dorian: "dorian",
-            mixolydian: "mixolydian",
-            phrygian: "phrygian",
-        };
-        const scaleType = MODE_TO_SCALE[mode] ?? "major";
-        const scale = getScaleDefinition(rootPC, scaleType);
+        const scalePitchClasses = getScalePitchClasses(rootKey, mode);
 
         const chords = currentProgression.chords.map((c) => {
             // Derive chord tones from the chord symbol — the single source of
@@ -629,7 +635,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         });
 
         const melody = generateMelody({
-            scalePitchClasses: scale.pitchClasses,
+            scalePitchClasses,
             chords,
             style: melodyStyle,
             harmony: melodyHarmony,

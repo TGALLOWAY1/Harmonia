@@ -516,9 +516,9 @@
   border-bottom: 1px solid var(--border-subtle);
   position: relative;
   transition: background 0.08s;
-  /* Let the browser keep horizontal scrolling of the roll while we own
-     vertical gestures for touch drag-to-move (pitch editing). */
-  touch-action: pan-x;
+  /* Touch gestures scroll the roll/page freely — pitch drag is mouse/pen only.
+     Touch editing is tap-to-select plus the up/down steppers. */
+  touch-action: auto;
 }
 
 .note-cell.black-row {
@@ -576,10 +576,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Vertical drag edits pitch; keep horizontal roll scrolling. pointer-events
+  /* Touch gestures scroll freely (melody drag is mouse/pen only). pointer-events
      is toggled per-bar from the component (auto when grabbable, none mid-drag
      so the underlying note cells receive the move events). */
-  touch-action: pan-x;
+  touch-action: auto;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
 }
 .melody-overlay-bar.chord-tone {
