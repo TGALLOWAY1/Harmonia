@@ -82,6 +82,8 @@ Instruments are defined in a small registry (`lib/audio/synthPresets.ts`) so new
 
 The piano and electric piano are **sampled** (Salamander Grand / Casio) and stream from the Tone.js CDN — humanization adds **no bundle or asset weight**, no new downloads, and negligible CPU. A "Loading Piano…" state covers the brief sample preload on first selection. (Note: the Salamander set is single-velocity, so velocity changes loudness rather than timbre — a deliberate trade for fast load, small footprint, and mobile/browser compatibility.)
 
+Sample loading is resilient by design via the `useInstrument` hook (`lib/audio/useInstrument.ts`), shared by the main page and the Sketchpad. Each sample-based preset is created with both `onload` and `onerror` callbacks plus a load timeout. If samples fail to download or stall — common on flaky mobile networks — the instrument **automatically falls back to the always-available FM Organ synth** and surfaces a brief, dismissible notice, so playback never gets stuck on an endless "Loading…" spinner.
+
 ## Usage
 
 ### Chord Progression Generator

@@ -65,6 +65,8 @@ export function HarmonicPreviewPanel({
   soundPreset,
   onSoundPresetChange,
   isSynthLoading,
+  synthLoadError,
+  onDismissSynthError,
 }: {
   project: HarmonicSketchProject;
   section: HarmonicSection | null;
@@ -81,6 +83,8 @@ export function HarmonicPreviewPanel({
   soundPreset: string;
   onSoundPresetChange: (preset: any) => void;
   isSynthLoading: boolean;
+  synthLoadError: string | null;
+  onDismissSynthError: () => void;
 }) {
   const events = useMemo(() => variant?.events ?? [], [variant]);
   const isPlaying = playbackMode !== "stopped";
@@ -124,6 +128,19 @@ export function HarmonicPreviewPanel({
             ))}
           </select>
         </div>
+
+        {synthLoadError && (
+          <div className="flex items-center justify-between gap-2 mb-2 text-[11px] text-amber-600 dark:text-amber-400">
+            <span>{synthLoadError} couldn&apos;t load — using Organ.</span>
+            <button
+              onClick={onDismissSynthError}
+              className="underline hover:no-underline shrink-0"
+              aria-label="Dismiss notice"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Playback controls */}
         <div className="flex flex-wrap gap-1.5">
