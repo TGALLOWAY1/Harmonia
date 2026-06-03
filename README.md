@@ -27,7 +27,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **Voicing feedback** — Rate generated voicings with thumbs up/down in a lightweight card below the action bar; ratings persist across sessions via localStorage. View approval trends over time in the feedback chart
 - **Melody overlay** — Toggle melody generation to hear a monophonic melody line over chords. Three styles: Lyrical (stepwise, longer notes), Rhythmic (shorter notes, syncopation), and Arpeggiated (chord-tone focused). Melody notes are displayed directly on the piano roll with a toggle button and distinct amber styling. Melody uses the same sound preset as chords (Piano, EP, or Organ)
 - **Chord-aware melody** — Melody chord tones are derived from the same single source of truth as the voicings (`getChordPitchClasses`), so the melody follows the actual chord notes — including chromatic chord tones such as the F♯ of a `D7` secondary dominant that the diatonic scale alone can't reach. Two harmony modes control how tightly the melody hugs the chords: **Expressive** (default) keeps scale/passing-tone freedom while strongly preferring chord tones on strong beats and avoiding notes a semitone off a chord tone, and **Strict** pins every strong-beat note to an actual chord tone
-- **Favorite progressions** — Save progressions to a persistent favorites list. Load or delete saved progressions at any time
+- **Favorite progressions** — Save progressions to a persistent favorites list. Load or delete saved progressions at any time. The Save button shows a brief "Saved" confirmation so the action is obvious on every screen size, including mobile
 - **Adjustable BPM** — 60–180 BPM with looping playback
 
 ### Creative Iteration Tools
