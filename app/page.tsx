@@ -1171,13 +1171,17 @@ export default function HarmoniaPage() {
                             </div>
                           </div>
 
-                          {/* Centered chord content */}
-                          <div className="relative z-10 flex flex-1 flex-col items-center justify-center text-center">
-                          <div className="text-xs font-mono text-muted mb-0.5 lg:mb-1 tracking-wider">
+                          {/* Centered chord content.
+                              min-w-0 + truncation lets the symbol shrink to the
+                              card width (cards flex-shrink to fit all 8 on screen)
+                              instead of overflowing and overlapping neighbors —
+                              mirrors the piano-roll header treatment. */}
+                          <div className="relative z-10 flex flex-1 w-full min-w-0 flex-col items-center justify-center text-center">
+                          <div className="w-full truncate text-xs font-mono text-muted mb-0.5 lg:mb-1 tracking-wider">
                             {chord.romanNumeral}
                           </div>
-                          <div className="text-lg lg:text-xl font-semibold mb-1 lg:mb-1.5 whitespace-nowrap">{chord.symbol}</div>
-                          <div className="hidden sm:block text-[10px] text-muted opacity-70 whitespace-nowrap">
+                          <div className="w-full truncate text-sm sm:text-base lg:text-xl font-semibold mb-1 lg:mb-1.5">{chord.symbol}</div>
+                          <div className="hidden sm:block w-full truncate text-[10px] text-muted opacity-70">
                             {chord.notes.join(" · ")}
                           </div>
                           {chord.durationClass && chord.durationClass !== "full" && (
