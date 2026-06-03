@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical, Check } from "lucide-react";
 import Link from "next/link";
 import { useProgressionStore, COMPLEXITY_LABELS, type ComplexityLevel } from "@/lib/state/progressionStore";
 import {
@@ -141,12 +141,14 @@ export default function HarmoniaPage() {
   const [audioMenuOpen, setAudioMenuOpen] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
+  const [justSaved, setJustSaved] = useState(false);
 
   const presetLabel = SOUND_PRESETS.find((p) => p.id === soundPreset)?.label ?? "Instrument";
 
   const synthRef = useRef<Synth | null>(null);
   const melodySynthRef = useRef<MelodySynth | null>(null);
   const playbackIndexRef = useRef(0);
+  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
@@ -394,7 +396,18 @@ export default function HarmoniaPage() {
     if (!currentProgression) return;
     const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
     addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
+    // Confirm the save so it's obvious the tap registered — especially on
+    // mobile, where the favorites count lives inside the closed overflow menu.
+    setJustSaved(true);
+    if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+    savedTimeoutRef.current = setTimeout(() => setJustSaved(false), 1800);
   }, [currentProgression, rootKey, mode, complexity, bpm, addFavorite]);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+    };
+  }, []);
 
   /**
    * Play a one-off chord preview with humanized per-note velocity (no strum,
@@ -593,8 +606,7 @@ export default function HarmoniaPage() {
                   {currentProgression && (
                     <button
                       onClick={() => {
-                        const name = `${rootKey} ${mode} — ${currentProgression.chords.map((c) => c.symbol).join(" · ")}`;
-                        addFavorite({ name, progression: currentProgression, rootKey, mode, complexity, bpm });
+                        handleSaveProgression();
                         setHeaderMenuOpen(false);
                       }}
                       className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-muted hover:text-foreground hover:bg-surface-muted transition-colors"
@@ -915,11 +927,24 @@ export default function HarmoniaPage() {
             <button
               onClick={handleSaveProgression}
               disabled={!currentProgression}
-              className="flex items-center justify-center gap-1.5 w-11 h-11 lg:w-auto lg:px-4 lg:py-2.5 rounded-full border border-border-subtle bg-surface text-muted hover:text-foreground hover:bg-surface-muted transition-all active:scale-95 disabled:opacity-40 shrink-0"
+              className={`flex items-center justify-center gap-1.5 h-11 rounded-full border transition-all active:scale-95 disabled:opacity-40 shrink-0 ${
+                justSaved
+                  ? "px-3 lg:px-4 border-accent/40 bg-accent/10 text-accent"
+                  : "w-11 lg:w-auto lg:px-4 border-border-subtle bg-surface text-muted hover:text-foreground hover:bg-surface-muted"
+              }`}
               title="Save progression"
             >
-              <Save className="w-4 h-4" />
-              <span className="hidden lg:inline text-sm font-medium">Save</span>
+              {justSaved ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm font-medium">Saved</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span className="hidden lg:inline text-sm font-medium">Save</span>
+                </>
+              )}
             </button>
 
             {/* Tertiary: Audio (mute toggles) */}
