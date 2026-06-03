@@ -328,22 +328,10 @@
   flex: var(--card-flex, 1);
   min-width: 0;
 }
-/* Mobile: uniform, readable, horizontally-scrollable cards (no shrinking,
-   no overlap). Desktop keeps the duration-proportional flex layout above. */
-@media (max-width: 1023px) {
-  .chord-card-row {
-    flex: none;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x proximity;
-    padding-bottom: 4px;
-  }
-  .chord-card {
-    flex: 1 1 0;
-    min-width: 150px;
-    scroll-snap-align: start;
-  }
-}
+/* Cards always shrink to fit the row (duration-proportional, matching the roll
+   columns) so the whole progression stays on screen with no horizontal scroll.
+   On phones the card content is simplified (see app/page.tsx) so the shrunken
+   cards stay readable. */
 
 .piano-roll-section {
   margin-top: 8px;
@@ -450,13 +438,6 @@
   cursor: pointer;
   transition: background 0.1s;
   position: relative;
-}
-/* Mobile: wider columns so headers stay readable and align with the uniform
-   150px chord cards; engages horizontal scroll with the right-edge fade. */
-@media (max-width: 1023px) {
-  .roll-column {
-    min-width: 150px;
-  }
 }
 .roll-col-cells {
   position: relative;
