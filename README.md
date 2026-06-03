@@ -26,7 +26,7 @@ Generate musically coherent chord progressions in any key and mode. Refine them 
 - **Streamlined action bar** — A single horizontal row of actions (Play · Chords · Melody · Save · Audio) keeps every primary control visible at once. Compact, clutter-free chord cards on mobile give the piano roll more room, while desktop retains its roomier spacing
 - **Voicing feedback** — Rate generated voicings with thumbs up/down in a lightweight card below the action bar; ratings persist across sessions via localStorage. View approval trends over time in the feedback chart
 - **Melody overlay** — Toggle melody generation to hear a monophonic melody line over chords. Three styles: Lyrical (stepwise, longer notes), Rhythmic (shorter notes, syncopation), and Arpeggiated (chord-tone focused). Melody notes are displayed directly on the piano roll with a toggle button and distinct amber styling. Melody uses the same sound preset as chords (Piano, EP, or Organ)
-- **Favorite progressions** — Save progressions to a persistent favorites list. Load or delete saved progressions at any time
+- **Favorite progressions** — Save progressions to a persistent favorites list. Load or delete saved progressions at any time. The Save button shows a brief "Saved" confirmation so the action is obvious on every screen size, including mobile
 - **Adjustable BPM** — 60–180 BPM with looping playback
 
 ### Creative Iteration Tools
