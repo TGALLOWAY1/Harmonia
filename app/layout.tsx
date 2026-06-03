@@ -7,9 +7,20 @@ export const metadata: Metadata = {
   title: "Harmonia — Chord Progression Generator",
   description:
     "Generate musically coherent chord progressions in any key and mode. Hear them instantly, export as MIDI.",
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
     shortcut: "/icon.svg",
+    // iOS Safari ignores SVG icons for "Add to Home Screen"; it needs a PNG.
+    apple: { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Harmonia",
+    statusBarStyle: "black-translucent",
   },
   openGraph: {
     title: "Harmonia — Chord Progression Generator",
