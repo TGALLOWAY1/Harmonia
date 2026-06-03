@@ -22,11 +22,15 @@ export interface CreateSynthOptions {
   sustainMode?: SustainMode;
   /** Called once the instrument is ready (immediately for synths). */
   onLoaded?: () => void;
+  /** Called if sample loading fails (sample-based instruments only). */
+  onError?: (err: Error) => void;
 }
 
 /** Options passed when building a melody instrument. */
 export interface CreateMelodySynthOptions {
   onLoaded?: () => void;
+  /** Called if sample loading fails (sample-based instruments only). */
+  onError?: (err: Error) => void;
 }
 
 /**
@@ -111,6 +115,19 @@ const SALAMANDER_URLS = {
   "F#2": "Fs2.mp3", "F#3": "Fs3.mp3", "F#4": "Fs4.mp3", "F#5": "Fs5.mp3",
 } as const;
 
+/**
+ * Electric Piano (Casio) sample map. The casio folder only ships the two
+ * samples used by the canonical Tone.js Sampler demo — `Tone.Sampler`
+ * pitch-shifts these to cover the full keyboard. Earlier code reused
+ * SALAMANDER_URLS here, which requested ~16 nonexistent casio files; the failed
+ * requests meant the Sampler's `onload` never fired and the UI hung forever on
+ * "Loading Electric Piano…". Keep this map to files that actually exist.
+ */
+const CASIO_URLS = {
+  A1: "A1.mp3",
+  A2: "A2.mp3",
+} as const;
+
 /* ─── Instrument Registry ─── */
 
 export const INSTRUMENTS: Record<SoundPresetId, InstrumentDefinition> = {
@@ -120,7 +137,7 @@ export const INSTRUMENTS: Record<SoundPresetId, InstrumentDefinition> = {
     label: "Piano",
     category: "keys",
     needsLoading: true,
-    create: ({ sustainMode, onLoaded }) => {
+    create: ({ sustainMode, onLoaded, onError }) => {
       const { compressor } = getEffectsChain();
       const sampler = new Tone.Sampler({
         urls: SALAMANDER_URLS,
@@ -128,12 +145,13 @@ export const INSTRUMENTS: Record<SoundPresetId, InstrumentDefinition> = {
         release: pianoRelease(sustainMode),
         volume: -6,
         onload: () => onLoaded?.(),
+        onerror: (err) => onError?.(err),
       });
       sampler.connect(compressor);
       sampler.connect(getPianoReverb());
       return sampler;
     },
-    createMelody: ({ onLoaded }) => {
+    createMelody: ({ onLoaded, onError }) => {
       const { compressor } = getEffectsChain();
       const sampler = new Tone.Sampler({
         urls: SALAMANDER_URLS,
@@ -141,6 +159,7 @@ export const INSTRUMENTS: Record<SoundPresetId, InstrumentDefinition> = {
         release: 1,
         volume: -4,
         onload: () => onLoaded?.(),
+        onerror: (err) => onError?.(err),
       });
       sampler.connect(compressor);
       sampler.connect(getPianoReverb());
@@ -154,24 +173,26 @@ export const INSTRUMENTS: Record<SoundPresetId, InstrumentDefinition> = {
     label: "Electric Piano",
     category: "keys",
     needsLoading: true,
-    create: ({ sustainMode, onLoaded }) => {
+    create: ({ sustainMode, onLoaded, onError }) => {
       const sampler = new Tone.Sampler({
-        urls: SALAMANDER_URLS,
+        urls: CASIO_URLS,
         baseUrl: "https://tonejs.github.io/audio/casio/",
         release: epRelease(sustainMode),
         volume: -8,
         onload: () => onLoaded?.(),
+        onerror: (err) => onError?.(err),
       });
       sampler.connect(getEPChorus());
       return sampler;
     },
-    createMelody: ({ onLoaded }) => {
+    createMelody: ({ onLoaded, onError }) => {
       const sampler = new Tone.Sampler({
-        urls: SALAMANDER_URLS,
+        urls: CASIO_URLS,
         baseUrl: "https://tonejs.github.io/audio/casio/",
         release: 0.8,
         volume: -6,
         onload: () => onLoaded?.(),
+        onerror: (err) => onError?.(err),
       });
       sampler.connect(getEPChorus());
       return sampler;

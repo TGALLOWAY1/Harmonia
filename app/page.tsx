@@ -19,13 +19,12 @@ import { FeedbackChart } from "@/components/feedback/FeedbackChart";
 import { useFavoritesStore } from "@/lib/favorites/favoritesStore";
 import {
   SOUND_PRESETS,
-  createSynthForPreset,
   createMelodySynthForPreset,
-  presetNeedsLoading,
   type SoundPresetId,
   type Synth,
   type MelodySynth,
 } from "@/lib/audio/synthPresets";
+import { useInstrument } from "@/lib/audio/useInstrument";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
@@ -133,7 +132,6 @@ export default function HarmoniaPage() {
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
   const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
   const [generationKey, setGenerationKey] = useState(0);
-  const [isSynthLoading, setIsSynthLoading] = useState(false);
   const [selectedChordIndex, setSelectedChordIndex] = useState<number | null>(null);
   const [showVoicingControls, setShowVoicingControls] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -152,22 +150,13 @@ export default function HarmoniaPage() {
   const playheadRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  /* ─── Synth lifecycle ─── */
+  /* ─── Synth lifecycle (loading + fallback handled by the hook) ─── */
 
-  useEffect(() => {
-    setIsSynthLoading(presetNeedsLoading(soundPreset));
-    const synth = createSynthForPreset(soundPreset, {
-      sustainMode,
-      onLoaded: () => setIsSynthLoading(false),
-    });
-    synthRef.current = synth;
-
-    return () => {
-      synth.releaseAll();
-      synth.dispose();
-      synthRef.current = null;
-    };
-  }, [soundPreset, sustainMode]);
+  const {
+    isLoading: isSynthLoading,
+    loadError: synthLoadError,
+    dismissError: dismissSynthError,
+  } = useInstrument(soundPreset, { sustainMode, synthRef });
 
   /* ─── Melody synth lifecycle ─── */
 
@@ -874,6 +863,18 @@ export default function HarmoniaPage() {
 
         {/* ── Action Bar (Play · Chords · Melody · Save · Audio) ── */}
         <section>
+          {synthLoadError && (
+            <div className="flex items-center justify-center gap-2 mb-2 text-xs text-amber-600 dark:text-amber-400">
+              <span>{synthLoadError} couldn&apos;t load — using Organ instead.</span>
+              <button
+                onClick={dismissSynthError}
+                className="underline hover:no-underline"
+                aria-label="Dismiss notice"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3">
 
             {/* Primary: Play / Stop */}
