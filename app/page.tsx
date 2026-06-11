@@ -759,7 +759,7 @@ export default function HarmoniaPage() {
             </div>
 
             {/* Textures Group */}
-            <div className="flex flex-col gap-1.5 flex-1 min-w-[280px]">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[260px]">
               <label className="flex items-center justify-between w-full pl-1">
                 <div className="flex items-center gap-1.5 text-[11px] lg:text-[10px] font-bold text-muted uppercase tracking-widest">
                   <Layers className="w-3 h-3 text-emerald-500/70" />
@@ -798,17 +798,6 @@ export default function HarmoniaPage() {
                 >
                   {MELODY_HARMONIES.map((mh) => (
                     <option key={mh.value} value={mh.value}>{mh.label}</option>
-                  ))}
-                </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
-                <select
-                  value={soundPreset}
-                  onChange={(e) => setSoundPreset(e.target.value as SoundPresetId)}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Synth Preset"
-                >
-                  {SOUND_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>{preset.label}</option>
                   ))}
                 </select>
               </div>
@@ -988,6 +977,31 @@ export default function HarmoniaPage() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setAudioMenuOpen(false)} />
                   <div className="absolute top-full right-0 mt-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
+                    {/* ── Instrument (live sound) ── */}
+                    <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
+                      Sound
+                    </span>
+                    <div className="px-3 pb-1.5 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Instrument</span>
+                        <div className="relative">
+                          <select
+                            value={soundPreset}
+                            onChange={(e) => setSoundPreset(e.target.value as SoundPresetId)}
+                            className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
+                            title="Instrument preset"
+                          >
+                            {SOUND_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>{preset.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="my-1 h-px bg-border-subtle" />
+
                     <button
                       onClick={() => setChordsEnabled(!chordsEnabled)}
                       className="flex items-center justify-between gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-foreground hover:bg-surface-muted transition-colors"
