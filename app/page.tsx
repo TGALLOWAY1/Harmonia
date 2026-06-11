@@ -652,9 +652,7 @@ export default function HarmoniaPage() {
 
       <main className="max-w-5xl mx-auto px-4 lg:px-6 pt-2 lg:pt-10 pb-10 space-y-6 lg:space-y-10">
         {/* ── Controls Bar ── */}
-        <section className="bg-surface/40 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-3xl p-5 shadow-xl relative overflow-visible z-20">
-          <div className="absolute top-0 right-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-
+        <section className="bg-surface/60 backdrop-blur-xl border border-border-subtle rounded-2xl p-5 shadow-sm relative overflow-visible z-20">
           {/* Mobile: collapsed settings summary */}
           <button
             onClick={() => setSettingsExpanded((v) => !v)}
@@ -1135,6 +1133,16 @@ export default function HarmoniaPage() {
                 transition={{ duration: 0.2 }}
                 className="space-y-4"
               >
+
+                {/* Section header (desktop) — anchors the working area and
+                    separates it from the controls above. Hidden on phones to
+                    keep the mobile view focused on the progression itself. */}
+                <div className="hidden lg:flex items-baseline justify-between border-b border-border-subtle pb-2">
+                  <h2 className="text-sm font-semibold tracking-tight">Progression</h2>
+                  <span className="text-xs text-muted tabular-nums">
+                    {rootKey} {MODES.find((m) => m.value === mode)?.label} · {currentProgression.chords.length} chords · {bpm} BPM
+                  </span>
+                </div>
 
                 {/* Chord cards — a responsive grid that wraps cleanly (4 per
                     row on phones, a single row on desktop) and keeps every card
