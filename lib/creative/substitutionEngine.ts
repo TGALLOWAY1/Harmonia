@@ -5,7 +5,7 @@
  * based on its harmonic role, the current key, and music theory rules.
  */
 
-import { PITCH_CLASSES, type PitchClass, pitchClassToMidi, midiToNoteName } from "../theory/midiUtils";
+import { PITCH_CLASSES, type PitchClass, pitchClassToMidi, midiToNoteName, midiToPitchClass, normalizeToPitchClass } from "../theory/midiUtils";
 import { buildTriadFromRoot, buildSeventhFromRoot, formatChordSymbol, getDiatonicChords } from "../theory/chord";
 import type { ScaleType } from "../theory/types";
 import type { Mode } from "../theory/harmonyEngine";
@@ -76,7 +76,7 @@ function findDegreeIndex(root: PitchClass, keyRoot: PitchClass, mode: Mode): num
  * Determine if a chord is likely functioning as a dominant.
  */
 function isDominantFunction(chord: Chord, keyRoot: PitchClass, mode: Mode): boolean {
-  const degree = findDegreeIndex(chord.root ?? chord.notes[0] as PitchClass, keyRoot, mode);
+  const degree = findDegreeIndex(chord.root ?? normalizeToPitchClass(chord.notes[0]) ?? ("C" as PitchClass), keyRoot, mode);
   // V chord in major, or any dom7 chord
   if (degree === 4) return true;
   if (chord.quality === "dom7" || chord.quality === "7") return true;
@@ -94,7 +94,7 @@ export function getSubstitutions(
   keyRoot: PitchClass,
   mode: Mode,
 ): SubstitutionOption[] {
-  const chordRoot = (chord.root ?? chord.notes[0]) as PitchClass;
+  const chordRoot = (chord.root ?? normalizeToPitchClass(chord.notes[0]) ?? "C") as PitchClass;
   const chordId = `chord-${chordIndex}`;
   const sourceMidi = chord.midiNotes ?? [];
   const scaleType = modeToScaleType(mode);
@@ -103,8 +103,15 @@ export function getSubstitutions(
   const options: SubstitutionOption[] = [];
 
   // ── 1. Diatonic alternatives ──
-  // All diatonic chords that share at least one pitch class with the selected chord
-  const chordPcs = new Set(chord.notes.map(n => n as PitchClass));
+  // All diatonic chords that share at least one pitch class with the selected
+  // chord. Derive pitch classes from canonical MIDI notes (sharp-spelled) so
+  // this stays correct regardless of how `chord.notes` is enharmonically spelled
+  // for display (e.g. "Bb" in F major).
+  const chordPcs = new Set<PitchClass>(
+    sourceMidi.length > 0
+      ? sourceMidi.map(m => midiToPitchClass(m))
+      : chord.notes.map(n => (normalizeToPitchClass(n) ?? n) as PitchClass)
+  );
 
   for (let i = 0; i < diatonicSet.triads.length; i++) {
     const triad = diatonicSet.triads[i];
