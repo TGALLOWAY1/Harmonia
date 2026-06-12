@@ -1,6 +1,14 @@
 # Harmonia Audio Engine Assessment
 
-Assessment of the current playback stack and a proposal for a two-tier (Lightweight / High-Quality) audio architecture. **No implementation has been done — this is a recommendation document.**
+Assessment of the current playback stack and a proposal for a two-tier (Lightweight / High-Quality) audio architecture.
+
+> **Implementation status:** Option D was approved and Phases 1–3 are implemented
+> (persisted `audioSettingsStore`, lightweight synth tier — Soft Keys, Filtered Saw,
+> FM Electric Piano, synth piano — quality modes with background sample loading,
+> hot-swap, and timbre-preserving fallback). Phase 4 (self-hosted samples + a better
+> EP sample set) and Phase 5 (Tone.js code-splitting) remain follow-ups; samples
+> still stream from the Tone.js CDN, and sample assets could not be mirrored from
+> this environment (network policy blocks `tonejs.github.io`).
 
 ---
 

@@ -23,7 +23,7 @@ import type {
   PlaybackMode,
 } from "@/lib/sketchpad/types";
 import type { Mode } from "@/lib/theory/harmonyEngine";
-import { SOUND_PRESETS } from "@/lib/audio/synthPresets";
+import { SOUND_PRESETS, type SoundPresetId } from "@/lib/audio/instrumentCatalog";
 import clsx from "clsx";
 
 const MODES: { value: Mode; label: string }[] = [
@@ -80,8 +80,8 @@ export function HarmonicPreviewPanel({
   onPlayTransition: () => void;
   onStop: () => void;
   onPlayNote: (noteWithOctave: string) => void;
-  soundPreset: string;
-  onSoundPresetChange: (preset: any) => void;
+  soundPreset: SoundPresetId;
+  onSoundPresetChange: (preset: SoundPresetId) => void;
   isSynthLoading: boolean;
   synthLoadError: string | null;
   onDismissSynthError: () => void;
@@ -118,20 +118,28 @@ export function HarmonicPreviewPanel({
           <span className="text-xs font-medium text-muted uppercase tracking-wider">
             Preview
           </span>
-          <select
-            value={soundPreset}
-            onChange={(e) => onSoundPresetChange(e.target.value)}
-            className="bg-surface-muted border border-border-subtle rounded px-2 py-0.5 text-xs outline-none appearance-none cursor-pointer"
-          >
-            {SOUND_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>{p.label}</option>
-            ))}
-          </select>
+          <span className="flex items-center gap-1.5">
+            {isSynthLoading && (
+              <span
+                className="w-3 h-3 border-2 border-muted border-t-transparent rounded-full animate-spin"
+                title="Loading high-quality samples"
+              />
+            )}
+            <select
+              value={soundPreset}
+              onChange={(e) => onSoundPresetChange(e.target.value as SoundPresetId)}
+              className="bg-surface-muted border border-border-subtle rounded px-2 py-0.5 text-xs outline-none appearance-none cursor-pointer"
+            >
+              {SOUND_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </span>
         </div>
 
         {synthLoadError && (
           <div className="flex items-center justify-between gap-2 mb-2 text-[11px] text-amber-600 dark:text-amber-400">
-            <span>{synthLoadError} couldn&apos;t load — using Organ.</span>
+            <span>High-quality {synthLoadError} couldn&apos;t load — using the lightweight sound.</span>
             <button
               onClick={onDismissSynthError}
               className="underline hover:no-underline shrink-0"
@@ -156,19 +164,15 @@ export function HarmonicPreviewPanel({
             <>
               <button
                 onClick={() => onPlaySection(false)}
-                disabled={events.length === 0 || isSynthLoading}
+                disabled={events.length === 0}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40"
               >
-                {isSynthLoading ? (
-                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Play className="w-3 h-3" />
-                )}
+                <Play className="w-3 h-3" />
                 Section
               </button>
               <button
                 onClick={() => onPlaySection(true)}
-                disabled={events.length === 0 || isSynthLoading}
+                disabled={events.length === 0}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-muted border border-border-subtle text-xs font-medium hover:bg-accent/10 disabled:opacity-40"
                 title="Loop section"
               >
@@ -176,7 +180,7 @@ export function HarmonicPreviewPanel({
               </button>
               <button
                 onClick={() => onPlayFullSong(0)}
-                disabled={project.sections.length === 0 || isSynthLoading}
+                disabled={project.sections.length === 0}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-muted border border-border-subtle text-xs font-medium hover:bg-accent/10 disabled:opacity-40"
                 title="Play full song"
               >
@@ -186,7 +190,7 @@ export function HarmonicPreviewPanel({
               {hasNextSection && (
                 <button
                   onClick={onPlayTransition}
-                  disabled={events.length === 0 || isSynthLoading}
+                  disabled={events.length === 0}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-muted border border-border-subtle text-xs font-medium hover:bg-accent/10 disabled:opacity-40"
                   title="Preview transition to next section"
                 >

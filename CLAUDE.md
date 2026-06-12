@@ -43,7 +43,9 @@ npm run lint      # Run ESLint
 | `lib/theory/` | Core music theory: scales, chords, MIDI, pitch classes |
 | `lib/music/generators/advanced/` | Advanced progression generation pipeline |
 | `lib/music/generators/melody/` | Phrase-based melody engine (phrase plan, contour, motifs, moods, ornaments, scoring) |
-| `lib/audio/synthPresets.ts` | Shared synth factory: Piano, Electric Piano, Organ |
+| `lib/audio/instrumentCatalog.ts` | Tone-free instrument metadata (ids, labels, quality tiers) |
+| `lib/audio/synthPresets.ts` | Instrument registry: lightweight synth + high-quality sampler realizations per instrument |
+| `lib/state/audioSettingsStore.ts` | Persisted audio settings (instrument, Lightweight/High quality mode) |
 | `components/creative/` | SubstitutionPanel, MutationControls, InteractivePianoRoll |
 | `components/progression/` | VerticalPianoRoll (original read-only version) |
 
