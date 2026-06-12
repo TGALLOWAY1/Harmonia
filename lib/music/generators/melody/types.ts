@@ -30,6 +30,21 @@ export type Melody = {
 export type MelodyStyle = "lyrical" | "rhythmic" | "arpeggiated";
 
 /**
+ * Emotional character of the melody. Moods drive register, contour shape,
+ * rhythmic density, leap sizes, ornamentation amount, and tension scaling.
+ */
+export type MelodyMood = "dark" | "emotional" | "dreamy" | "energetic";
+
+/** Planned overall melodic shape for the phrase. */
+export type ContourShape =
+  | "rising"
+  | "falling"
+  | "arch"
+  | "inverted-arch"
+  | "wave"
+  | "stair-step";
+
+/**
  * How tightly the melody is bound to the underlying chord's tones.
  *   - expressive: chord tones (incl. chromatic ones) are reachable and strongly
  *                 preferred on strong beats; diatonic notes a semitone off a
@@ -53,10 +68,17 @@ export type MelodyGenerationOptions = {
   style: MelodyStyle;
   /** How tightly the melody follows the chord tones (default "expressive"). */
   harmony?: MelodyHarmony;
+  /** Emotional character of the melody (default "emotional"). */
+  mood?: MelodyMood;
   /** Tension curve (0-1 per chord) — drives contour and note density. */
   tensionCurve?: number[];
   /** Octave for the melody (default 5). */
   octave?: number;
   /** Seed for deterministic generation. */
   seed?: number;
+  /**
+   * Number of candidate melodies to generate and score; the best is kept
+   * (default 8). 1 skips the selection loop for a single fast pass.
+   */
+  candidateCount?: number;
 };
