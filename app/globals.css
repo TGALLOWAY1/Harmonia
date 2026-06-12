@@ -315,23 +315,27 @@
 }
 
 /* ─────────────────────────────────────────────
-   CHORD CARD ROW (PROGRESSION PAGE)
-   Mirrors the piano-roll column flex pattern via a --card-flex variable.
+   CHORD CARD GRID (PROGRESSION PAGE)
+   A responsive auto-fit grid: cards wrap to multiple rows on narrow screens
+   (e.g. 4×2 for an 8-chord progression on a phone) and collapse to a single
+   row on desktop. Every card keeps a readable minimum width so chord names are
+   never truncated, and the grid guarantees uniform row heights — no horizontal
+   scrolling, no misaligned cards. Duration is conveyed by the card label and
+   the piano roll below rather than by card width.
 ───────────────────────────────────────────── */
-.chord-card-row {
-  display: flex;
-  flex: 1;
-  gap: 6px;
-  min-width: 0;
+.chord-card-grid {
+  display: grid;
+  gap: 8px;
+  /* ~84px min keeps a 4-column layout across common phone widths (360–510px)
+     so chord symbols like "Cmaj7" are never truncated. */
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
 }
-.chord-card {
-  flex: var(--card-flex, 1);
-  min-width: 0;
+@media (min-width: 640px) {
+  .chord-card-grid {
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  }
 }
-/* Cards always shrink to fit the row (duration-proportional, matching the roll
-   columns) so the whole progression stays on screen with no horizontal scroll.
-   On phones the card content is simplified (see app/page.tsx) so the shrunken
-   cards stay readable. */
 
 .piano-roll-section {
   margin-top: 8px;

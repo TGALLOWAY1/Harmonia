@@ -13,6 +13,7 @@ import {
 } from "@/lib/state/playbackSettingsStore";
 import { buildChordEvents, humanizeVelocity } from "@/lib/audio/humanization";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
+import { ChordCard } from "@/components/progression/ChordCard";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
 import { VoicingFeedback } from "@/components/feedback/VoicingFeedback";
 import { FeedbackChart } from "@/components/feedback/FeedbackChart";
@@ -62,17 +63,6 @@ const MELODY_HARMONIES: { value: MelodyHarmony; label: string }[] = [
   { value: "expressive", label: "Expressive" },
   { value: "strict", label: "Strict" },
 ];
-
-/** Map durationClass to a flex multiplier for column width alignment. */
-function durationToFlex(dc?: string): number {
-  switch (dc) {
-    case "full": return 4;
-    case "half": return 2;
-    case "quarter": return 1;
-    case "eighth": return 0.5;
-    default: return 4;
-  }
-}
 
 /* ─── Component ─── */
 
@@ -662,9 +652,7 @@ export default function HarmoniaPage() {
 
       <main className="max-w-5xl mx-auto px-4 lg:px-6 pt-2 lg:pt-10 pb-10 space-y-6 lg:space-y-10">
         {/* ── Controls Bar ── */}
-        <section className="bg-surface/40 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-3xl p-5 shadow-xl relative overflow-visible z-20">
-          <div className="absolute top-0 right-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-
+        <section className="bg-surface/60 backdrop-blur-xl border border-border-subtle rounded-2xl p-5 shadow-sm relative overflow-visible z-20">
           {/* Mobile: collapsed settings summary */}
           <button
             onClick={() => setSettingsExpanded((v) => !v)}
@@ -693,7 +681,7 @@ export default function HarmoniaPage() {
                 <select
                   value={rootKey}
                   onChange={(e) => setSettings({ rootKey: e.target.value })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Root Key"
                 >
                   {NOTES.map((note) => (
@@ -704,7 +692,7 @@ export default function HarmoniaPage() {
                 <select
                   value={mode}
                   onChange={(e) => setSettings({ mode: e.target.value as Mode })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Scale Mode"
                 >
                   {MODES.map((m) => (
@@ -736,7 +724,7 @@ export default function HarmoniaPage() {
                 <select
                   value={numChords}
                   onChange={(e) => setSettings({ numChords: Number(e.target.value) as 3 | 4 | 5 | 6 | 7 | 8 })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Number of Chords"
                 >
                   {CHORD_COUNTS.map((n) => (
@@ -747,7 +735,7 @@ export default function HarmoniaPage() {
                 <select
                   value={complexity}
                   onChange={(e) => setSettings({ complexity: Number(e.target.value) as ComplexityLevel })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Harmonic Complexity"
                 >
                   {([1, 2, 3, 4] as ComplexityLevel[]).map((level) => (
@@ -758,7 +746,7 @@ export default function HarmoniaPage() {
                 <select
                   value={voicingStyle}
                   onChange={(e) => setSettings({ voicingStyle: e.target.value as VoicingStyle })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Voicing Style"
                 >
                   {VOICING_STYLES.map((vs) => (
@@ -769,7 +757,7 @@ export default function HarmoniaPage() {
             </div>
 
             {/* Textures Group */}
-            <div className="flex flex-col gap-1.5 flex-1 min-w-[280px]">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[260px]">
               <label className="flex items-center justify-between w-full pl-1">
                 <div className="flex items-center gap-1.5 text-[11px] lg:text-[10px] font-bold text-muted uppercase tracking-widest">
                   <Layers className="w-3 h-3 text-emerald-500/70" />
@@ -781,7 +769,7 @@ export default function HarmoniaPage() {
                 <select
                   value={voiceCount}
                   onChange={(e) => setSettings({ voiceCount: Number(e.target.value) as 3 | 4 | 5 })}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Voice Count (Density)"
                 >
                   {VOICE_COUNTS.map((vc) => (
@@ -792,7 +780,7 @@ export default function HarmoniaPage() {
                 <select
                   value={melodyStyle}
                   onChange={(e) => setMelodyStyle(e.target.value as any)}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Melodic Rhythm Style"
                 >
                   {MELODY_STYLES.map((ms) => (
@@ -803,22 +791,11 @@ export default function HarmoniaPage() {
                 <select
                   value={melodyHarmony}
                   onChange={(e) => setMelodyHarmony(e.target.value as any)}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Melody Harmony — how tightly the melody follows the chord tones"
                 >
                   {MELODY_HARMONIES.map((mh) => (
                     <option key={mh.value} value={mh.value}>{mh.label}</option>
-                  ))}
-                </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
-                <select
-                  value={soundPreset}
-                  onChange={(e) => setSoundPreset(e.target.value as SoundPresetId)}
-                  className="flex-1 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Synth Preset"
-                >
-                  {SOUND_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>{preset.label}</option>
                   ))}
                 </select>
               </div>
@@ -998,6 +975,31 @@ export default function HarmoniaPage() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setAudioMenuOpen(false)} />
                   <div className="absolute top-full right-0 mt-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
+                    {/* ── Instrument (live sound) ── */}
+                    <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
+                      Sound
+                    </span>
+                    <div className="px-3 pb-1.5 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Instrument</span>
+                        <div className="relative">
+                          <select
+                            value={soundPreset}
+                            onChange={(e) => setSoundPreset(e.target.value as SoundPresetId)}
+                            className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
+                            title="Instrument preset"
+                          >
+                            {SOUND_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>{preset.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="my-1 h-px bg-border-subtle" />
+
                     <button
                       onClick={() => setChordsEnabled(!chordsEnabled)}
                       className="flex items-center justify-between gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-foreground hover:bg-surface-muted transition-colors"
@@ -1132,137 +1134,46 @@ export default function HarmoniaPage() {
                 className="space-y-4"
               >
 
-                {/* Chord cards row — offset by piano key width, flex-matched to roll columns */}
-                <div className="relative flex" style={{ paddingLeft: 53 }}>
-                  <div className="chord-card-row">
-                    {currentProgression.chords.map((chord, index) => {
-                      const isActive = playbackIndex === index;
-                      const previewNotes =
-                        chord.notesWithOctave && chord.notesWithOctave.length > 0
-                          ? chord.notesWithOctave
-                          : chord.notes.map((n) => `${n}3`);
-                      const colFlex = durationToFlex(chord.durationClass);
-                      const sourceType: ChordSourceType = chordSourceTypes[index] ?? "generated";
+                {/* Section header (desktop) — anchors the working area and
+                    separates it from the controls above. Hidden on phones to
+                    keep the mobile view focused on the progression itself. */}
+                <div className="hidden lg:flex items-baseline justify-between border-b border-border-subtle pb-2">
+                  <h2 className="text-sm font-semibold tracking-tight">Progression</h2>
+                  <span className="text-xs text-muted tabular-nums">
+                    {rootKey} {MODES.find((m) => m.value === mode)?.label} · {currentProgression.chords.length} chords · {bpm} BPM
+                  </span>
+                </div>
 
-                      const SOURCE_BADGE: Record<ChordSourceType, { color: string; label: string }> = {
-                        generated: { color: "", label: "" },
-                        substituted: { color: "bg-purple-500/20 text-purple-300", label: "Substituted" },
-                        manual: { color: "bg-emerald-500/20 text-emerald-300", label: "Edited" },
-                      };
+                {/* Chord cards — a responsive grid that wraps cleanly (4 per
+                    row on phones, a single row on desktop) and keeps every card
+                    a uniform, readable size at any chord count. */}
+                <div className="chord-card-grid">
+                  {currentProgression.chords.map((chord, index) => {
+                    const previewNotes =
+                      chord.notesWithOctave && chord.notesWithOctave.length > 0
+                        ? chord.notesWithOctave
+                        : chord.notes.map((n) => `${n}3`);
+                    const sourceType: ChordSourceType = chordSourceTypes[index] ?? "generated";
 
-                      return (
-                        <motion.div
-                          key={`${chord.romanNumeral}-${index}`}
-                          initial={{ opacity: 0, y: 16, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{
-                            delay: index * 0.06,
-                            duration: 0.35,
-                            ease: [0.22, 1, 0.36, 1],
-                          }}
-                          style={{ "--card-flex": colFlex } as React.CSSProperties}
-                          onClick={() => handleChordClick(previewNotes, index)}
-                          className={`chord-card relative flex flex-col rounded-xl px-2 py-2.5 sm:px-2.5 sm:py-3 lg:px-3 lg:py-4 border transition-all duration-200 cursor-pointer select-none ${
-                            isActive
-                              ? "bg-accent/10 border-accent shadow-md ring-2 ring-inset ring-accent/20"
-                              : selectedChordIndex === index
-                                ? "bg-accent/5 border-accent ring-2 ring-inset ring-accent/40 shadow-sm"
-                                : chord.isLocked
-                                  ? "bg-surface border-accent/30 ring-1 ring-inset ring-accent/10"
-                                  : "bg-surface border-border-subtle shadow-sm hover:border-accent/60 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm"
-                          }`}
-                        >
-                          {/* Playback glow pulse */}
-                          {isActive && (
-                            <motion.div
-                              className="absolute inset-0 rounded-xl bg-accent/5 pointer-events-none"
-                              animate={{ opacity: [0.3, 0.08, 0.3] }}
-                              transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-                            />
-                          )}
-
-                          {/* Top meta row: source badge (left) + controls (right).
-                              Hidden on phones (< sm) so cards can shrink to just
-                              the chord name and the whole progression fits. */}
-                          <div className="relative z-10 hidden sm:flex w-full items-center justify-between gap-1 min-h-[20px]">
-                            {sourceType !== "generated" ? (
-                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-semibold whitespace-nowrap ${SOURCE_BADGE[sourceType].color}`}>
-                                {SOURCE_BADGE[sourceType].label}
-                              </span>
-                            ) : (
-                              <span aria-hidden className="block w-px" />
-                            )}
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openSubstitution(index);
-                                  setSelectedChordIndex(index);
-                                }}
-                                className="p-1.5 lg:p-1 rounded-md text-muted/30 hover:text-accent/70 transition-colors"
-                                title="Substitute chord"
-                              >
-                                <Shuffle className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleLock(index);
-                                }}
-                                className={`p-1.5 lg:p-1 rounded-md transition-colors ${
-                                  chord.isLocked
-                                    ? "text-accent hover:text-accent/80"
-                                    : "text-muted/30 hover:text-muted/60"
-                                }`}
-                                title={chord.isLocked ? "Unlock chord" : "Lock chord"}
-                              >
-                                {chord.isLocked ? (
-                                  <Lock className="w-3 h-3" />
-                                ) : (
-                                  <Unlock className="w-3 h-3" />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Centered chord content.
-                              min-w-0 + truncation lets the symbol shrink to the
-                              card width (cards flex-shrink to fit all 8 on screen)
-                              instead of overflowing and overlapping neighbors —
-                              mirrors the piano-roll header treatment. */}
-                          <div className="relative z-10 flex flex-1 w-full min-w-0 flex-col items-center justify-center text-center">
-                          <div className="w-full truncate text-xs font-mono text-muted mb-0.5 lg:mb-1 tracking-wider">
-                            {chord.romanNumeral}
-                          </div>
-                          <div className="w-full truncate text-sm sm:text-base lg:text-xl font-semibold mb-1 lg:mb-1.5">{chord.symbol}</div>
-                          <div className="hidden sm:block w-full truncate text-[10px] text-muted opacity-70">
-                            {chord.notes.join(" · ")}
-                          </div>
-                          {chord.durationClass && chord.durationClass !== "full" && (
-                            <div className="mt-1 hidden sm:block text-[9px] font-mono text-muted/50 uppercase tracking-widest">
-                              {chord.durationClass === "half" ? "2 beats" : chord.durationClass === "quarter" ? "1 beat" : "\u00BD beat"}
-                            </div>
-                          )}
-
-                          {/* Revert indicator for modified chords */}
-                          {sourceType !== "generated" && originalChords.has(index) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                revertChord(index);
-                              }}
-                              className="mt-1.5 flex items-center gap-1 text-[9px] text-muted/50 hover:text-accent transition-colors"
-                              title="Revert to original"
-                            >
-                              <RotateCcw className="w-2.5 h-2.5" />
-                              revert
-                            </button>
-                          )}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
+                    return (
+                      <ChordCard
+                        key={`${chord.romanNumeral}-${index}`}
+                        chord={chord}
+                        index={index}
+                        isActive={playbackIndex === index}
+                        isSelected={selectedChordIndex === index}
+                        sourceType={sourceType}
+                        canRevert={sourceType !== "generated" && originalChords.has(index)}
+                        onSelect={() => handleChordClick(previewNotes, index)}
+                        onSubstitute={() => {
+                          openSubstitution(index);
+                          setSelectedChordIndex(index);
+                        }}
+                        onToggleLock={() => toggleLock(index)}
+                        onRevert={() => revertChord(index)}
+                      />
+                    );
+                  })}
                 </div>
 
                 {/* Voicing feedback removed and added to controls bar */}
