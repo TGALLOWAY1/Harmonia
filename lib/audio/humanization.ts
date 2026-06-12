@@ -10,7 +10,7 @@
  */
 
 /** How notes within a chord are articulated. */
-export type PlaybackStyle = "block" | "strum";
+export type PlaybackStyle = "block" | "strum" | "arpeggio";
 
 /** How long notes are allowed to ring after release. */
 export type SustainMode = "off" | "natural";
@@ -30,8 +30,13 @@ export interface HumanizeOptions {
   baseVelocity: number;
   /** Humanization amount (0 = off, 1 = full natural variation). */
   humanize: number;
-  /** Articulation style. Strum only applies to multi-note chords. */
+  /** Articulation style. Strum/arpeggio only apply to multi-note chords. */
   style?: PlaybackStyle;
+  /**
+   * The chord's total ring time in seconds. Used to scale an arpeggio so it
+   * fits musically inside the chord regardless of tempo. Ignored by block/strum.
+   */
+  spreadSeconds?: number;
 }
 
 /* ─── Tuning constants ─── */
@@ -42,6 +47,11 @@ const MAX_VELOCITY_VARIATION = 0.12;
 const MAX_TIMING_JITTER = 0.012;
 /** Per-note delay between strummed notes, in seconds (~18 ms). */
 const STRUM_STEP = 0.018;
+/** Arpeggio spreads notes across this fraction of the chord's duration. */
+const ARP_WINDOW_FRACTION = 0.6;
+/** Clamp arpeggio per-note step so it never drags or blurs into a strum. */
+const ARP_MIN_STEP = 0.06; // 60 ms
+const ARP_MAX_STEP = 0.16; // 160 ms
 /** Velocity floor/ceiling so notes are always audible and never clip. */
 const MIN_VELOCITY = 0.15;
 const MAX_VELOCITY = 1;
@@ -74,21 +84,35 @@ export function humanizeVelocity(baseVelocity: number, humanize: number): number
  */
 export function buildChordEvents(
   notes: string[],
-  { baseVelocity, humanize, style = "block" }: HumanizeOptions,
+  { baseVelocity, humanize, style = "block", spreadSeconds = 0 }: HumanizeOptions,
 ): NoteEvent[] {
-  const useStrum = style === "strum" && notes.length > 1;
+  const isMulti = notes.length > 1;
+  const useStrum = style === "strum" && isMulti;
+  const useArpeggio = style === "arpeggio" && isMulti;
+
+  // Per-note step between successive note onsets. Strum is a fixed soft roll;
+  // arpeggio scales with the chord's duration so it spans the chord at any
+  // tempo, bounded so it never drags or collapses into a strum.
+  let step = 0;
+  if (useStrum) {
+    step = STRUM_STEP;
+  } else if (useArpeggio) {
+    const window = spreadSeconds * ARP_WINDOW_FRACTION;
+    const raw = window / (notes.length - 1);
+    step = clamp(raw, ARP_MIN_STEP, ARP_MAX_STEP);
+  }
 
   return notes.map((note, index) => {
     const jitter = bipolarRandom() * MAX_TIMING_JITTER * humanize;
-    const strumOffset = useStrum ? index * STRUM_STEP : 0;
+    const spreadOffset = step * index;
 
     return {
       note,
       velocity: humanizeVelocity(baseVelocity, humanize),
-      // Strum offsets are always >= 0; jitter is symmetric around the beat.
+      // Spread offsets are always >= 0; jitter is symmetric around the beat.
       // The scheduler fires ahead of the event time, so small negative
       // offsets stay safely in the future.
-      timeOffset: strumOffset + jitter,
+      timeOffset: spreadOffset + jitter,
     };
   });
 }

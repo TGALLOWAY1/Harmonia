@@ -10,9 +10,10 @@ import { getSubstitutions } from "../creative/substitutionEngine";
 import { interpretChord } from "../creative/chordInterpreter";
 import { generateMelody } from "../music/generators/melody/generateMelody";
 import type { Melody, MelodyNote, MelodyStyle, MelodyHarmony } from "../music/generators/melody/types";
-import { getChordPitchClasses } from "../theory/chordSymbol";
+import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
+import { makeSpeller, type Speller } from "../theory/spelling";
 
 const MODE_TO_SCALE: Record<Mode, ScaleType> = {
     ionian: "major",
@@ -21,6 +22,28 @@ const MODE_TO_SCALE: Record<Mode, ScaleType> = {
     mixolydian: "mixolydian",
     phrygian: "phrygian",
 };
+
+/** Build the enharmonic speller for the active key (root + mode). */
+function spellerFor(rootKey: string, mode: Mode): Speller {
+    return makeSpeller((normalizeToPitchClass(rootKey) || "C") as PitchClass, mode);
+}
+
+/**
+ * Re-spell a chord's *display* fields (symbol, note names) with the accidentals
+ * appropriate to the current key — e.g. "A#" → "Bb" in F major. This is purely
+ * cosmetic: `root` stays the sharp-canonical pitch class and `midiNotes` are
+ * untouched, so playback, voicing, and substitution logic are unaffected.
+ */
+function respellChordDisplay(chord: Chord, speller: Speller): Chord {
+    return {
+        ...chord,
+        symbol: speller.symbol(chord.symbol),
+        notes: chord.notes.map((n) =>
+            /\d/.test(n) ? speller.noteName(n) : speller.pc(n as PitchClass)
+        ),
+        notesWithOctave: chord.notesWithOctave?.map((n) => speller.noteName(n)),
+    };
+}
 
 /** Pitch classes of the active key/scale for the given root + mode. */
 export function getScalePitchClasses(rootKey: string, mode: Mode): PitchClass[] {
@@ -196,11 +219,16 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             ...complexityToOptions(complexity),
         });
 
+        const speller = spellerFor(rootKey, mode);
         const newChords: Chord[] = result.chords.map((voiced) => {
             const pitchClasses = Array.from(new Set(voiced.midi.map((midi) => midiToPitchClass(midi))));
-            const root = pitchClasses[0];
+            // The harmonic root comes from the chord symbol, NOT the lowest voiced
+            // note: inverted voicings put a non-root tone in the bass, so using
+            // pitchClasses[0] mislabels the root and breaks inversion labels and
+            // substitution degree detection. Keep it sharp-canonical for matching.
+            const root = (normalizeRoot(voiced.symbol) ?? pitchClasses[0]) as PitchClass;
 
-            return {
+            return respellChordDisplay({
                 symbol: voiced.symbol,
                 notes: pitchClasses,
                 romanNumeral: voiced.degreeLabel,
@@ -208,7 +236,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
                 midiNotes: voiced.midi,
                 root,
                 durationClass: voiced.durationClass,
-            };
+            }, speller);
         });
 
         // Merge: keep locked chords in their positions, fill others from generated
@@ -392,7 +420,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     applySubstitution: (option: SubstitutionOption, chordIndex: number) => {
-        const { currentProgression, chordSourceTypes, originalChords } = get();
+        const { currentProgression, chordSourceTypes, originalChords, rootKey, mode } = get();
         if (!currentProgression) return;
 
         // Save original chord for revert
@@ -401,7 +429,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             newOriginals.set(chordIndex, { ...currentProgression.chords[chordIndex] });
         }
 
-        const newChord: Chord = {
+        const newChord: Chord = respellChordDisplay({
             symbol: option.candidateSymbol,
             root: option.candidateRoot,
             quality: option.candidateQuality as Chord["quality"],
@@ -411,7 +439,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             notesWithOctave: option.candidateNotesWithOctave,
             isLocked: currentProgression.chords[chordIndex].isLocked,
             durationClass: currentProgression.chords[chordIndex].durationClass,
-        };
+        }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
             i === chordIndex ? newChord : c
@@ -455,7 +483,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     addNote: (chordIndex: number, midi: number) => {
-        const { currentProgression, chordSourceTypes } = get();
+        const { currentProgression, chordSourceTypes, rootKey, mode } = get();
         if (!currentProgression) return;
 
         const chord = currentProgression.chords[chordIndex];
@@ -471,7 +499,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         // Re-interpret chord
         const interpretation = interpretChord(newMidiNotes);
 
-        const updatedChord: Chord = {
+        const updatedChord: Chord = respellChordDisplay({
             ...chord,
             midiNotes: newMidiNotes,
             notesWithOctave: newNotesWithOctave,
@@ -479,7 +507,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-        };
+        }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
             i === chordIndex ? updatedChord : c
@@ -496,7 +524,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     removeNote: (chordIndex: number, midi: number) => {
-        const { currentProgression, chordSourceTypes } = get();
+        const { currentProgression, chordSourceTypes, rootKey, mode } = get();
         if (!currentProgression) return;
 
         const chord = currentProgression.chords[chordIndex];
@@ -510,7 +538,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
         const interpretation = interpretChord(newMidiNotes);
 
-        const updatedChord: Chord = {
+        const updatedChord: Chord = respellChordDisplay({
             ...chord,
             midiNotes: newMidiNotes,
             notesWithOctave: newNotesWithOctave,
@@ -518,7 +546,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-        };
+        }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
             i === chordIndex ? updatedChord : c
@@ -535,7 +563,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => {
-        const { currentProgression, chordSourceTypes } = get();
+        const { currentProgression, chordSourceTypes, rootKey, mode } = get();
         if (!currentProgression) return;
 
         const chord = currentProgression.chords[chordIndex];
@@ -556,7 +584,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
         const interpretation = interpretChord(newMidiNotes);
 
-        const updatedChord: Chord = {
+        const updatedChord: Chord = respellChordDisplay({
             ...chord,
             midiNotes: newMidiNotes,
             notesWithOctave: newNotesWithOctave,
@@ -564,7 +592,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-        };
+        }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
             i === chordIndex ? updatedChord : c

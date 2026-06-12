@@ -10,6 +10,7 @@ import {
   generateMidiRange,
   type PitchClass,
 } from "@/lib/theory/midiUtils";
+import { spellMidiNote } from "@/lib/theory/spelling";
 import { Heart } from "lucide-react";
 import type { Chord } from "@/lib/theory/progressionTypes";
 import type { ChordSourceType } from "@/lib/creative/types";
@@ -24,6 +25,8 @@ export type InteractivePianoRollProps = {
   onShiftNote?: (chordIndex: number, midiNote: number, direction: "up" | "down") => void;
   /** Pitch classes of the active key/scale; up/down steppers snap to these. */
   scalePitchClasses?: PitchClass[];
+  /** Spell note labels with flats (e.g. "Bb") to match the active key. */
+  useFlats?: boolean;
   onSelectChord?: (index: number | null) => void;
   onExportMidi?: () => void;
   onAddNote?: (chordIndex: number, midi: number) => void;
@@ -112,6 +115,7 @@ export function InteractivePianoRoll({
   onDeleteChord,
   onShiftNote,
   scalePitchClasses,
+  useFlats = false,
   onSelectChord,
   onExportMidi,
   onAddNote,
@@ -179,10 +183,10 @@ export function InteractivePianoRoll({
   }, [autoRange]);
 
   const rangeLabel = useMemo(() => {
-    const lowNote = midiToNoteName(autoRange.low);
-    const highNote = midiToNoteName(autoRange.high);
+    const lowNote = spellMidiNote(autoRange.low, useFlats);
+    const highNote = spellMidiNote(autoRange.high, useFlats);
     return `${lowNote}\u2013${highNote}`;
-  }, [autoRange]);
+  }, [autoRange, useFlats]);
 
   const activeChord = useMemo(() => {
     if (hoveredColumnIdx !== null && chords[hoveredColumnIdx]) {
@@ -373,8 +377,8 @@ export function InteractivePianoRoll({
 
   const selectedNoteLabel = useMemo(() => {
     if (!selectedNote) return null;
-    return midiToNoteName(selectedNote.midi);
-  }, [selectedNote]);
+    return spellMidiNote(selectedNote.midi, useFlats);
+  }, [selectedNote, useFlats]);
 
   return (
     <div className="piano-roll-section">
@@ -415,6 +419,7 @@ export function InteractivePianoRoll({
             const pClass = midiToPitchClass(midi);
             const isC = pClass === "C";
             const noteName = midiToNoteName(midi);
+            const displayNote = spellMidiNote(midi, useFlats);
             const isActive = activeMidiNotes.size > 0
               ? activeMidiNotes.has(midi) || flashingNote === midi
               : activePitchClasses.has(pClass) || flashingNote === midi;
@@ -430,7 +435,7 @@ export function InteractivePianoRoll({
                 )}
                 data-note={noteName}
               >
-                {!isWhite ? "" : isC || isActive || noteRange.length <= 24 ? noteName : ""}
+                {!isWhite ? "" : isC || isActive || noteRange.length <= 24 ? displayNote : ""}
               </div>
             );
           })}

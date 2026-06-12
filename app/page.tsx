@@ -26,6 +26,8 @@ import {
   type MelodySynth,
 } from "@/lib/audio/synthPresets";
 import { useInstrument } from "@/lib/audio/useInstrument";
+import { midiToNoteName, normalizeToPitchClass, type PitchClass } from "@/lib/theory/midiUtils";
+import { keyPrefersFlats } from "@/lib/theory/spelling";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
@@ -249,16 +251,24 @@ export default function HarmoniaPage() {
         if (!synthRef.current) return;
 
         if (useProgressionStore.getState().chordsEnabled) {
+          // Drive playback from canonical MIDI notes so audio is independent of
+          // how the chord is enharmonically spelled for display (e.g. "Bb" vs
+          // "A#"). Fall back to note-name strings only when MIDI is absent.
           const notes =
-            chord.notesWithOctave && chord.notesWithOctave.length > 0
-              ? chord.notesWithOctave
-              : chord.notes.map((n) => `${n}3`);
+            chord.midiNotes && chord.midiNotes.length > 0
+              ? chord.midiNotes.map((m) => midiToNoteName(m))
+              : chord.notesWithOctave && chord.notesWithOctave.length > 0
+                ? chord.notesWithOctave
+                : chord.notes.map((n) => `${n}3`);
           // Read live settings so velocity/humanize/style changes apply mid-loop.
           const ps = usePlaybackSettingsStore.getState();
+          // Tempo-aware spread so an arpeggio fits the chord at any BPM.
+          const liveBpm = Tone.getTransport().bpm.value || 120;
           const events = buildChordEvents(notes, {
             baseVelocity: ps.chordVelocity,
             humanize: ps.humanize,
             style: ps.playbackStyle,
+            spreadSeconds: beats * (60 / liveBpm),
           });
           for (const ev of events) {
             synthRef.current.triggerAttackRelease(
@@ -1100,7 +1110,8 @@ export default function HarmoniaPage() {
                       <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
                         {([
                           { value: "block", label: "Block" },
-                          { value: "strum", label: "Soft Strum" },
+                          { value: "strum", label: "Strum" },
+                          { value: "arpeggio", label: "Arpeggio" },
                         ] as const).map((s) => (
                           <button
                             key={s.value}
@@ -1248,6 +1259,7 @@ export default function HarmoniaPage() {
                   onMoveNote={moveNote}
                   onResetChord={resetChord}
                   scalePitchClasses={getScalePitchClasses(rootKey, mode)}
+                  useFlats={keyPrefersFlats((normalizeToPitchClass(rootKey) || "C") as PitchClass, mode)}
                   chordSourceTypes={chordSourceTypes}
                   playheadRef={playheadRef}
                   melodyNotes={melodyEnabled && melody ? melody.notes : undefined}
