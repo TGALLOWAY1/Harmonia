@@ -70,13 +70,28 @@ export function realizePitches(
   // same pitch (a real hook), while the contour moves between segments
   // (repeat, then sequence). Pickups anchor to the segment they lead into.
   const inRangeScale = scaleMidi.filter((m) => m >= low && m <= high);
-  const anchorPool = inRangeScale.length > 0 ? inRangeScale : scaleMidi;
-  const segmentAnchor = plan.segments.map((seg) =>
-    closestTone(
-      contourTargetAt(plan.contour, seg.startBeat, plan.totalBeats, plan.climaxBeat, profile, octave),
-      anchorPool,
-    ),
-  );
+  const segmentAnchor: number[] = [];
+  for (const seg of plan.segments) {
+    let target = contourTargetAt(
+      plan.contour, seg.startBeat, plan.totalBeats, plan.climaxBeat, profile, octave,
+    );
+    // Smooth anchor motion: a segment may not jump more than a fifth from
+    // the previous one, so transitions stay singable even when the contour
+    // swings across the register.
+    const prevAnchor = segmentAnchor[segmentAnchor.length - 1];
+    if (prevAnchor !== undefined) {
+      target = Math.max(prevAnchor - 7, Math.min(prevAnchor + 7, target));
+    }
+    // Anchor on a chord tone of the segment's opening harmony so the motif's
+    // home degree is consonant by construction — otherwise strong-beat
+    // snapping collapses neighboring degrees onto the same pitch.
+    const segChordIdx = chordIndexAtBeat(plan.chordStartBeats, seg.startBeat);
+    const chordPool = chordMidiSets[segChordIdx].filter((m) => m >= low && m <= high);
+    const pool = chordPool.length > 0
+      ? chordPool
+      : inRangeScale.length > 0 ? inRangeScale : scaleMidi;
+    segmentAnchor.push(closestTone(target, pool));
+  }
   const anchorForEvent = (ev: PlacedEvent): number => {
     // Pickups sit just before a boundary; anchor them to the next segment.
     const beat = ev.segmentRole === "pickup" ? ev.startBeat + ev.durationBeats : ev.startBeat;
@@ -129,8 +144,12 @@ export function realizePitches(
       const memoKey = ev.patternKey;
       const memo = patternMemo.get(memoKey);
       if (memo && memo[ev.indexInInstance] !== undefined) {
-        // Replay the realized motif shape, re-anchored to this statement.
-        const raw = anchor + memo[ev.indexInInstance];
+        // Replay the realized motif shape, re-anchored to this statement —
+        // but never beyond the mood's leap limit from the previous note.
+        let raw = anchor + memo[ev.indexInInstance];
+        if (prev !== null) {
+          raw = Math.max(prev - profile.maxLeap, Math.min(prev + profile.maxLeap, raw));
+        }
         midi = closestTone(raw, universe.length > 0 ? universe : scaleMidi);
       } else {
         const target = stepByDegrees(anchor, ev.degreeOffset, scaleMidi);
@@ -240,6 +259,12 @@ function pickPitch(
     }
     if (isSemitoneClash(m, chordPCs)) {
       score += strong ? 6 : 2;
+    }
+
+    // Pitch repetition is a rhythmic-style device; elsewhere it flattens
+    // the line into monotony.
+    if (prev !== null && m === prev) {
+      score += style === "rhythmic" ? -0.5 : 1.5;
     }
 
     if (score < bestScore || (score === bestScore && Math.abs(m - target) < Math.abs(best - target))) {

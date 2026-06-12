@@ -119,15 +119,20 @@ export function generateMotif(
   // back toward the anchor so the cell stays singable.
   const degreeOffsets: number[] = [0];
   let cum = 0;
+  let lastStep = 0;
   for (let i = 1; i < events.length; i++) {
     let step: number;
     if (rng() < profile.leapChance) {
       step = (rng() < 0.5 ? -1 : 1) * (rng() < 0.3 ? 3 : 2);
     } else {
-      step = rng() < 0.25 ? 0 : rng() < 0.5 ? -1 : 1;
+      // A held degree is allowed, but never twice in a row — repeated-note
+      // chains turn the cell into a drone.
+      const allowHold = lastStep !== 0;
+      step = allowHold && rng() < 0.25 ? 0 : rng() < 0.5 ? -1 : 1;
     }
     if (cum >= 3 && step > 0) step = -step;
     if (cum <= -3 && step < 0) step = -step;
+    lastStep = step;
     cum = Math.max(-4, Math.min(4, cum + step));
     degreeOffsets.push(cum);
   }
