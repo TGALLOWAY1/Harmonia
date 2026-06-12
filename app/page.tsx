@@ -31,7 +31,7 @@ import { keyPrefersFlats } from "@/lib/theory/spelling";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
-import type { MelodyStyle, MelodyHarmony } from "@/lib/music/generators/melody/types";
+import type { MelodyStyle, MelodyHarmony, MelodyMood } from "@/lib/music/generators/melody/types";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: { value: Mode; label: string }[] = [
@@ -64,6 +64,13 @@ const MELODY_STYLES: { value: MelodyStyle; label: string }[] = [
 const MELODY_HARMONIES: { value: MelodyHarmony; label: string }[] = [
   { value: "expressive", label: "Expressive" },
   { value: "strict", label: "Strict" },
+];
+
+const MELODY_MOODS: { value: MelodyMood; label: string }[] = [
+  { value: "dark", label: "Dark" },
+  { value: "emotional", label: "Emotional" },
+  { value: "dreamy", label: "Dreamy" },
+  { value: "energetic", label: "Energetic" },
 ];
 
 /* ─── Component ─── */
@@ -109,9 +116,11 @@ export default function HarmoniaPage() {
     melodyEnabled,
     melodyStyle,
     melodyHarmony,
+    melodyMood,
     setMelodyEnabled,
     setMelodyStyle,
     setMelodyHarmony,
+    setMelodyMood,
     generateMelodyForProgression,
   } = useProgressionStore();
 
@@ -806,6 +815,17 @@ export default function HarmoniaPage() {
                 >
                   {MELODY_HARMONIES.map((mh) => (
                     <option key={mh.value} value={mh.value}>{mh.label}</option>
+                  ))}
+                </select>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <select
+                  value={melodyMood}
+                  onChange={(e) => setMelodyMood(e.target.value as MelodyMood)}
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  title="Melody Mood — emotional character: register, contour, rhythm, and tension"
+                >
+                  {MELODY_MOODS.map((mm) => (
+                    <option key={mm.value} value={mm.value}>{mm.label}</option>
                   ))}
                 </select>
               </div>

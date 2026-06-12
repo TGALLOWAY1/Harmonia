@@ -9,7 +9,7 @@ import type { ChordSourceType, SubstitutionOption } from "../creative/types";
 import { getSubstitutions } from "../creative/substitutionEngine";
 import { interpretChord } from "../creative/chordInterpreter";
 import { generateMelody } from "../music/generators/melody/generateMelody";
-import type { Melody, MelodyNote, MelodyStyle, MelodyHarmony } from "../music/generators/melody/types";
+import type { Melody, MelodyNote, MelodyStyle, MelodyHarmony, MelodyMood } from "../music/generators/melody/types";
 import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
@@ -87,6 +87,7 @@ interface ProgressionState {
     melodyEnabled: boolean;
     melodyStyle: MelodyStyle;
     melodyHarmony: MelodyHarmony;
+    melodyMood: MelodyMood;
     chordsEnabled: boolean;
 
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
@@ -115,6 +116,7 @@ interface ProgressionState {
     setChordsEnabled: (enabled: boolean) => void;
     setMelodyStyle: (style: MelodyStyle) => void;
     setMelodyHarmony: (harmony: MelodyHarmony) => void;
+    setMelodyMood: (mood: MelodyMood) => void;
     generateMelodyForProgression: () => void;
     clearMelody: () => void;
     addMelodyNote: (note: MelodyNote) => void;
@@ -190,6 +192,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     melodyEnabled: false,
     melodyStyle: "lyrical",
     melodyHarmony: "expressive",
+    melodyMood: "emotional",
     chordsEnabled: true,
 
     setSettings: (settings) => {
@@ -642,8 +645,15 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         }
     },
 
+    setMelodyMood: (mood: MelodyMood) => {
+        set({ melodyMood: mood });
+        if (get().melodyEnabled && get().currentProgression) {
+            get().generateMelodyForProgression();
+        }
+    },
+
     generateMelodyForProgression: () => {
-        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony } = get();
+        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony, melodyMood } = get();
         if (!currentProgression) return;
 
         const scalePitchClasses = getScalePitchClasses(rootKey, mode);
@@ -667,6 +677,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             chords,
             style: melodyStyle,
             harmony: melodyHarmony,
+            mood: melodyMood,
             octave: 5,
         });
 

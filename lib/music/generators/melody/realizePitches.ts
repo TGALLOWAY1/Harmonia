@@ -65,20 +65,28 @@ export function realizePitches(
       .sort((a, b) => a - b),
   );
 
-  // Anchor each motif instance to the contour at the instance's first beat.
-  const instanceAnchor = new Map<number, number>();
-  for (const ev of events) {
-    if (!instanceAnchor.has(ev.instanceId)) {
-      const target = contourTargetAt(
-        plan.contour, ev.startBeat, plan.totalBeats, plan.climaxBeat, profile, octave,
-      );
-      const inRangeScale = scaleMidi.filter((m) => m >= low && m <= high);
-      instanceAnchor.set(
-        ev.instanceId,
-        closestTone(target, inRangeScale.length > 0 ? inRangeScale : scaleMidi),
-      );
+  // Anchor each phrase segment to the contour at its start. Sharing one
+  // anchor per segment makes motif statements within a segment repeat at the
+  // same pitch (a real hook), while the contour moves between segments
+  // (repeat, then sequence). Pickups anchor to the segment they lead into.
+  const inRangeScale = scaleMidi.filter((m) => m >= low && m <= high);
+  const anchorPool = inRangeScale.length > 0 ? inRangeScale : scaleMidi;
+  const segmentAnchor = plan.segments.map((seg) =>
+    closestTone(
+      contourTargetAt(plan.contour, seg.startBeat, plan.totalBeats, plan.climaxBeat, profile, octave),
+      anchorPool,
+    ),
+  );
+  const anchorForEvent = (ev: PlacedEvent): number => {
+    // Pickups sit just before a boundary; anchor them to the next segment.
+    const beat = ev.segmentRole === "pickup" ? ev.startBeat + ev.durationBeats : ev.startBeat;
+    for (let i = 0; i < plan.segments.length; i++) {
+      if (beat >= plan.segments[i].startBeat && beat < plan.segments[i].endBeat) {
+        return segmentAnchor[i];
+      }
     }
-  }
+    return segmentAnchor[segmentAnchor.length - 1];
+  };
 
   // Memoized realization per motif pattern: semitone offsets from the anchor,
   // so repeated statements of a motif replay the same audible shape.
@@ -93,7 +101,7 @@ export function realizePitches(
     const chordPCs = chords[chordIdx].pitchClasses;
     const chordMidi = chordMidiSets[chordIdx];
     const universe = universes[chordIdx];
-    const anchor = instanceAnchor.get(ev.instanceId)!;
+    const anchor = anchorForEvent(ev);
     const strong = isStrongBeat(ev.startBeat);
 
     let midi: number;

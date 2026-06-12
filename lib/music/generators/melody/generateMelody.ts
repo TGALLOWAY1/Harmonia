@@ -74,7 +74,8 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     const rng = createRng(deriveSeed(baseSeed, k));
 
     const plan = buildPhrasePlan(chords, profile, rng);
-    const motifLength = plan.totalBeats >= 16 ? 4 : 2;
+    // Short cells repeat within segments (hooks); long forms earn 1-bar motifs.
+    const motifLength = plan.totalBeats >= 32 ? 4 : 2;
     const motifA = generateMotif(profile, Math.min(motifLength, plan.totalBeats), rng, "A");
     const events = layoutMotifs(plan, motifA, profile, rng);
 
@@ -88,11 +89,14 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     });
 
     const scaleMidi = buildScaleMidiSet(scalePitchClasses, octave);
+    const { low, high } = moodRegister(profile, octave);
     noteEvents = applyOrnaments(noteEvents, plan, {
       chords,
       scaleMidi,
       harmony,
       profile,
+      registerLow: low,
+      registerHigh: high,
     }, rng);
 
     const notes = finalize(noteEvents, plan, chords, harmony, profile, octave);
@@ -158,7 +162,9 @@ function finalize(
   }
 
   // Non-chord tones must resolve by step; otherwise become chord tones.
-  for (let i = 0; i < noteEvents.length; i++) {
+  // Walk right-to-left so a snap never invalidates an already-verified
+  // resolution earlier in the line.
+  for (let i = noteEvents.length - 1; i >= 0; i--) {
     const n = noteEvents[i];
     const pcs = chords[n.chordIndex].pitchClasses;
     if (n.suspended || isChordTone(n.midi, pcs)) continue;

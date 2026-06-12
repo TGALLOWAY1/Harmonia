@@ -26,6 +26,9 @@ export type OrnamentContext = {
   scaleMidi: number[];
   harmony: MelodyHarmony;
   profile: MoodProfile;
+  /** Register bounds — ornaments may not escape the melody's range. */
+  registerLow: number;
+  registerHigh: number;
 };
 
 function tensionAt(plan: PhrasePlan, beat: number): number {
@@ -60,10 +63,11 @@ export function applyOrnaments(
   ctx: OrnamentContext,
   rng: () => number,
 ): NoteEvent[] {
-  const { chords, scaleMidi, harmony, profile } = ctx;
+  const { chords, scaleMidi, harmony, profile, registerLow, registerHigh } = ctx;
   const has = (k: OrnamentKind) => profile.nctPalette.includes(k);
   const pcsOf = (idx: number): PitchClass[] => chords[idx]?.pitchClasses ?? [];
   const rate = (beat: number) => profile.nctDensity * (0.4 + 0.6 * tensionAt(plan, beat));
+  const inRegister = (midi: number) => midi >= registerLow && midi <= registerHigh;
 
   const out: NoteEvent[] = notes.map((n) => ({ ...n }));
   // Budget keeps ornamentation from overwhelming the motif material.
@@ -90,7 +94,9 @@ export function applyOrnaments(
       !isChordTone(a.midi, nextPCs) &&
       rng() < rate(boundary)
     ) {
-      const resolution = [a.midi - 1, a.midi - 2].find((m) => isChordTone(m, nextPCs));
+      const resolution = [a.midi - 1, a.midi - 2].find(
+        (m) => isChordTone(m, nextPCs) && inRegister(m),
+      );
       if (resolution !== undefined) {
         a.durationBeats += GRID;
         a.suspended = true;
@@ -135,7 +141,7 @@ export function applyOrnaments(
     if (!has("passing") || rng() >= rate(a.startBeat)) continue;
 
     const between = scaleToneBetween(a.midi, b.midi, scaleMidi);
-    if (between === null) continue;
+    if (between === null || !inRegister(between)) continue;
     const passStart = a.startBeat + a.durationBeats - GRID;
     const passPCs = pcsOf(a.chordIndex);
     // Keep strong beats clean: a passing tone may not clash on a downbeat.
@@ -161,7 +167,7 @@ export function applyOrnaments(
     const neighborStart = a.startBeat + a.durationBeats - 1;
     const pcs = pcsOf(a.chordIndex);
     const neighbor = scaleNeighbor(a.midi, scaleMidi, rng() < 0.5);
-    if (neighbor === null) continue;
+    if (neighbor === null || !inRegister(neighbor)) continue;
     if (isStrongBeat(neighborStart) && (harmony === "strict" || isSemitoneClash(neighbor, pcs))) continue;
 
     const originalDur = a.durationBeats;
@@ -186,7 +192,7 @@ export function applyOrnaments(
       if (rng() >= rate(a.startBeat)) continue;
 
       const app = scaleNeighbor(a.midi, scaleMidi, true);
-      if (app === null || isSemitoneClash(app, pcsOf(a.chordIndex))) continue;
+      if (app === null || !inRegister(app) || isSemitoneClash(app, pcsOf(a.chordIndex))) continue;
 
       out.splice(i, 0, {
         midi: app,
