@@ -80,11 +80,18 @@ The favicon is an SVG (`app/icon.svg`) for crisp browser tabs. Because iOS Safar
 
 ### Audio architecture & performance
 
-Instruments are defined in a small registry (`lib/audio/synthPresets.ts`) so new instruments (Strings, Pad, …) can be added as a single entry without touching playback code. Playback humanization is a pure, dependency-free module (`lib/audio/humanization.ts`) that the scheduler applies per note.
+Playback has two quality modes, selectable (and persisted) from the **Audio** menu:
 
-The piano and electric piano are **sampled** (Salamander Grand / Casio) and stream from the Tone.js CDN — humanization adds **no bundle or asset weight**, no new downloads, and negligible CPU. A "Loading Piano…" state covers the brief sample preload on first selection. (Note: the Salamander set is single-velocity, so velocity changes loudness rather than timbre — a deliberate trade for fast load, small footprint, and mobile/browser compatibility.)
+- **Lightweight** — pure Tone.js synthesis. Zero downloads, instant start, works offline and on slow connections.
+- **High Quality** (default) — sampled instruments (Salamander Grand piano, Casio electric piano) stream lazily in the background **while the lightweight version of the same sound is already playing**, then hot-swap in seamlessly. Playback is never blocked by a download.
 
-Sample loading is resilient by design via the `useInstrument` hook (`lib/audio/useInstrument.ts`), shared by the main page and the Sketchpad. Each sample-based preset is created with both `onload` and `onerror` callbacks plus a load timeout. If samples fail to download or stall — common on flaky mobile networks — the instrument **automatically falls back to the always-available FM Organ synth** and surfaces a brief, dismissible notice, so playback never gets stuck on an endless "Loading…" spinner.
+Instruments are described in two layers: a Tone-free catalog (`lib/audio/instrumentCatalog.ts`) holds ids/labels/categories for UI and settings code, and a registry (`lib/audio/synthPresets.ts`) maps each instrument to up to two *realizations* — a `lightweight` synth patch and an optional `high` sampler. Available sounds: **Lush Piano**, **Electric Piano**, **Soft Keys**, **Filtered Saw**, and **Organ**. Adding an instrument means one catalog entry plus one registry entry; playback code never changes. Playback humanization is a pure, dependency-free module (`lib/audio/humanization.ts`) that the scheduler applies per note.
+
+The instrument and quality choice persist across sessions via `lib/state/audioSettingsStore.ts` (localStorage), shared by the main page and the Sketchpad. Browsers with data-saver enabled default to Lightweight.
+
+Sample loading is resilient by design via the `useInstrument` hook (`lib/audio/useInstrument.ts`). Each sampler is created with `onload`/`onerror` callbacks plus a load timeout; if samples fail or stall — common on flaky mobile networks — playback **keeps using the lightweight twin of the same instrument** (a sampled piano degrades to a synth piano, not to an unrelated sound) and surfaces a brief, dismissible notice with a Retry option.
+
+The acoustic piano uses the [Salamander Grand Piano](https://github.com/sfzinstruments/SalamanderGrandPiano) sample set by Alexander Holm (CC-BY 3.0), served via the Tone.js audio CDN. (The hosted set is single-velocity, so velocity changes loudness rather than timbre — a deliberate trade for fast load, small footprint, and mobile/browser compatibility.)
 
 ## Usage
 

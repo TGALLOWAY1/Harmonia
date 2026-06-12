@@ -20,11 +20,12 @@ import { FeedbackChart } from "@/components/feedback/FeedbackChart";
 import { useFavoritesStore } from "@/lib/favorites/favoritesStore";
 import {
   SOUND_PRESETS,
-  createMelodySynthForPreset,
+  presetHasHighQuality,
+  type AudioQuality,
   type SoundPresetId,
-  type Synth,
-  type MelodySynth,
-} from "@/lib/audio/synthPresets";
+} from "@/lib/audio/instrumentCatalog";
+import type { Synth, MelodySynth } from "@/lib/audio/synthPresets";
+import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
 import { midiToNoteName, normalizeToPitchClass, type PitchClass } from "@/lib/theory/midiUtils";
 import { keyPrefersFlats } from "@/lib/theory/spelling";
@@ -137,8 +138,14 @@ export default function HarmoniaPage() {
     setPlaybackStyle,
   } = usePlaybackSettingsStore();
 
+  const {
+    instrumentId: soundPreset,
+    quality: audioQuality,
+    setInstrument: setSoundPreset,
+    setQuality: setAudioQuality,
+  } = useAudioSettingsStore();
+
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
-  const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
   const [generationKey, setGenerationKey] = useState(0);
   const [selectedChordIndex, setSelectedChordIndex] = useState<number | null>(null);
   const [showVoicingControls, setShowVoicingControls] = useState(false);
@@ -158,31 +165,24 @@ export default function HarmoniaPage() {
   const playheadRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  /* ─── Synth lifecycle (loading + fallback handled by the hook) ─── */
+  /* ─── Synth lifecycle (loading, hot-swap + fallback handled by the hook) ─── */
 
   const {
     isLoading: isSynthLoading,
     loadError: synthLoadError,
+    activeQuality,
     dismissError: dismissSynthError,
-  } = useInstrument(soundPreset, { sustainMode, synthRef });
+    retry: retrySynthLoad,
+  } = useInstrument(soundPreset, { quality: audioQuality, sustainMode, synthRef });
 
-  /* ─── Melody synth lifecycle ─── */
+  /* ─── Melody synth lifecycle (same instrument & quality, melody voice) ─── */
 
-  useEffect(() => {
-    if (!melodyEnabled) {
-      if (melodySynthRef.current) {
-        melodySynthRef.current.dispose();
-        melodySynthRef.current = null;
-      }
-      return;
-    }
-    const synth = createMelodySynthForPreset(soundPreset);
-    melodySynthRef.current = synth;
-    return () => {
-      synth.dispose();
-      melodySynthRef.current = null;
-    };
-  }, [melodyEnabled, soundPreset]);
+  useInstrument(soundPreset, {
+    quality: audioQuality,
+    role: "melody",
+    enabled: melodyEnabled,
+    synthRef: melodySynthRef,
+  });
 
   /* ─── Transport BPM ─── */
 
@@ -898,9 +898,19 @@ export default function HarmoniaPage() {
 
         {/* ── Action Bar (Play · Chords · Melody · Save · Audio) ── */}
         <section>
-          {synthLoadError && (
+          {synthLoadError ? (
             <div className="flex items-center justify-center gap-2 mb-2 text-xs text-amber-600 dark:text-amber-400">
-              <span>{synthLoadError} couldn&apos;t load — using Organ instead.</span>
+              <span>
+                High-quality {synthLoadError} couldn&apos;t load — playing the lightweight
+                version.
+              </span>
+              <button
+                onClick={retrySynthLoad}
+                className="underline hover:no-underline"
+                aria-label="Retry loading samples"
+              >
+                Retry
+              </button>
               <button
                 onClick={dismissSynthError}
                 className="underline hover:no-underline"
@@ -909,25 +919,25 @@ export default function HarmoniaPage() {
                 Dismiss
               </button>
             </div>
-          )}
+          ) : isSynthLoading ? (
+            <div className="flex items-center justify-center gap-2 mb-2 text-xs text-muted">
+              <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              <span>Loading high-quality {presetLabel} — playing lightweight sound meanwhile…</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3">
 
             {/* Primary: Play / Stop */}
             <button
               onClick={handleTogglePlayback}
-              disabled={!currentProgression || isSynthLoading}
+              disabled={!currentProgression}
               className={`flex items-center justify-center gap-1.5 px-4 lg:px-6 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 disabled:opacity-40 shrink-0 ${
                 isPlaying
                   ? "bg-surface text-foreground border border-border-subtle shadow-inner"
                   : "bg-accent text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
               }`}
             >
-              {isSynthLoading ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Loading {presetLabel}…
-                </>
-              ) : isPlaying ? (
+              {isPlaying ? (
                 <>
                   <Square className="w-4 h-4" />
                   Stop
@@ -1011,7 +1021,19 @@ export default function HarmoniaPage() {
                     </span>
                     <div className="px-3 pb-1.5 pt-0.5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-foreground">Instrument</span>
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                          Instrument
+                          {isSynthLoading ? (
+                            <span
+                              className="w-3 h-3 border-2 border-muted border-t-transparent rounded-full animate-spin"
+                              title="Loading high-quality samples"
+                            />
+                          ) : activeQuality === "high" ? (
+                            <span className="px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide bg-accent/10 text-accent">
+                              HQ
+                            </span>
+                          ) : null}
+                        </span>
                         <div className="relative">
                           <select
                             value={soundPreset}
@@ -1019,13 +1041,54 @@ export default function HarmoniaPage() {
                             className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
                             title="Instrument preset"
                           >
-                            {SOUND_PRESETS.map((preset) => (
-                              <option key={preset.id} value={preset.id}>{preset.label}</option>
-                            ))}
+                            <optgroup label="Keys">
+                              {SOUND_PRESETS.filter((p) => p.category === "keys").map((preset) => (
+                                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Synths">
+                              {SOUND_PRESETS.filter((p) => p.category === "synth").map((preset) => (
+                                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                              ))}
+                            </optgroup>
                           </select>
                           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
                         </div>
                       </div>
+                    </div>
+
+                    {/* Audio quality mode */}
+                    <div className="px-3 pb-1.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Audio quality</span>
+                        <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
+                          {(
+                            [
+                              { value: "lightweight", label: "Light" },
+                              { value: "high", label: "High" },
+                            ] as const
+                          ).map((q) => (
+                            <button
+                              key={q.value}
+                              onClick={() => setAudioQuality(q.value as AudioQuality)}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                                audioQuality === q.value
+                                  ? "bg-accent text-white shadow-sm"
+                                  : "text-muted hover:text-foreground"
+                              }`}
+                            >
+                              {q.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-[10px] leading-snug text-muted">
+                        {audioQuality === "high"
+                          ? presetHasHighQuality(soundPreset)
+                            ? "Real instrument samples (a few MB) download in the background — playback starts right away on the lightweight sound."
+                            : "This instrument is synth-based; it sounds the same in both modes."
+                          : "Instant synth sound. No downloads — ideal for slow connections."}
+                      </p>
                     </div>
 
                     <div className="my-1 h-px bg-border-subtle" />

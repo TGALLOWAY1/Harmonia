@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useCallback, useRef, useState, useEffect } from "react";
+import { useMemo, useCallback, useRef, useEffect } from "react";
 import * as Tone from "tone";
 import type { HarmonicSketchProject, HarmonicSection, HarmonicEvent, PlaybackMode } from "@/lib/sketchpad/types";
 import { useSketchpadStore } from "@/lib/sketchpad/store";
 import { SongStructurePanel } from "./SongStructurePanel";
 import { SectionEditorPanel } from "./SectionEditorPanel";
 import { HarmonicPreviewPanel } from "./HarmonicPreviewPanel";
-import { type SoundPresetId, type Synth } from "@/lib/audio/synthPresets";
+import { type Synth } from "@/lib/audio/synthPresets";
+import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
 
 function beatsToDuration(beats: number): string {
@@ -32,13 +33,17 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
     setPlaybackPosition,
   } = useSketchpadStore();
 
-  const [soundPreset, setSoundPreset] = useState<SoundPresetId>("piano");
+  const {
+    instrumentId: soundPreset,
+    quality: audioQuality,
+    setInstrument: setSoundPreset,
+  } = useAudioSettingsStore();
   const synthRef = useRef<Synth | null>(null);
   const {
     isLoading: isSynthLoading,
     loadError: synthLoadError,
     dismissError: dismissSynthError,
-  } = useInstrument(soundPreset, { synthRef });
+  } = useInstrument(soundPreset, { quality: audioQuality, synthRef });
   const scheduleIdsRef = useRef<number[]>([]);
 
   const activeSection = useMemo(
