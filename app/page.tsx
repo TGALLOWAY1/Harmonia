@@ -262,10 +262,13 @@ export default function HarmoniaPage() {
                 : chord.notes.map((n) => `${n}3`);
           // Read live settings so velocity/humanize/style changes apply mid-loop.
           const ps = usePlaybackSettingsStore.getState();
+          // Tempo-aware spread so an arpeggio fits the chord at any BPM.
+          const liveBpm = Tone.getTransport().bpm.value || 120;
           const events = buildChordEvents(notes, {
             baseVelocity: ps.chordVelocity,
             humanize: ps.humanize,
             style: ps.playbackStyle,
+            spreadSeconds: beats * (60 / liveBpm),
           });
           for (const ev of events) {
             synthRef.current.triggerAttackRelease(
@@ -1107,7 +1110,8 @@ export default function HarmoniaPage() {
                       <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
                         {([
                           { value: "block", label: "Block" },
-                          { value: "strum", label: "Soft Strum" },
+                          { value: "strum", label: "Strum" },
+                          { value: "arpeggio", label: "Arpeggio" },
                         ] as const).map((s) => (
                           <button
                             key={s.value}
