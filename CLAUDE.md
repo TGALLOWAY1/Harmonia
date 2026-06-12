@@ -42,7 +42,7 @@ npm run lint      # Run ESLint
 | `lib/creative/` | Substitution engine, mutation engine, chord interpreter, types |
 | `lib/theory/` | Core music theory: scales, chords, MIDI, pitch classes |
 | `lib/music/generators/advanced/` | Advanced progression generation pipeline |
-| `lib/music/generators/melody/` | Melody generation engine (types + generator) |
+| `lib/music/generators/melody/` | Phrase-based melody engine (phrase plan, contour, motifs, moods, ornaments, scoring) |
 | `lib/audio/synthPresets.ts` | Shared synth factory: Piano, Electric Piano, Organ |
 | `components/creative/` | SubstitutionPanel, MutationControls, InteractivePianoRoll |
 | `components/progression/` | VerticalPianoRoll (original read-only version) |
