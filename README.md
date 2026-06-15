@@ -93,6 +93,10 @@ Sample loading is resilient by design via the `useInstrument` hook (`lib/audio/u
 
 The acoustic piano uses the [Salamander Grand Piano](https://github.com/sfzinstruments/SalamanderGrandPiano) sample set by Alexander Holm (CC-BY 3.0), served via the Tone.js audio CDN. (The hosted set is single-velocity, so velocity changes loudness rather than timbre — a deliberate trade for fast load, small footprint, and mobile/browser compatibility.)
 
+#### Audio unlock & status
+
+Browsers (especially mobile Safari/Chrome) start the Web Audio context **suspended** and only resume it from a real user gesture. All sound-producing gestures — Play, Generate, chord-card and piano-roll taps, substitution previews, and every Sketchpad control — route through `ensureAudioReady()` in `lib/audio/audioEngine.ts`. It resumes the context from the gesture, is idempotent (concurrent callers share one unlock), waits until the context is actually `running` before notes are triggered, and **never swallows failures**. A small on-screen `AudioStatusBadge` reflects the live state — *Tap any control to enable audio* / *Audio initializing…* / *Audio ready* / *Audio failed: \<reason\>* — so a silent context or a rejected `Tone.start()` is visible instead of mysterious silence. Set `localStorage.harmonia-audio-debug = "1"` (on automatically outside production) for `[audio]` console diagnostics covering context state changes, sample loads, and hot-swaps.
+
 ## Usage
 
 ### Chord Progression Generator

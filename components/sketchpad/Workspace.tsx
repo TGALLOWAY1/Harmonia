@@ -10,6 +10,7 @@ import { HarmonicPreviewPanel } from "./HarmonicPreviewPanel";
 import { type Synth } from "@/lib/audio/synthPresets";
 import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
+import { ensureAudioReady } from "@/lib/audio/audioEngine";
 
 function beatsToDuration(beats: number): string {
   switch (beats) {
@@ -127,7 +128,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   // Play single chord
   const playChord = useCallback(
     async (event: HarmonicEvent) => {
-      if (Tone.getContext().state !== "running") await Tone.start();
+      await ensureAudioReady();
       stopPlayback();
       if (!synthRef.current) return;
       const notes = event.notesWithOctave.length > 0 ? event.notesWithOctave : event.notes.map((n) => `${n}3`);
@@ -139,7 +140,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   // Play section
   const playSection = useCallback(
     async (section: HarmonicSection, loop: boolean = false) => {
-      if (Tone.getContext().state !== "running") await Tone.start();
+      await ensureAudioReady();
       stopPlayback();
       const variant = section.variants.find((v) => v.id === section.activeVariantId);
       if (!variant || variant.events.length === 0) return;
@@ -154,7 +155,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   // Play full song
   const playFullSong = useCallback(
     async (startFromSectionIndex: number = 0) => {
-      if (Tone.getContext().state !== "running") await Tone.start();
+      await ensureAudioReady();
       stopPlayback();
 
       const allEvents: { event: HarmonicEvent; sectionIndex: number; eventIndex: number }[] = [];
@@ -218,7 +219,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   // Play transition preview between two sections
   const playTransition = useCallback(
     async (fromSection: HarmonicSection, toSection: HarmonicSection) => {
-      if (Tone.getContext().state !== "running") await Tone.start();
+      await ensureAudioReady();
       stopPlayback();
       const fromVariant = fromSection.variants.find((v) => v.id === fromSection.activeVariantId);
       const toVariant = toSection.variants.find((v) => v.id === toSection.activeVariantId);
@@ -237,7 +238,8 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   );
 
   const playNote = useCallback(
-    (noteWithOctave: string) => {
+    async (noteWithOctave: string) => {
+      await ensureAudioReady();
       if (synthRef.current) {
         synthRef.current.triggerAttackRelease(noteWithOctave, "4n");
       }
