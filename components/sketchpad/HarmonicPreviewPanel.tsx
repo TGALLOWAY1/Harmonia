@@ -24,6 +24,7 @@ import type {
 } from "@/lib/sketchpad/types";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import { SOUND_PRESETS, type SoundPresetId } from "@/lib/audio/instrumentCatalog";
+import { AudioStatusBadge } from "@/components/audio/AudioStatusBadge";
 import clsx from "clsx";
 
 const MODES: { value: Mode; label: string }[] = [
@@ -149,6 +150,8 @@ export function HarmonicPreviewPanel({
             </button>
           </div>
         )}
+
+        <AudioStatusBadge className="mb-2" />
 
         {/* Playback controls */}
         <div className="flex flex-wrap gap-1.5">

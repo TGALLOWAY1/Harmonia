@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { SustainMode } from "./humanization";
+import { audioDebug, audioWarn } from "./audioEngine";
 import { presetHasHighQuality, type AudioQuality } from "./instrumentCatalog";
 import {
   INSTRUMENTS,
@@ -146,7 +147,9 @@ export function useInstrument(
     if (wantHigh) {
       const label = INSTRUMENTS[preset].label;
 
-      const fail = () => {
+      audioDebug(`loading high-quality samples for "${label}" (${role})`);
+
+      const fail = (reason?: unknown) => {
         if (cancelled || settled) return;
         settled = true;
         clearTimer();
@@ -154,6 +157,12 @@ export function useInstrument(
         highInstrument = null;
         setIsLoading(false);
         setLoadError(label);
+        // Surface the swallowed error: the UI keeps playing the lightweight
+        // twin, but the reason the samples never arrived should not vanish.
+        audioWarn(
+          `high-quality samples for "${label}" failed — using lightweight voice.`,
+          reason ?? "(load timed out)",
+        );
       };
 
       highInstrument = build("high", {
@@ -161,6 +170,7 @@ export function useInstrument(
           if (cancelled || settled) return;
           settled = true;
           clearTimer();
+          audioDebug(`high-quality "${label}" loaded — hot-swapping in`);
           // Hot-swap: future triggers hit the sampler; the lightweight twin
           // releases its notes and is disposed once its tail has faded.
           const old = synthRef.current;

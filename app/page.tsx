@@ -27,6 +27,8 @@ import {
 import type { Synth, MelodySynth } from "@/lib/audio/synthPresets";
 import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
+import { ensureAudioReady } from "@/lib/audio/audioEngine";
+import { AudioStatusBadge } from "@/components/audio/AudioStatusBadge";
 import { midiToNoteName, normalizeToPitchClass, type PitchClass } from "@/lib/theory/midiUtils";
 import { keyPrefersFlats } from "@/lib/theory/spelling";
 import type { Mode } from "@/lib/theory/harmonyEngine";
@@ -380,9 +382,7 @@ export default function HarmoniaPage() {
   /* ─── Handlers ─── */
 
   const handleGenerate = useCallback(async () => {
-    if (Tone.getContext().state !== "running") {
-      await Tone.start();
-    }
+    await ensureAudioReady();
     if (isPlaying) {
       setIsPlaying(false);
     }
@@ -391,9 +391,9 @@ export default function HarmoniaPage() {
   }, [generateNew, isPlaying, setIsPlaying]);
 
   const handleTogglePlayback = useCallback(async () => {
-    if (Tone.getContext().state !== "running") {
-      await Tone.start();
-    }
+    // Resume from this gesture and wait until the context is actually running
+    // before scheduling, so the first press is never a silent no-op.
+    await ensureAudioReady();
     setIsPlaying(!isPlaying);
   }, [isPlaying, setIsPlaying]);
 
@@ -418,7 +418,10 @@ export default function HarmoniaPage() {
    * Play a one-off chord preview with humanized per-note velocity (no strum,
    * so previews stay snappy). Reads live settings via getState.
    */
-  const playChordPreview = useCallback((notesWithOctave: string[], duration: string) => {
+  const playChordPreview = useCallback(async (notesWithOctave: string[], duration: string) => {
+    // A chord-card / substitution tap is often the first gesture on mobile, so
+    // unlock the context here too — otherwise the preview is silently dropped.
+    await ensureAudioReady();
     if (!synthRef.current) return;
     const ps = usePlaybackSettingsStore.getState();
     const events = buildChordEvents(notesWithOctave, {
@@ -432,7 +435,8 @@ export default function HarmoniaPage() {
   }, []);
 
   const handlePlayNote = useCallback(
-    (noteWithOctave: string) => {
+    async (noteWithOctave: string) => {
+      await ensureAudioReady();
       if (synthRef.current) {
         const ps = usePlaybackSettingsStore.getState();
         const velocity = humanizeVelocity(ps.chordVelocity, ps.humanize);
@@ -444,6 +448,9 @@ export default function HarmoniaPage() {
 
   const handleChordClick = useCallback(
     (notesWithOctave: string[], chordIndex: number) => {
+      // Begin unlocking synchronously while the tap is still "live" (mobile
+      // requires this); playChordPreview awaits the same promise before firing.
+      void ensureAudioReady();
       // Stop current playback to prevent overlapping sounds
       if (isPlaying) {
         setIsPlaying(false);
@@ -466,6 +473,7 @@ export default function HarmoniaPage() {
   // ─── Substitution handlers ───
   const handleSubstitutionPreview = useCallback(
     (option: SubstitutionOption) => {
+      void ensureAudioReady();
       if (synthRef.current) {
         synthRef.current.releaseAll();
         setTimeout(() => {
@@ -479,6 +487,7 @@ export default function HarmoniaPage() {
   const handleSubstitutionApply = useCallback(
     (option: SubstitutionOption) => {
       if (substitutionTarget === null) return;
+      void ensureAudioReady();
       applySubstitution(option, substitutionTarget);
       // Preview the applied chord
       if (synthRef.current) {
@@ -924,7 +933,11 @@ export default function HarmoniaPage() {
               <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
               <span>Loading high-quality {presetLabel} — playing lightweight sound meanwhile…</span>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex items-center justify-center mb-2 min-h-[1rem]">
+              <AudioStatusBadge />
+            </div>
+          )}
           <div className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3">
 
             {/* Primary: Play / Stop */}
