@@ -440,8 +440,15 @@ export default function HarmoniaPage() {
       humanize: ps.humanize,
       style: "block",
     });
+    // Same safeguard as the sequence scheduler: cut whatever is still ringing
+    // before attacking so rapid taps (chord cards, substitution previews)
+    // replace the previous preview instead of stacking on top of it. Releasing
+    // and attacking at one precise `now` is deterministic, unlike the old
+    // releaseAll() + setTimeout(10ms) guess that each call site used to repeat.
+    const now = Tone.now();
+    synthRef.current.releaseAll(now);
     for (const ev of events) {
-      synthRef.current.triggerAttackRelease(ev.note, duration, undefined, ev.velocity);
+      synthRef.current.triggerAttackRelease(ev.note, duration, now + ev.timeOffset, ev.velocity);
     }
   }, []);
 
@@ -466,13 +473,9 @@ export default function HarmoniaPage() {
       if (isPlaying) {
         setIsPlaying(false);
       }
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        // Small delay to let releaseAll take effect before new attack
-        setTimeout(() => {
-          playChordPreview(notesWithOctave, "2n");
-        }, 10);
-      }
+      // playChordPreview cuts the previous preview before attacking, so taps
+      // replace rather than overlap.
+      void playChordPreview(notesWithOctave, "2n");
       // Set this chord as the new loop start position and select it
       playbackIndexRef.current = chordIndex;
       setPlaybackIndex(chordIndex);
@@ -485,12 +488,7 @@ export default function HarmoniaPage() {
   const handleSubstitutionPreview = useCallback(
     (option: SubstitutionOption) => {
       void ensureAudioReady();
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        setTimeout(() => {
-          playChordPreview(option.candidateNotesWithOctave, "2n");
-        }, 10);
-      }
+      void playChordPreview(option.candidateNotesWithOctave, "2n");
     },
     [playChordPreview]
   );
@@ -500,13 +498,8 @@ export default function HarmoniaPage() {
       if (substitutionTarget === null) return;
       void ensureAudioReady();
       applySubstitution(option, substitutionTarget);
-      // Preview the applied chord
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        setTimeout(() => {
-          playChordPreview(option.candidateNotesWithOctave, "2n");
-        }, 10);
-      }
+      // Preview the applied chord (cuts any prior preview before attacking).
+      void playChordPreview(option.candidateNotesWithOctave, "2n");
     },
     [substitutionTarget, applySubstitution, playChordPreview]
   );
