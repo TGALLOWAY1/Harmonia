@@ -1,31 +1,43 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { X, Play, Check, ArrowLeft, ChevronDown } from "lucide-react";
+import { X, Play, ArrowLeft } from "lucide-react";
 import type { SubstitutionOption, SubstitutionCategory } from "@/lib/creative/types";
 import type { Chord } from "@/lib/theory/progressionTypes";
 
+// Short, friendly tab labels. The underlying engine categories are preserved;
+// only their presentation is simplified here.
 const CATEGORY_LABELS: Record<SubstitutionCategory, string> = {
   diatonic: "Diatonic",
   relative: "Relative",
-  "dominant-function": "Dominant Function",
-  tritone: "Tritone Sub",
-  "modal-mixture": "Modal Mixture",
-  inversion: "Inversion",
+  "dominant-function": "Function",
+  tritone: "Tritone",
+  "modal-mixture": "Borrowed",
+  inversion: "Voicing",
 };
 
-const CATEGORY_COLORS: Record<SubstitutionCategory, string> = {
-  diatonic: "bg-blue-500/15 text-blue-300 border-blue-500/30",
-  relative: "bg-purple-500/15 text-purple-300 border-purple-500/30",
-  "dominant-function": "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  tritone: "bg-red-500/15 text-red-300 border-red-500/30",
-  "modal-mixture": "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  inversion: "bg-gray-500/15 text-gray-300 border-gray-500/30",
+// Categories worth flagging inline on the bubble. Diatonic/voicing are the
+// "default" expectation, so we keep those bubbles clean and unlabelled.
+const INLINE_LABEL: Partial<Record<SubstitutionCategory, string>> = {
+  relative: "relative",
+  "dominant-function": "function",
+  tritone: "tritone",
+  "modal-mixture": "borrowed",
+};
+
+const CATEGORY_DOT: Record<SubstitutionCategory, string> = {
+  diatonic: "bg-blue-400",
+  relative: "bg-purple-400",
+  "dominant-function": "bg-amber-400",
+  tritone: "bg-red-400",
+  "modal-mixture": "bg-emerald-400",
+  inversion: "bg-gray-400",
 };
 
 type SubstitutionPanelProps = {
   chord: Chord;
   chordIndex: number;
+  progressionChords: Chord[];
   substitutions: SubstitutionOption[];
   onPreview: (option: SubstitutionOption) => void;
   onApply: (option: SubstitutionOption) => void;
@@ -37,6 +49,7 @@ type SubstitutionPanelProps = {
 export function SubstitutionPanel({
   chord,
   chordIndex,
+  progressionChords,
   substitutions,
   onPreview,
   onApply,
@@ -45,121 +58,186 @@ export function SubstitutionPanel({
   canRevert,
 }: SubstitutionPanelProps) {
   const [activeCategory, setActiveCategory] = useState<SubstitutionCategory | "all">("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // The currently "armed" candidate: first tap previews + reveals details,
+  // a second tap (or the Apply button) commits it.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const categories = useMemo(() => {
-    const cats = new Set(substitutions.map(s => s.category));
+    const cats = new Set(substitutions.map((s) => s.category));
     return Array.from(cats);
   }, [substitutions]);
 
   const filtered = useMemo(() => {
     if (activeCategory === "all") return substitutions;
-    return substitutions.filter(s => s.category === activeCategory);
+    return substitutions.filter((s) => s.category === activeCategory);
   }, [substitutions, activeCategory]);
+
+  const selected = useMemo(
+    () => substitutions.find((s) => s.id === selectedId) ?? null,
+    [substitutions, selectedId],
+  );
+
+  const handleBubbleTap = (option: SubstitutionOption) => {
+    if (selectedId === option.id) {
+      // Second tap on an armed bubble commits the substitution.
+      onApply(option);
+      setSelectedId(null);
+      return;
+    }
+    // First tap: arm + preview in context.
+    setSelectedId(option.id);
+    onPreview(option);
+  };
 
   return (
     <div className="bg-surface rounded-t-2xl lg:rounded-2xl border border-border-subtle shadow-lg overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold tracking-tight">Substitute Chord</h3>
-          <div className="text-xs text-muted mt-0.5">
-            Chord {chordIndex + 1}: <span className="font-medium text-foreground">{chord.symbol}</span>
-            <span className="ml-2 opacity-60">{chord.romanNumeral}</span>
-          </div>
-        </div>
+      <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold tracking-tight">Substitute</h3>
         <button
           onClick={onClose}
           className="p-1.5 rounded-lg hover:bg-surface-muted transition-colors text-muted hover:text-foreground"
+          aria-label="Close"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Category filters */}
-      <div className="px-5 py-3 border-b border-border-subtle flex flex-wrap gap-1.5">
+      {/* Mini progression strip */}
+      <div className="px-5 pb-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          {progressionChords.map((c, i) => (
+            <div
+              key={i}
+              className={`shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                i === chordIndex
+                  ? "bg-accent/15 text-accent border-accent/40"
+                  : "bg-surface-muted text-muted border-transparent"
+              }`}
+            >
+              {c.symbol}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Category tabs */}
+      <div className="px-5 pb-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveCategory("all")}
-          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
             activeCategory === "all"
-              ? "bg-accent/15 text-accent border-accent/30"
-              : "bg-surface-muted text-muted border-transparent hover:border-border-subtle"
+              ? "bg-accent text-white"
+              : "text-muted hover:text-foreground"
           }`}
         >
-          All ({substitutions.length})
+          All
         </button>
-        {categories.map(cat => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
+            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               activeCategory === cat
-                ? CATEGORY_COLORS[cat]
-                : "bg-surface-muted text-muted border-transparent hover:border-border-subtle"
+                ? "bg-accent text-white"
+                : "text-muted hover:text-foreground"
             }`}
           >
-            {CATEGORY_LABELS[cat]} ({substitutions.filter(s => s.category === cat).length})
+            {CATEGORY_LABELS[cat]}
           </button>
         ))}
       </div>
 
-      {/* Options list */}
-      <div className="max-h-[360px] overflow-y-auto">
+      {/* Chord option bubbles */}
+      <div className="px-5 pb-1 max-h-[280px] overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted">
-            No substitutions available for this category.
+          <div className="py-8 text-center text-sm text-muted">
+            No substitutions available here.
           </div>
         ) : (
-          <div className="divide-y divide-border-subtle">
-            {filtered.map(option => {
-              const isExpanded = expandedId === option.id;
+          <div className="grid grid-cols-3 gap-2">
+            {filtered.map((option) => {
+              const isSelected = selectedId === option.id;
+              const inline = INLINE_LABEL[option.category];
               return (
-              <div
-                key={option.id}
-                className="hover:bg-surface-muted/50 transition-colors group"
-              >
-                <div className="flex items-center justify-between gap-2 px-5 py-2.5 lg:py-3">
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : option.id)}
-                    className="flex items-center gap-2 min-w-0 flex-1 text-left"
-                    aria-expanded={isExpanded}
-                    title={isExpanded ? "Hide details" : "Show details"}
+                <button
+                  key={option.id}
+                  onClick={() => handleBubbleTap(option)}
+                  className={`relative flex flex-col items-center justify-center gap-0.5 py-3 px-1 rounded-2xl border text-center transition-all ${
+                    isSelected
+                      ? "bg-accent text-white border-accent shadow-md scale-[1.03]"
+                      : "bg-surface-muted border-border-subtle hover:border-accent/40 active:scale-95"
+                  }`}
+                  title={isSelected ? "Tap again to apply" : "Tap to preview"}
+                >
+                  <span
+                    className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${CATEGORY_DOT[option.category]} ${
+                      isSelected ? "opacity-90" : "opacity-70"
+                    }`}
+                  />
+                  <span className="text-base font-semibold leading-tight">
+                    {option.candidateSymbol}
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono leading-tight ${
+                      isSelected ? "text-white/80" : "text-muted"
+                    }`}
                   >
-                    <span className="text-base font-semibold shrink-0">{option.candidateSymbol}</span>
-                    <span className="text-xs font-mono text-muted shrink-0">{option.candidateRomanNumeral}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border shrink-0 ${CATEGORY_COLORS[option.category]}`}>
-                      {CATEGORY_LABELS[option.category]}
+                    {option.candidateRomanNumeral}
+                  </span>
+                  {inline && (
+                    <span
+                      className={`text-[9px] uppercase tracking-wide leading-tight ${
+                        isSelected ? "text-white/70" : "text-muted/70"
+                      }`}
+                    >
+                      {inline}
                     </span>
-                    <ChevronDown className={`lg:hidden w-3.5 h-3.5 text-muted/50 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                  </button>
-                  <div className="flex items-center gap-1 shrink-0 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => onPreview(option)}
-                      className="p-1.5 rounded-lg hover:bg-accent/10 text-muted hover:text-accent transition-colors"
-                      title="Preview"
-                    >
-                      <Play className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => onApply(option)}
-                      className="px-2.5 py-1 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-xs font-medium transition-colors"
-                    >
-                      <Check className="w-3 h-3 inline mr-1" />
-                      Apply
-                    </button>
-                  </div>
-                </div>
-                <div className={`${isExpanded ? "block" : "hidden"} lg:block px-5 pb-3 text-xs text-muted`}>
-                  <span className="opacity-70">{option.candidateNotes.join(" · ")}</span>
-                  <span className="mx-1.5 opacity-30">—</span>
-                  <span>{option.reason}</span>
-                </div>
-              </div>
+                  )}
+                </button>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Detail + apply for the armed candidate (progressive disclosure) */}
+      {selected && (
+        <div className="mx-5 my-3 p-3 rounded-xl bg-surface-muted border border-border-subtle">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold">{selected.candidateSymbol}</span>
+                <span className="text-xs font-mono text-muted">{selected.candidateRomanNumeral}</span>
+                <span className="text-[10px] uppercase tracking-wide text-muted/70">
+                  {CATEGORY_LABELS[selected.category]}
+                </span>
+              </div>
+              <div className="text-xs text-muted mt-1">
+                <span className="opacity-70">{selected.candidateNotes.join(" · ")}</span>
+              </div>
+              <p className="text-xs text-muted mt-1.5 leading-relaxed">{selected.reason}</p>
+            </div>
+            <button
+              onClick={() => onPreview(selected)}
+              className="shrink-0 p-2 rounded-lg hover:bg-accent/10 text-muted hover:text-accent transition-colors"
+              title="Preview again"
+              aria-label="Preview again"
+            >
+              <Play className="w-4 h-4" />
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              onApply(selected);
+              setSelectedId(null);
+            }}
+            className="mt-3 w-full py-2.5 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent/90 active:scale-[0.98] transition-all"
+          >
+            Apply {selected.candidateSymbol}
+          </button>
+        </div>
+      )}
 
       {/* Footer with revert */}
       {canRevert && (
@@ -169,7 +247,7 @@ export function SubstitutionPanel({
             className="flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-3 h-3" />
-            Revert to original chord
+            Revert to original
           </button>
         </div>
       )}
