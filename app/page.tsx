@@ -1379,6 +1379,7 @@ export default function HarmoniaPage() {
                     <SubstitutionPanel
                       chord={currentProgression.chords[substitutionTarget]}
                       chordIndex={substitutionTarget}
+                      progressionChords={currentProgression.chords}
                       substitutions={substitutionOptions}
                       onPreview={handleSubstitutionPreview}
                       onApply={handleSubstitutionApply}
