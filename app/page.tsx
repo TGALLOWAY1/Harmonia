@@ -261,6 +261,17 @@ export default function HarmoniaPage() {
       const id = Tone.getTransport().schedule((time) => {
         if (!synthRef.current) return;
 
+        // Safeguard against overlapping chords: the instant a new chord begins,
+        // release everything the previous chord left ringing, scheduled at this
+        // exact `time`. The per-note `triggerAttackRelease(duration)` below is
+        // not enough on its own — a sampled instrument's natural sustain (e.g.
+        // the grand-piano samples used in High quality mode) keeps sounding
+        // well past the chord's nominal length, a release can be dropped at the
+        // transport loop boundary, and a note shared with the next chord never
+        // re-articulates. Cutting here keeps a short, bounded tail instead of
+        // an unbounded pile-up, independent of the instrument or sustain mode.
+        synthRef.current.releaseAll(time);
+
         if (useProgressionStore.getState().chordsEnabled) {
           // Drive playback from canonical MIDI notes so audio is independent of
           // how the chord is enharmonically spelled for display (e.g. "Bb" vs
@@ -429,8 +440,15 @@ export default function HarmoniaPage() {
       humanize: ps.humanize,
       style: "block",
     });
+    // Same safeguard as the sequence scheduler: cut whatever is still ringing
+    // before attacking so rapid taps (chord cards, substitution previews)
+    // replace the previous preview instead of stacking on top of it. Releasing
+    // and attacking at one precise `now` is deterministic, unlike the old
+    // releaseAll() + setTimeout(10ms) guess that each call site used to repeat.
+    const now = Tone.now();
+    synthRef.current.releaseAll(now);
     for (const ev of events) {
-      synthRef.current.triggerAttackRelease(ev.note, duration, undefined, ev.velocity);
+      synthRef.current.triggerAttackRelease(ev.note, duration, now + ev.timeOffset, ev.velocity);
     }
   }, []);
 
@@ -455,13 +473,9 @@ export default function HarmoniaPage() {
       if (isPlaying) {
         setIsPlaying(false);
       }
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        // Small delay to let releaseAll take effect before new attack
-        setTimeout(() => {
-          playChordPreview(notesWithOctave, "2n");
-        }, 10);
-      }
+      // playChordPreview cuts the previous preview before attacking, so taps
+      // replace rather than overlap.
+      void playChordPreview(notesWithOctave, "2n");
       // Set this chord as the new loop start position and select it
       playbackIndexRef.current = chordIndex;
       setPlaybackIndex(chordIndex);
@@ -474,12 +488,7 @@ export default function HarmoniaPage() {
   const handleSubstitutionPreview = useCallback(
     (option: SubstitutionOption) => {
       void ensureAudioReady();
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        setTimeout(() => {
-          playChordPreview(option.candidateNotesWithOctave, "2n");
-        }, 10);
-      }
+      void playChordPreview(option.candidateNotesWithOctave, "2n");
     },
     [playChordPreview]
   );
@@ -489,13 +498,8 @@ export default function HarmoniaPage() {
       if (substitutionTarget === null) return;
       void ensureAudioReady();
       applySubstitution(option, substitutionTarget);
-      // Preview the applied chord
-      if (synthRef.current) {
-        synthRef.current.releaseAll();
-        setTimeout(() => {
-          playChordPreview(option.candidateNotesWithOctave, "2n");
-        }, 10);
-      }
+      // Preview the applied chord (cuts any prior preview before attacking).
+      void playChordPreview(option.candidateNotesWithOctave, "2n");
     },
     [substitutionTarget, applySubstitution, playChordPreview]
   );
