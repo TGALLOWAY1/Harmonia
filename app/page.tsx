@@ -261,6 +261,17 @@ export default function HarmoniaPage() {
       const id = Tone.getTransport().schedule((time) => {
         if (!synthRef.current) return;
 
+        // Safeguard against overlapping chords: the instant a new chord begins,
+        // release everything the previous chord left ringing, scheduled at this
+        // exact `time`. The per-note `triggerAttackRelease(duration)` below is
+        // not enough on its own — a sampled instrument's natural sustain (e.g.
+        // the grand-piano samples used in High quality mode) keeps sounding
+        // well past the chord's nominal length, a release can be dropped at the
+        // transport loop boundary, and a note shared with the next chord never
+        // re-articulates. Cutting here keeps a short, bounded tail instead of
+        // an unbounded pile-up, independent of the instrument or sustain mode.
+        synthRef.current.releaseAll(time);
+
         if (useProgressionStore.getState().chordsEnabled) {
           // Drive playback from canonical MIDI notes so audio is independent of
           // how the chord is enharmonically spelled for display (e.g. "Bb" vs
