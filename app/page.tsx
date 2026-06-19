@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Tone from "tone";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical, X, Check } from "lucide-react";
+import { Play, Square, Download, Sparkles, Music, Lock, Unlock, LayoutDashboard, Shuffle, RotateCcw, ChevronDown, Heart, Trash2, Upload, VolumeX, Volume2, Settings2, Layers, Save, MoreVertical, X, Check, Pencil, Wand2 } from "lucide-react";
 import Link from "next/link";
 import { useProgressionStore, COMPLEXITY_LABELS, getScalePitchClasses, type ComplexityLevel } from "@/lib/state/progressionStore";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/lib/state/playbackSettingsStore";
 import { buildChordEvents, humanizeVelocity } from "@/lib/audio/humanization";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
+import { MelodyEditor } from "@/components/creative/MelodyEditor";
 import { ChordCard } from "@/components/progression/ChordCard";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
 import { VoicingFeedback } from "@/components/feedback/VoicingFeedback";
@@ -125,6 +126,14 @@ export default function HarmoniaPage() {
     setMelodyHarmony,
     setMelodyMood,
     generateMelodyForProgression,
+    // Drawn melody + harmonization
+    harmonizeDrawnMelody,
+    harmonizationExplanations,
+    clearMelody,
+    addMelodyNote,
+    moveMelodyNote,
+    resizeMelodyNote,
+    deleteMelodyNote,
   } = useProgressionStore();
 
   const { favorites, addFavorite, removeFavorite } = useFavoritesStore();
@@ -156,6 +165,7 @@ export default function HarmoniaPage() {
   const [audioMenuOpen, setAudioMenuOpen] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
+  const [showMelodyEditor, setShowMelodyEditor] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
   const presetLabel = SOUND_PRESETS.find((p) => p.id === soundPreset)?.label ?? "Instrument";
@@ -182,7 +192,7 @@ export default function HarmoniaPage() {
   useInstrument(soundPreset, {
     quality: audioQuality,
     role: "melody",
-    enabled: melodyEnabled,
+    enabled: melodyEnabled || (!!melody && melody.notes.length > 0),
     synthRef: melodySynthRef,
   });
 
@@ -219,7 +229,8 @@ export default function HarmoniaPage() {
   const scheduleIdsRef = useRef<number[]>([]);
 
   useEffect(() => {
-    if (!isPlaying || !currentProgression) {
+    const hasMelody = !!melody && melody.notes.length > 0;
+    if (!isPlaying || (!currentProgression && !hasMelody)) {
       // Clear all scheduled events
       for (const id of scheduleIdsRef.current) {
         Tone.getTransport().clear(id);
@@ -233,13 +244,20 @@ export default function HarmoniaPage() {
       return;
     }
 
-    const chords = currentProgression.chords;
+    const chords = currentProgression?.chords ?? [];
     const ids: number[] = [];
 
-    // Calculate total beats in the progression for looping
+    // Calculate total beats — from the chords if present, otherwise from the
+    // drawn melody (rounded up to whole bars) so a melody alone can loop too.
     let totalBeats = 0;
     for (const chord of chords) {
       totalBeats += durationToBeats(chord.durationClass);
+    }
+    if (totalBeats === 0 && hasMelody) {
+      const melodyEnd = melody!.notes.reduce(
+        (max, n) => Math.max(max, n.startBeat + n.durationBeats), 0
+      );
+      totalBeats = Math.max(4, Math.ceil(melodyEnd / 4) * 4);
     }
     const releaseBuffer = 1; // 1 beat buffer for note release tails
     const totalMeasures = Math.ceil((totalBeats + releaseBuffer) / 4); // in Tone.js "measures" at 4/4
@@ -400,6 +418,30 @@ export default function HarmoniaPage() {
     generateNew();
     setGenerationKey((k) => k + 1);
   }, [generateNew, isPlaying, setIsPlaying]);
+
+  const handleToggleMelodyEditor = useCallback(() => {
+    setShowMelodyEditor((open) => {
+      const next = !open;
+      // Entering draw mode un-mutes the melody voice so drawn notes are audible.
+      if (next && !melodyEnabled) setMelodyEnabled(true);
+      return next;
+    });
+  }, [melodyEnabled, setMelodyEnabled]);
+
+  const handleHarmonize = useCallback(async () => {
+    await ensureAudioReady();
+    if (isPlaying) setIsPlaying(false);
+    harmonizeDrawnMelody("bestFit");
+    setGenerationKey((k) => k + 1);
+  }, [harmonizeDrawnMelody, isPlaying, setIsPlaying]);
+
+  const handleAddMelodyNote = useCallback(
+    (note: Parameters<typeof addMelodyNote>[0]) => {
+      addMelodyNote(note);
+      if (!melodyEnabled) setMelodyEnabled(true);
+    },
+    [addMelodyNote, melodyEnabled, setMelodyEnabled]
+  );
 
   const handleTogglePlayback = useCallback(async () => {
     // Resume from this gesture and wait until the context is actually running
@@ -947,7 +989,7 @@ export default function HarmoniaPage() {
             {/* Primary: Play / Stop */}
             <button
               onClick={handleTogglePlayback}
-              disabled={!currentProgression}
+              disabled={!currentProgression && !(melody && melody.notes.length > 0)}
               className={`flex items-center justify-center gap-1.5 px-4 lg:px-6 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 disabled:opacity-40 shrink-0 ${
                 isPlaying
                   ? "bg-surface text-foreground border border-border-subtle shadow-inner"
@@ -985,6 +1027,30 @@ export default function HarmoniaPage() {
               <Sparkles className="w-4 h-4 text-accent" />
               Melody
             </button>
+
+            {/* Secondary: Draw Melody (toggle the scale-snapped editor) */}
+            <button
+              onClick={handleToggleMelodyEditor}
+              className={`flex items-center justify-center gap-1.5 px-3 lg:px-4 py-2.5 rounded-full border font-medium text-sm transition-all active:scale-95 shrink-0 ${
+                showMelodyEditor
+                  ? "border-accent/40 bg-accent/10 text-accent"
+                  : "border-border-subtle bg-surface text-foreground hover:bg-surface-muted hover:border-accent/40"
+              }`}
+            >
+              <Pencil className="w-4 h-4" />
+              Draw
+            </button>
+
+            {/* Secondary: Harmonize the drawn melody */}
+            {melody && melody.notes.length > 0 && (
+              <button
+                onClick={handleHarmonize}
+                className="flex items-center justify-center gap-1.5 px-3 lg:px-4 py-2.5 rounded-full border border-accent/40 bg-accent/10 text-accent font-medium text-sm hover:bg-accent/20 transition-all active:scale-95 shrink-0"
+              >
+                <Wand2 className="w-4 h-4" />
+                Harmonize
+              </button>
+            )}
 
             {/* Tertiary: Save */}
             <button
@@ -1233,6 +1299,73 @@ export default function HarmoniaPage() {
           </div>
         </section>
 
+        {/* ── Scale-Snapped Melody Editor (draw a melody, then harmonize) ── */}
+        <AnimatePresence>
+          {showMelodyEditor && (
+            <motion.section
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-surface/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Pencil className="w-4 h-4 text-accent" />
+                    <h2 className="text-sm font-semibold tracking-tight">Draw Melody</h2>
+                    <span className="text-xs text-muted">
+                      {rootKey} {MODES.find((m) => m.value === mode)?.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {melody && melody.notes.length > 0 && (
+                      <button
+                        onClick={() => clearMelody()}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle bg-surface text-xs font-medium text-muted hover:text-foreground hover:border-accent/40 transition-colors"
+                        title="Clear melody"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      onClick={handleHarmonize}
+                      disabled={!melody || melody.notes.length === 0}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-accent/40 bg-accent/10 text-accent text-xs font-semibold hover:bg-accent/20 transition-colors disabled:opacity-40"
+                      title="Generate chords that fit your melody"
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      Harmonize Melody
+                    </button>
+                  </div>
+                </div>
+
+                <MelodyEditor
+                  melodyNotes={melody?.notes ?? []}
+                  scalePitchClasses={getScalePitchClasses(rootKey, mode)}
+                  rootKey={(normalizeToPitchClass(rootKey) || "C") as PitchClass}
+                  useFlats={keyPrefersFlats((normalizeToPitchClass(rootKey) || "C") as PitchClass, mode)}
+                  bars={4}
+                  beatsPerBar={4}
+                  onAddNote={handleAddMelodyNote}
+                  onMoveNote={moveMelodyNote}
+                  onResizeNote={resizeMelodyNote}
+                  onDeleteNote={deleteMelodyNote}
+                  onPlayNote={handlePlayNote}
+                />
+
+                <p className="text-[11px] text-muted/70">
+                  Tap the grid to place a note · drag to move (pitch snaps to the
+                  scale) · drag the right edge to resize · Delete to remove · then{" "}
+                  <span className="font-medium text-foreground">Harmonize Melody</span> to
+                  generate chords.
+                </p>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
         {/* ── Chord Cards + Piano Roll + Creative Tools ── */}
         <section>
           <AnimatePresence mode="wait">
@@ -1286,6 +1419,26 @@ export default function HarmoniaPage() {
                     );
                   })}
                 </div>
+
+                {/* Harmonization rationale — why each chord was chosen for the
+                    drawn melody. Shown only after a Harmonize Melody run. */}
+                {harmonizationExplanations.length > 0 && (
+                  <div className="rounded-xl border border-accent/20 bg-accent/5 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Wand2 className="w-3.5 h-3.5 text-accent" />
+                      <span className="text-xs font-semibold text-foreground">
+                        Why these chords
+                      </span>
+                    </div>
+                    <ul className="space-y-1">
+                      {harmonizationExplanations.map((text, i) => (
+                        <li key={i} className="text-[11px] leading-snug text-muted">
+                          {text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Voicing feedback removed and added to controls bar */}
 
