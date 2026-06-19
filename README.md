@@ -39,16 +39,6 @@ Two complementary forms of control for refining generated progressions:
 - **Manual Chord Substitution** — Click any chord card to open a substitution panel with theory-approved alternatives. Options are grouped by category (diatonic, relative, dominant-function, tritone, modal mixture, inversion) with explanations of why each works. Preview before applying, and revert any time.
 - **Interactive Piano Roll Editing** — Double-click empty grid cells to add notes, double-click existing notes to remove them. Tap/click a note to select it, then move it up/down to the next in-key note with the ▲/▼ steppers or Arrow keys; on desktop you can also drag notes vertically for free chromatic placement. On mobile the roll scrolls naturally (drag is desktop-only), so editing stays precise. Harmonia re-interprets the chord label in real time after edits. Source badges (Generated, Substituted, Edited) track the provenance of each chord. Reset any chord to its original state.
 
-### Melody Drawing & Harmonization
-
-Draw a melody directly in a scale-snapped piano roll, then let Harmonia find chords that fit it — a DAW-style "melody first, chords second" workflow.
-
-- **Scale-snapped melody editor** — Pick a key/scale (e.g. D minor) and the editor highlights the in-scale rows, de-emphasizes the rest, and snaps every note you place to the scale. Clear bar/beat grid lines and a note-length selector (1/16, 1/8, 1/4, 1/2, whole) keep timing precise.
-- **Full note editing** — Tap an empty cell to add a note, drag a note to move it (pitch snaps to the scale, timing quantizes to 1/16), drag the right edge to resize, and Delete/⌫ or the trash button to remove the selected note. A properties readout shows the selected note's pitch, start beat, and duration. Touch-friendly: large targets, drag-to-move, a visible resize handle, and ▲/▼ in-key steppers.
-- **Harmonize Melody** — One click runs a deterministic, rule-based harmonizer: it builds the diatonic chords for the key, splits the melody into one-bar regions, weights the important melody notes (strong beats, long notes, downbeats, phrase ends, repeats), scores each diatonic chord against each region, and picks a progression with smooth, functional motion (tonic → predominant → dominant → tonic). A melody in D minor typically yields results like **Dm – Bb – C – Dm**.
-- **Explainable results** — Each generated chord comes with a plain-language reason (e.g. *"Dm fits because your melody emphasizes D, F, and A."*), shown above the progression. The chords drop straight into the existing progression UI, piano roll, and playback, so the melody and chords play together immediately.
-- **Style hooks** — The engine ships with `bestFit` plus `darker`, `brighter`, `tense`, and `simple` flavours (the UI currently triggers Best Fit; the others are available via the harmonizer API).
-
 ### Harmonic Sketchpad
 
 A song-level harmonic planning workspace for sketching the harmonic architecture of a full song before opening a DAW.
@@ -123,15 +113,6 @@ Browsers (especially mobile Safari/Chrome) start the Web Audio context **suspend
 10. Click **Melody** to generate a melody line — choose a style (Lyrical, Rhythmic, Arpeggio), a harmony mode (**Expressive** or **Strict**), and a mood (**Dark**, **Emotional**, **Dreamy**, **Energetic**), then click **Melody** again for a new line. Use the **Audio** button in the action bar to mute/unmute chords and melody and to adjust playback feel — **Velocity**, **Humanize**, **Sustain**, and **Soft Strum** vs **Block Chord**
 11. Click **Save** to bookmark a progression to your favorites. Click **Favorites** to view, load, or remove saved progressions, and the **✕** in the panel (or the Favorites button again) to hide it
 
-### Draw a Melody & Harmonize It
-
-1. Pick a **key** and **mode** (e.g. D minor) so the editor knows which notes are in the scale
-2. Click **Draw** in the action bar to open the scale-snapped melody editor
-3. Choose a **note length** (1/16 → whole), then **tap the grid** to place notes — they snap to the selected scale automatically
-4. **Drag** a note to move it (pitch snaps to the scale, timing quantizes to 1/16), **drag its right edge** to resize, and select a note then press **Delete** (or the trash button / ▲▼ steppers) to edit it
-5. Click **Harmonize Melody** — Harmonia analyzes the melody and generates a chord progression underneath it (a D-minor melody often produces something like **Dm – Bb – C – Dm**)
-6. The chords appear in the normal progression UI with a short explanation of **why each chord was chosen**; hit **Play** to hear the melody and chords together
-
 ### Harmonic Sketchpad
 
 1. Click **Sketchpad** in the header to open the workspace
@@ -148,3 +129,9 @@ Browsers (especially mobile Safari/Chrome) start the Web Audio context **suspend
 ### v2 — Learning Path
 
 Harmonia originally began as a music theory learning platform. The learning path features — including flashcards, spaced repetition, circle of fifths exercises, and milestone-based theory curriculum — have been archived and are planned for a v2 release. The foundation for these features (database schema, card templates, SRS engine) remains in the codebase under `_deferred/` and will be reintroduced in a future version.
+
+### TODO — Melody Drawing & Harmonization
+
+A "melody first, chords second" workflow is planned but not yet shipped. The idea: draw a melody directly in a scale-snapped piano roll (in-scale rows highlighted, notes snapped to the selected key/scale, bar/beat grid, note-length selector), then run a deterministic, rule-based harmonizer that builds the diatonic chords for the key, splits the melody into one-bar regions, weights the important melody notes (strong beats, long notes, downbeats, phrase ends, repeats), scores each diatonic chord against each region, and picks a progression with smooth functional motion (tonic → predominant → dominant → tonic) — surfacing a plain-language reason for each chord and dropping the result straight into the existing progression UI and playback.
+
+An initial implementation was prototyped but reverted because the harmonization results weren't good enough yet. Revisiting this requires improving the harmonizer's chord-fit scoring and voice-leading quality (and likely a more musical region/segmentation strategy) before the melody editor is re-introduced.

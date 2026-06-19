@@ -14,8 +14,6 @@ import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 import { makeSpeller, type Speller } from "../theory/spelling";
-import { harmonizeMelody as runHarmonization } from "../music/harmonizer";
-import type { HarmonizationStyle } from "../music/harmonizer";
 
 const MODE_TO_SCALE: Record<Mode, ScaleType> = {
     ionian: "major",
@@ -91,8 +89,6 @@ interface ProgressionState {
     melodyHarmony: MelodyHarmony;
     melodyMood: MelodyMood;
     chordsEnabled: boolean;
-    /** Per-chord explanations from the last melody harmonization, if any. */
-    harmonizationExplanations: string[];
 
     setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
     generateNew: () => void;
@@ -122,7 +118,6 @@ interface ProgressionState {
     setMelodyHarmony: (harmony: MelodyHarmony) => void;
     setMelodyMood: (mood: MelodyMood) => void;
     generateMelodyForProgression: () => void;
-    harmonizeDrawnMelody: (style?: HarmonizationStyle) => void;
     clearMelody: () => void;
     addMelodyNote: (note: MelodyNote) => void;
     moveMelodyNote: (noteId: string, newMidi: number, newStartBeat: number) => void;
@@ -199,7 +194,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     melodyHarmony: "expressive",
     melodyMood: "emotional",
     chordsEnabled: true,
-    harmonizationExplanations: [],
 
     setSettings: (settings) => {
         set((state) => ({ ...state, ...settings }));
@@ -271,7 +265,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             substitutionTarget: null,
             substitutionOptions: [],
             melody: null,
-            harmonizationExplanations: [],
         });
         get().addToHistory(progression);
         if (get().melodyEnabled) {
@@ -398,7 +391,6 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             substitutionTarget: null,
             substitutionOptions: [],
             melody: null,
-            harmonizationExplanations: [],
         });
         if (get().melodyEnabled) {
             get().generateMelodyForProgression();
@@ -692,62 +684,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         set({ melody, melodyEnabled: true });
     },
 
-    /**
-     * Harmonize the currently drawn melody into a diatonic chord progression
-     * using the deterministic, rule-based harmonizer. The result replaces the
-     * current progression and the melody is re-tagged with the chord each note
-     * now sounds over (so the piano-roll overlay lines up).
-     */
-    harmonizeDrawnMelody: (style: HarmonizationStyle = "bestFit") => {
-        const { melody, rootKey, mode } = get();
-        if (!melody || melody.notes.length === 0) return;
-
-        const rootPC = (normalizeToPitchClass(rootKey) || "C") as PitchClass;
-        const scaleType = MODE_TO_SCALE[mode] ?? "major";
-        const speller = spellerFor(rootKey, mode);
-        const beatsPerBar = 4;
-
-        const result = runHarmonization({
-            melodyNotes: melody.notes,
-            root: rootPC,
-            scaleType,
-            beatsPerBar,
-            octave: 3,
-            includeSevenths: false,
-            style,
-            speller,
-        });
-
-        // Re-tag each melody note with its region's chord and chord-tone status.
-        const notes = melody.notes.map((n) => {
-            const region =
-                result.regions.find((r) => n.startBeat >= r.startBeat && n.startBeat < r.endBeat) ??
-                result.regions[result.regions.length - 1];
-            const isChordTone = region.candidate.pitchClasses.includes(n.pitchClass);
-            return { ...n, chordIndex: region.index, isChordTone };
-        });
-
-        const progression: Progression = {
-            id: `harmonized-${Date.now()}`,
-            chords: result.chords,
-            timestamp: Date.now(),
-        };
-
-        set({
-            currentProgression: progression,
-            chordSourceTypes: result.chords.map(() => "generated"),
-            originalChords: new Map(),
-            substitutionTarget: null,
-            substitutionOptions: [],
-            melody: { ...melody, notes },
-            melodyEnabled: true,
-            harmonizationExplanations: result.explanations,
-        });
-        get().addToHistory(progression);
-    },
-
     clearMelody: () => {
-        set({ melody: null, melodyEnabled: false, harmonizationExplanations: [] });
+        set({ melody: null, melodyEnabled: false });
     },
 
     addMelodyNote: (note: MelodyNote) => {
