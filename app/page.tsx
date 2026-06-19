@@ -157,6 +157,11 @@ export default function HarmoniaPage() {
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
   const [justSaved, setJustSaved] = useState(false);
+  // Local text mirror for the BPM input so users can freely clear/retype without
+  // a coerced "0" sticking around (Number("") === 0) and without React's
+  // controlled-number-input quirk leaving a phantom leading zero (e.g. "0140").
+  const [bpmText, setBpmText] = useState(String(bpm));
+  const bpmInputRef = useRef<HTMLInputElement>(null);
 
   const presetLabel = SOUND_PRESETS.find((p) => p.id === soundPreset)?.label ?? "Instrument";
 
@@ -190,6 +195,15 @@ export default function HarmoniaPage() {
 
   useEffect(() => {
     Tone.getTransport().bpm.value = bpm;
+  }, [bpm]);
+
+  // Mirror external BPM changes (favorites, resets) into the input text, but
+  // never while the user is actively editing it — otherwise their keystrokes
+  // would fight the store value.
+  useEffect(() => {
+    if (bpmInputRef.current !== document.activeElement) {
+      setBpmText(String(bpm));
+    }
   }, [bpm]);
 
   /* ─── Playback loop ─── */
@@ -365,16 +379,13 @@ export default function HarmoniaPage() {
       return;
     }
 
-    const totalBeats = currentProgression.chords.reduce(
-      (sum, c) => sum + durationToBeats(c.durationClass), 0
-    );
-
     const tick = () => {
       const transport = Tone.getTransport();
-      const positionSeconds = transport.seconds;
-      const secondsPerBeat = 60 / bpm;
-      const totalSeconds = totalBeats * secondsPerBeat;
-      const progress = totalSeconds > 0 ? (positionSeconds % totalSeconds) / totalSeconds : 0;
+      // Drive the playhead off the transport's musical loop progress (tick-based)
+      // rather than wall-clock seconds. This keeps the bar perfectly in step with
+      // the scheduled audio and makes it speed up/slow down with the BPM for free,
+      // including when the tempo is changed mid-playback.
+      const progress = transport.loop ? transport.progress : 0;
 
       if (playheadRef.current) {
         playheadRef.current.style.display = "block";
@@ -388,7 +399,7 @@ export default function HarmoniaPage() {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     };
-  }, [isPlaying, currentProgression, bpm, durationToBeats]);
+  }, [isPlaying, currentProgression]);
 
   /* ─── Handlers ─── */
 
@@ -734,11 +745,34 @@ export default function HarmoniaPage() {
                 <div className="w-px h-4 bg-border-subtle mx-1" />
                 <div className="flex flex-1 items-center justify-center hover:bg-surface rounded-lg transition-colors group px-1" title="BPM (Tempo)">
                   <input
-                    type="number"
-                    min={60}
-                    max={180}
-                    value={bpm}
-                    onChange={(e) => setSettings({ bpm: Number(e.target.value) })}
+                    ref={bpmInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={3}
+                    value={bpmText}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      // Digits only; strip leading zeros so a phantom "0" can never persist.
+                      if (!/^\d*$/.test(raw)) return;
+                      const cleaned = raw.replace(/^0+(?=\d)/, "");
+                      setBpmText(cleaned);
+                      // Commit live only while the value is a sensible tempo; otherwise
+                      // wait for blur so mid-typing values (e.g. "1", "20") don't snap.
+                      const n = Number(cleaned);
+                      if (cleaned !== "" && n >= 60 && n <= 180) {
+                        setSettings({ bpm: n });
+                      }
+                    }}
+                    onBlur={() => {
+                      // Clamp to the supported range and resync display with the store.
+                      const parsed = Number(bpmText);
+                      const next = bpmText === "" || !Number.isFinite(parsed)
+                        ? bpm
+                        : Math.min(180, Math.max(60, Math.round(parsed)));
+                      setBpmText(String(next));
+                      if (next !== bpm) setSettings({ bpm: next });
+                    }}
                     className="w-8 bg-transparent py-1.5 text-sm font-medium outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <span className="ml-1 text-[10px] text-muted opacity-50 pointer-events-none group-hover:opacity-100 transition-opacity mt-0.5">BPM</span>
