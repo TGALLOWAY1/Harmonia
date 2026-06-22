@@ -712,7 +712,7 @@ export default function HarmoniaPage() {
             <ChevronDown className={`w-4 h-4 text-muted transition-transform shrink-0 ${settingsExpanded ? "rotate-180" : ""}`} />
           </button>
 
-          <div className={`relative z-10 ${settingsExpanded ? "flex" : "hidden"} lg:flex flex-wrap lg:flex-nowrap items-start justify-between gap-6`}>
+          <div className={`relative z-10 ${settingsExpanded ? "flex" : "hidden"} lg:flex flex-col gap-4`}>
             
             {/* Foundation Group */}
             <div className="flex flex-col gap-1.5 flex-1 min-w-[240px]">
@@ -1065,7 +1065,7 @@ export default function HarmoniaPage() {
               {audioMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setAudioMenuOpen(false)} />
-                  <div className="absolute top-full right-0 mt-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
+                  <div className="absolute top-full right-0 mt-2 lg:fixed lg:top-20 lg:right-4 lg:mt-0 z-50 w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl border border-border-subtle bg-surface shadow-xl p-1.5 flex flex-col gap-0.5">
                     {/* ── Instrument (live sound) ── */}
                     <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
                       Sound
