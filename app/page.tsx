@@ -712,7 +712,7 @@ export default function HarmoniaPage() {
             <ChevronDown className={`w-4 h-4 text-muted transition-transform shrink-0 ${settingsExpanded ? "rotate-180" : ""}`} />
           </button>
 
-          <div className={`relative z-10 ${settingsExpanded ? "flex" : "hidden"} lg:flex flex-wrap lg:flex-nowrap items-start justify-between gap-6`}>
+          <div className={`relative z-10 ${settingsExpanded ? "flex" : "hidden"} lg:flex flex-col gap-4`}>
             
             {/* Foundation Group */}
             <div className="flex flex-col gap-1.5 flex-1 min-w-[240px]">
