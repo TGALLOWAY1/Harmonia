@@ -192,6 +192,19 @@ Rate generated voicings thumbs-up/down; ratings persist and feed an approval-tre
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🎛️ MPE Expression Editor
+Toggle the piano roll into **MPE Editor** mode to draw expressive pitch bends right on the grid — glides, scoops, pitch drops, and vibrato. **Join** two notes (or two equal-sized chords, auto-paired voice-by-voice) into an editable bend with one click. Reshape curves like vector graphics: drag handles, insert/delete points, smooth or straighten, reverse, scale amount/duration, copy/paste. Curves stay visible in normal mode and persist independently of playback for future MPE/MIDI export.
+
+</td>
+<td width="50%" valign="top">
+
+<!-- reserved for the next feature card -->
+
+</td>
+</tr>
 </table>
 
 > Each feature is implemented in the layered architecture described below — see [Music Generation Engine](#-music-generation-engine), [Music Theory Engine](#-music-theory-engine), and [Audio Engine](#-audio-engine) for the algorithms behind them.
@@ -500,6 +513,7 @@ Harmonia/
 │   │   └── useInstrument.ts         #   Lazy load + hot-swap + fallback
 │   │
 │   ├── creative/                  # ✏️ Substitution engine + chord interpreter
+│   ├── expression/               # 🎛️ MPE expression model (types · presets · curve ops)
 │   ├── sketchpad/                 # 🧱 Song-planner store + types
 │   ├── state/                     # 🗃️ Zustand stores (progression, audio, playback)
 │   ├── favorites/ · feedback/     #   Persisted favorites & voicing feedback
@@ -507,7 +521,7 @@ Harmonia/
 │
 ├── components/                    # ⚛️ React components
 │   ├── piano-roll/ · progression/ #   Piano rolls & chord cards
-│   ├── creative/                  #   Interactive roll · substitution panel · melody lane
+│   ├── creative/                  #   Interactive roll · substitution panel · melody lane · MPE toolbar + expression overlay
 │   ├── sketchpad/                 #   Workspace · structure · section editor
 │   ├── feedback/ · audio/         #   Feedback chart · audio status badge
 │

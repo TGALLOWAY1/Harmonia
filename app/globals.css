@@ -612,6 +612,103 @@
 }
 
 /* ─────────────────────────────────────────────
+   MPE EXPRESSION EDITOR CSS
+───────────────────────────────────────────── */
+
+/* Mode toggle — a compact segmented control (Piano Roll / MPE Editor). */
+.mpe-mode-switch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+.mpe-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+.mpe-mode-btn:hover {
+  color: var(--foreground);
+}
+.mpe-mode-btn.active {
+  background: var(--surface);
+  color: var(--vert-accent-coral);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Toolbar wrapper. Buttons come from Tailwind utility classes on the component;
+   this just gives the row a little breathing room and z-context for popovers. */
+.mpe-toolbar {
+  position: relative;
+  z-index: 20;
+}
+
+/* When MPE mode is active, note cells act as selection targets. */
+.roll-grid.mpe-active .note-cell.has-note {
+  cursor: pointer;
+}
+.note-cell.mpe-selected::after {
+  outline: 2px solid var(--vert-accent-teal);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px rgba(94, 168, 160, 0.35);
+  z-index: 1;
+}
+
+/* ── Expression curve overlay ── */
+.expression-overlay {
+  overflow: visible;
+}
+.expression-overlay .expr-curve {
+  fill: none;
+  stroke: var(--vert-accent-coral);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.expression-overlay .expr-curve.editable {
+  stroke-width: 2.5;
+  opacity: 1;
+  filter: drop-shadow(0 1px 2px rgba(232, 133, 106, 0.35));
+}
+.expression-overlay .expr-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  cursor: copy;
+}
+.expression-overlay .expr-baseline {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.4;
+}
+.expression-overlay .expr-anchor {
+  fill: var(--vert-accent-coral);
+  opacity: 0.9;
+}
+.expression-overlay .expr-handle {
+  fill: #fff;
+  stroke: var(--vert-accent-coral);
+  stroke-width: 2;
+  transition: transform 0.08s;
+}
+.expression-overlay .expr-handle:hover {
+  fill: var(--vert-accent-light);
+}
+.expression-overlay .expr-handle.endpoint {
+  stroke: var(--vert-accent-teal);
+}
+
+/* ─────────────────────────────────────────────
    MELODY LANE CSS
 ───────────────────────────────────────────── */
 

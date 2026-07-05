@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import clsx from "clsx";
-import { Download, RotateCcw, ChevronUp, ChevronDown } from "lucide-react";
+import { Download, RotateCcw, ChevronUp, ChevronDown, SlidersHorizontal, Music } from "lucide-react";
 import {
   isWhiteKey,
   midiToNoteName,
@@ -15,6 +15,27 @@ import { Heart } from "lucide-react";
 import type { Chord } from "@/lib/theory/progressionTypes";
 import type { ChordSourceType } from "@/lib/creative/types";
 import type { MelodyNote } from "@/lib/music/generators/melody/types";
+import type { ExpressionSegment } from "@/lib/expression/types";
+import {
+  makeSegmentId,
+  reversePoints,
+  scaleAmount as scaleAmountPoints,
+  scaleDuration as scaleDurationPoints,
+} from "@/lib/expression/curve";
+import {
+  glideCurve,
+  pitchDropCurve,
+  pitchScoopCurve,
+  vibratoCurve,
+  toSegment,
+  DEFAULT_GLIDE_TARGET,
+  type GlidePreset,
+  type PitchDropOptions,
+  type PitchScoopOptions,
+  type VibratoOptions,
+} from "@/lib/expression/presets";
+import { MpeToolbar, type MpeSelectionKind } from "./MpeToolbar";
+import { ExpressionOverlay, type RollGeom, type SelectedNoteRef } from "./ExpressionOverlay";
 
 export type InteractivePianoRollProps = {
   chords: Chord[];
@@ -38,6 +59,11 @@ export type InteractivePianoRollProps = {
   melodyNotes?: MelodyNote[];
   showMelody?: boolean;
   onMoveMelodyNote?: (noteId: string, toMidi: number) => void;
+  // ─── MPE expression editing ───
+  // When these are provided the "MPE Editor" mode toggle appears. Absent them,
+  // the roll behaves exactly as before.
+  onSetNoteSegments?: (chordIndex: number, midi: number, segments: ExpressionSegment[]) => void;
+  onRemoveNoteExpression?: (chordIndex: number, midi: number) => void;
 };
 
 /** Compute the MIDI range needed to display all chord notes, with padding. */
@@ -127,6 +153,8 @@ export function InteractivePianoRoll({
   melodyNotes,
   showMelody,
   onMoveMelodyNote,
+  onSetNoteSegments,
+  onRemoveNoteExpression,
 }: InteractivePianoRollProps) {
   const [hoveredColumnIdx, setHoveredColumnIdx] = useState<number | null>(null);
   const [selectedNote, setSelectedNote] = useState<SelectedNote | null>(null);
@@ -134,6 +162,15 @@ export function InteractivePianoRoll({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ chordIndex: number; midi: number } | null>(null);
   const [draggingMelodyId, setDraggingMelodyId] = useState<string | null>(null);
+
+  // ─── MPE Editor state ───
+  const mpeAvailable = !!onSetNoteSegments;
+  const [mpeMode, setMpeMode] = useState(false);
+  const [mpeSelection, setMpeSelection] = useState<SelectedNoteRef[]>([]);
+  const [clipboard, setClipboard] = useState<ExpressionSegment[] | null>(null);
+  const [geom, setGeom] = useState<RollGeom | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const cellsRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     if (selectedIndex === null) {
@@ -254,6 +291,8 @@ export function InteractivePianoRoll({
   // the up/down steppers instead, which keep notes in the scale).
   const handlePointerDown = useCallback((e: React.PointerEvent, midi: number, colIdx: number, hasNote: boolean) => {
     if (e.pointerType === "touch") return;
+    // In MPE mode a drag on a note edits its expression curve, not its pitch.
+    if (mpeMode) return;
     if (hasNote && onMoveNote) {
       if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -261,7 +300,7 @@ export function InteractivePianoRoll({
       setIsDragging(true);
       setDragStart({ chordIndex: colIdx, midi });
     }
-  }, [onMoveNote]);
+  }, [onMoveNote, mpeMode]);
 
   const handlePointerEnterCell = useCallback((midi: number, colIdx: number) => {
     if (isDragging && dragStart && dragStart.chordIndex === colIdx && dragStart.midi !== midi) {
@@ -380,11 +419,354 @@ export function InteractivePianoRoll({
     return spellMidiNote(selectedNote.midi, useFlats);
   }, [selectedNote, useFlats]);
 
+  // ─── MPE geometry measurement ───
+  // The expression overlay draws on an SVG aligned to the note grid. Column
+  // widths flex with chord duration and available width, so we measure the DOM
+  // rather than compute — cheap and robust across responsive layouts.
+  const measureGeom = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const gridRect = grid.getBoundingClientRect();
+    const columns: { left: number; width: number }[] = [];
+    let rowHeight = 0;
+    let cellsTop = 0;
+    for (let i = 0; i < chords.length; i++) {
+      const el = cellsRefs.current[i];
+      if (!el) {
+        columns.push({ left: 0, width: 0 });
+        continue;
+      }
+      const r = el.getBoundingClientRect();
+      const left = r.left - gridRect.left + grid.scrollLeft;
+      const top = r.top - gridRect.top + grid.scrollTop;
+      columns.push({ left, width: r.width });
+      if (i === 0) {
+        cellsTop = top;
+        rowHeight = r.height / Math.max(noteRange.length, 1);
+      }
+    }
+    setGeom({
+      columns,
+      cellsTop,
+      rowHeight,
+      contentWidth: grid.scrollWidth,
+      contentHeight: grid.scrollHeight,
+    });
+  }, [chords.length, noteRange.length]);
+
+  useLayoutEffect(() => {
+    measureGeom();
+  }, [measureGeom, chords, autoRange, mpeMode, showMelody, melodyNotes]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const ro = new ResizeObserver(() => measureGeom());
+    ro.observe(grid);
+    window.addEventListener("resize", measureGeom);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measureGeom);
+    };
+  }, [measureGeom]);
+
+  // Reset MPE selection whenever mode turns off.
+  useEffect(() => {
+    if (!mpeMode) setMpeSelection([]);
+  }, [mpeMode]);
+
+  // ─── MPE selection helpers ───
+
+  const isMpeSelected = useCallback(
+    (chordIndex: number, midi: number) =>
+      mpeSelection.some((s) => s.chordIndex === chordIndex && s.midi === midi),
+    [mpeSelection]
+  );
+
+  const toggleMpeNote = useCallback((chordIndex: number, midi: number) => {
+    setMpeSelection((sel) => {
+      const exists = sel.some((s) => s.chordIndex === chordIndex && s.midi === midi);
+      return exists
+        ? sel.filter((s) => !(s.chordIndex === chordIndex && s.midi === midi))
+        : [...sel, { chordIndex, midi }];
+    });
+  }, []);
+
+  const toggleMpeChord = useCallback((chordIndex: number) => {
+    const midis = chords[chordIndex]?.midiNotes ?? [];
+    if (midis.length === 0) return;
+    setMpeSelection((sel) => {
+      const allSelected = midis.every((m) => sel.some((s) => s.chordIndex === chordIndex && s.midi === m));
+      if (allSelected) {
+        return sel.filter((s) => s.chordIndex !== chordIndex);
+      }
+      const withoutChord = sel.filter((s) => s.chordIndex !== chordIndex);
+      return [...withoutChord, ...midis.map((m) => ({ chordIndex, midi: m }))];
+    });
+  }, [chords]);
+
+  // Classify the selection so the toolbar can offer the right operations.
+  const { selectionKind, selectionCount } = useMemo<{ selectionKind: MpeSelectionKind; selectionCount: number }>(() => {
+    const count = mpeSelection.length;
+    if (count === 0) return { selectionKind: "none", selectionCount: 0 };
+    if (count === 2) return { selectionKind: "two-notes", selectionCount: 2 };
+
+    const byChord = new Map<number, number[]>();
+    for (const s of mpeSelection) {
+      const list = byChord.get(s.chordIndex) ?? [];
+      list.push(s.midi);
+      byChord.set(s.chordIndex, list);
+    }
+    const chordIndices = Array.from(byChord.keys());
+
+    if (chordIndices.length === 2) {
+      const bothFull = chordIndices.every((ci) => {
+        const total = chords[ci]?.midiNotes?.length ?? 0;
+        return total > 0 && byChord.get(ci)!.length === total;
+      });
+      if (bothFull) {
+        const sizeA = chords[chordIndices[0]]!.midiNotes!.length;
+        const sizeB = chords[chordIndices[1]]!.midiNotes!.length;
+        return {
+          selectionKind: sizeA === sizeB ? "two-chords" : "two-chords-unequal",
+          selectionCount: count,
+        };
+      }
+    }
+    if (count === 1) return { selectionKind: "one-note", selectionCount: 1 };
+    return { selectionKind: "multi-notes", selectionCount: count };
+  }, [mpeSelection, chords]);
+
+  const segmentsFor = useCallback(
+    (chordIndex: number, midi: number): ExpressionSegment[] =>
+      chords[chordIndex]?.expressions?.[midi] ?? [],
+    [chords]
+  );
+
+  const hasExpression = useMemo(
+    () => mpeSelection.some((s) => segmentsFor(s.chordIndex, s.midi).length > 0),
+    [mpeSelection, segmentsFor]
+  );
+
+  // ─── MPE operations ───
+
+  // Update a single segment in place (used by the overlay's drag/insert/delete).
+  const handleUpdateSegment = useCallback(
+    (
+      chordIndex: number,
+      midi: number,
+      segId: string,
+      patch: Partial<Pick<ExpressionSegment, "points" | "smooth">>
+    ) => {
+      if (!onSetNoteSegments) return;
+      const current = segmentsFor(chordIndex, midi);
+      const next = current.map((s) => (s.id === segId ? { ...s, ...patch } : s));
+      onSetNoteSegments(chordIndex, midi, next);
+    },
+    [onSetNoteSegments, segmentsFor]
+  );
+
+  // Apply a freshly-built single segment to every selected note (replacing any
+  // existing expression on that note — v1 keeps one authored segment per note).
+  const applySegmentToSelection = useCallback(
+    (build: (chordIndex: number, midi: number) => ExpressionSegment | null) => {
+      if (!onSetNoteSegments) return;
+      for (const s of mpeSelection) {
+        const seg = build(s.chordIndex, s.midi);
+        if (seg) onSetNoteSegments(s.chordIndex, s.midi, [seg]);
+      }
+    },
+    [onSetNoteSegments, mpeSelection]
+  );
+
+  const handleGlide = useCallback(
+    (preset: GlidePreset) => {
+      applySegmentToSelection((ci, midi) => {
+        const existing = segmentsFor(ci, midi)[0];
+        // Reshape an existing glide (keep its target pitch) or start a fresh one.
+        const target = existing
+          ? existing.points[existing.points.length - 1].y || DEFAULT_GLIDE_TARGET
+          : DEFAULT_GLIDE_TARGET;
+        return toSegment("glide", glideCurve(preset, target));
+      });
+    },
+    [applySegmentToSelection, segmentsFor]
+  );
+
+  const handlePitchDrop = useCallback(
+    (opts: PitchDropOptions) => applySegmentToSelection(() => toSegment("drop", pitchDropCurve(opts))),
+    [applySegmentToSelection]
+  );
+  const handleScoop = useCallback(
+    (opts: PitchScoopOptions) => applySegmentToSelection(() => toSegment("scoop", pitchScoopCurve(opts))),
+    [applySegmentToSelection]
+  );
+  const handleVibrato = useCallback(
+    (opts: VibratoOptions) => applySegmentToSelection(() => toSegment("vibrato", vibratoCurve(opts))),
+    [applySegmentToSelection]
+  );
+
+  // Join: create a linear pitch bend from a source note up/down to a target
+  // note's pitch. For two chords of equal size, pair notes by pitch order and
+  // give each pair its own independent bend.
+  const handleJoin = useCallback(() => {
+    if (!onSetNoteSegments) return;
+    const buildBend = (srcChord: number, srcMidi: number, tgtMidi: number) => {
+      const target = tgtMidi - srcMidi;
+      onSetNoteSegments(srcChord, srcMidi, [toSegment("glide", glideCurve("join", target))]);
+    };
+
+    if (selectionKind === "two-notes") {
+      const sorted = [...mpeSelection].sort(
+        (a, b) => a.chordIndex - b.chordIndex || a.midi - b.midi
+      );
+      const [src, tgt] = sorted;
+      buildBend(src.chordIndex, src.midi, tgt.midi);
+    } else if (selectionKind === "two-chords") {
+      const byChord = new Map<number, number[]>();
+      for (const s of mpeSelection) {
+        const list = byChord.get(s.chordIndex) ?? [];
+        list.push(s.midi);
+        byChord.set(s.chordIndex, list);
+      }
+      const [ciA, ciB] = Array.from(byChord.keys()).sort((a, b) => a - b);
+      const notesA = byChord.get(ciA)!.sort((a, b) => a - b);
+      const notesB = byChord.get(ciB)!.sort((a, b) => a - b);
+      for (let i = 0; i < notesA.length; i++) {
+        buildBend(ciA, notesA[i], notesB[i]);
+      }
+    }
+  }, [onSetNoteSegments, selectionKind, mpeSelection]);
+
+  const handleReset = useCallback(() => {
+    if (!onRemoveNoteExpression) return;
+    for (const s of mpeSelection) onRemoveNoteExpression(s.chordIndex, s.midi);
+  }, [onRemoveNoteExpression, mpeSelection]);
+
+  const handleReverse = useCallback(() => {
+    if (!onSetNoteSegments) return;
+    for (const s of mpeSelection) {
+      const segs = segmentsFor(s.chordIndex, s.midi);
+      if (segs.length === 0) continue;
+      onSetNoteSegments(
+        s.chordIndex,
+        s.midi,
+        segs.map((seg) => ({ ...seg, points: reversePoints(seg.points) }))
+      );
+    }
+  }, [onSetNoteSegments, mpeSelection, segmentsFor]);
+
+  const handleScaleAmount = useCallback(
+    (factor: number) => {
+      if (!onSetNoteSegments) return;
+      for (const s of mpeSelection) {
+        const segs = segmentsFor(s.chordIndex, s.midi);
+        if (segs.length === 0) continue;
+        onSetNoteSegments(
+          s.chordIndex,
+          s.midi,
+          segs.map((seg) => ({ ...seg, points: scaleAmountPoints(seg.points, factor) }))
+        );
+      }
+    },
+    [onSetNoteSegments, mpeSelection, segmentsFor]
+  );
+
+  const handleScaleDuration = useCallback(
+    (factor: number) => {
+      if (!onSetNoteSegments) return;
+      for (const s of mpeSelection) {
+        const segs = segmentsFor(s.chordIndex, s.midi);
+        if (segs.length === 0) continue;
+        onSetNoteSegments(
+          s.chordIndex,
+          s.midi,
+          segs.map((seg) => ({ ...seg, points: scaleDurationPoints(seg.points, factor) }))
+        );
+      }
+    },
+    [onSetNoteSegments, mpeSelection, segmentsFor]
+  );
+
+  // Clone segments with fresh ids so pasted/duplicated copies are independent.
+  const cloneSegments = (segs: ExpressionSegment[]): ExpressionSegment[] =>
+    segs.map((seg) => ({ ...seg, id: makeSegmentId(), points: seg.points.map((p) => ({ ...p })) }));
+
+  const handleCopy = useCallback(() => {
+    const withExpr = mpeSelection.find((s) => segmentsFor(s.chordIndex, s.midi).length > 0);
+    if (withExpr) setClipboard(cloneSegments(segmentsFor(withExpr.chordIndex, withExpr.midi)));
+  }, [mpeSelection, segmentsFor]);
+
+  const handlePaste = useCallback(() => {
+    if (!onSetNoteSegments || !clipboard) return;
+    for (const s of mpeSelection) onSetNoteSegments(s.chordIndex, s.midi, cloneSegments(clipboard));
+  }, [onSetNoteSegments, clipboard, mpeSelection]);
+
+  const handleDuplicate = useCallback(() => {
+    if (!onSetNoteSegments) return;
+    const source = mpeSelection.find((s) => segmentsFor(s.chordIndex, s.midi).length > 0);
+    if (!source) return;
+    const segs = segmentsFor(source.chordIndex, source.midi);
+    for (const s of mpeSelection) {
+      if (s.chordIndex === source.chordIndex && s.midi === source.midi) continue;
+      onSetNoteSegments(s.chordIndex, s.midi, cloneSegments(segs));
+    }
+  }, [onSetNoteSegments, mpeSelection, segmentsFor]);
+
   return (
     <div className="piano-roll-section">
+      {/* Mode toggle — reveals the MPE expression tools without leaving the
+          piano roll. The roll stays fully visible in both modes. */}
+      {mpeAvailable && (
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="mpe-mode-switch">
+            <button
+              type="button"
+              onClick={() => setMpeMode(false)}
+              className={clsx("mpe-mode-btn", !mpeMode && "active")}
+              aria-pressed={!mpeMode}
+            >
+              <Music className="w-3.5 h-3.5" />
+              <span>Piano Roll</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMpeMode(true)}
+              className={clsx("mpe-mode-btn", mpeMode && "active")}
+              aria-pressed={mpeMode}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>MPE Editor</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mpeMode && mpeAvailable && (
+        <MpeToolbar
+          selectionKind={selectionKind}
+          selectionCount={selectionCount}
+          hasExpression={hasExpression}
+          canPaste={clipboard !== null}
+          onGlide={handleGlide}
+          onPitchDrop={handlePitchDrop}
+          onScoop={handleScoop}
+          onVibrato={handleVibrato}
+          onJoin={handleJoin}
+          onReset={handleReset}
+          onReverse={handleReverse}
+          onScaleAmount={handleScaleAmount}
+          onScaleDuration={handleScaleDuration}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          onDuplicate={handleDuplicate}
+          onRemove={handleReset}
+        />
+      )}
+
       {/* Selected-note stepper: tap a note, then nudge it up/down within the
           key. The primary editing control on touch (where drag is disabled). */}
-      {selectedNote && (
+      {!mpeMode && selectedNote && (
         <div className="flex items-center justify-center gap-2 mb-2">
           <span className="text-[11px] text-muted">
             Note <span className="font-semibold text-foreground font-mono">{selectedNoteLabel}</span>
@@ -442,7 +824,7 @@ export function InteractivePianoRoll({
         </div>
 
         {/* RIGHT NOTE GRID */}
-        <div className="roll-grid">
+        <div className={clsx("roll-grid", mpeMode && "mpe-active")} ref={gridRef}>
           {chords.map((chord, colIdx) => {
             const isPlaying = playingIndex === colIdx;
             const isSelected = selectedIndex === colIdx;
@@ -464,6 +846,10 @@ export function InteractivePianoRoll({
                 <div
                   className={clsx("roll-col-header", isSelected && "selected-header")}
                   onClick={() => {
+                    if (mpeMode) {
+                      toggleMpeChord(colIdx);
+                      return;
+                    }
                     onSelectChord?.(isSelected ? null : colIdx);
                     setSelectedNote(null);
                   }}
@@ -487,7 +873,7 @@ export function InteractivePianoRoll({
                   </div>
                 </div>
 
-                <div className="roll-col-cells">
+                <div className="roll-col-cells" ref={(el) => { cellsRefs.current[colIdx] = el; }}>
                   {noteRange.map((midi) => {
                     const isWhite = isWhiteKey(midi);
                     const pClass = midiToPitchClass(midi);
@@ -498,6 +884,7 @@ export function InteractivePianoRoll({
                     const isFlashing = flashingNote === midi && hoveredColumnIdx === colIdx;
                     const isNoteSelected = selectedNote?.chordIndex === colIdx && selectedNote?.midi === midi;
                     const isDragTarget = isDragging && dragStart?.chordIndex === colIdx;
+                    const isMpeSel = mpeMode && hasNote && isMpeSelected(colIdx, midi);
 
                     return (
                       <div
@@ -509,11 +896,27 @@ export function InteractivePianoRoll({
                           isRoot && "is-root",
                           isFlashing && "triggered",
                           isNoteSelected && "note-selected",
+                          isMpeSel && "mpe-selected",
                           isDragTarget && "cursor-ns-resize",
-                          !hasNote && isSelected && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
+                          !hasNote && isSelected && !mpeMode && "hover:ring-1 hover:ring-accent/20 hover:bg-accent/5"
                         )}
                         data-note={pClass}
-                        onClick={() => handleNoteClick(midi, colIdx, hasNote)}
+                        onClick={() => {
+                          if (mpeMode) {
+                            if (hasNote) {
+                              toggleMpeNote(colIdx, midi);
+                              if (onPlayNote) {
+                                onPlayNote(midiToNoteName(midi));
+                                setFlashingNote(midi);
+                                setTimeout(() => setFlashingNote(null), 250);
+                              }
+                            } else {
+                              setMpeSelection([]);
+                            }
+                            return;
+                          }
+                          handleNoteClick(midi, colIdx, hasNote);
+                        }}
                         onDoubleClick={() => handleDoubleClick(midi, colIdx, hasNote)}
                         onPointerDown={(e) => handlePointerDown(e, midi, colIdx, hasNote)}
                         onPointerEnter={() => handlePointerEnterCell(midi, colIdx)}
@@ -583,6 +986,21 @@ export function InteractivePianoRoll({
                 <div key={midi} className={clsx("note-cell", !isWhiteKey(midi) && "black-row")} />
               ))}
             </div>
+          )}
+
+          {/* Expression curves overlay — draws pitch bends aligned to the grid.
+              Renders nothing when no expression exists, so the roll is
+              unchanged until the user authors a bend. */}
+          {mpeAvailable && (
+            <ExpressionOverlay
+              chords={chords}
+              noteRange={noteRange}
+              geom={geom}
+              mpeMode={mpeMode}
+              selection={mpeSelection}
+              containerRef={gridRef}
+              onUpdateSegment={handleUpdateSegment}
+            />
           )}
 
           {/* Playhead line */}

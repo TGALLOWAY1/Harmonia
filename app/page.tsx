@@ -111,6 +111,9 @@ export default function HarmoniaPage() {
     removeNote,
     moveNote,
     resetChord,
+    // MPE expression
+    setNoteSegments,
+    removeNoteExpression,
     // chords mute
     chordsEnabled,
     setChordsEnabled,
@@ -1402,6 +1405,8 @@ export default function HarmoniaPage() {
                     const note = melody.notes.find(n => n.id === noteId);
                     if (note) useProgressionStore.getState().moveMelodyNote(noteId, toMidi, note.startBeat);
                   } : undefined}
+                  onSetNoteSegments={setNoteSegments}
+                  onRemoveNoteExpression={removeNoteExpression}
                 />
                 <div className="lg:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-5 bg-gradient-to-l from-black/10 to-transparent" />
                 </div>

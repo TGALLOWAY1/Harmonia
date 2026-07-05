@@ -14,6 +14,7 @@ import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 import { makeSpeller, type Speller } from "../theory/spelling";
+import type { ExpressionSegment } from "../expression/types";
 
 const MODE_TO_SCALE: Record<Mode, ScaleType> = {
     ionian: "major",
@@ -110,6 +111,11 @@ interface ProgressionState {
     removeNote: (chordIndex: number, midi: number) => void;
     moveNote: (chordIndex: number, fromMidi: number, toMidi: number) => void;
     resetChord: (chordIndex: number) => void;
+
+    // MPE expression actions
+    setNoteSegments: (chordIndex: number, midi: number, segments: ExpressionSegment[]) => void;
+    removeNoteExpression: (chordIndex: number, midi: number) => void;
+    clearAllExpression: () => void;
 
     // Melody actions
     setMelodyEnabled: (enabled: boolean) => void;
@@ -617,6 +623,48 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         if (original) {
             get().revertChord(chordIndex);
         }
+    },
+
+    // ─── MPE Expression Actions ───
+    //
+    // Expression is stored on the chord (keyed by note MIDI) so it travels with
+    // the progression through save/load/history. Writes are immutable clones so
+    // Zustand subscribers re-render; empty segment lists are pruned to keep the
+    // "no expression" state byte-identical to a fresh chord.
+
+    setNoteSegments: (chordIndex: number, midi: number, segments: ExpressionSegment[]) => {
+        const { currentProgression } = get();
+        if (!currentProgression) return;
+        const chord = currentProgression.chords[chordIndex];
+        if (!chord) return;
+
+        const nextExpr = { ...(chord.expressions ?? {}) };
+        if (segments.length === 0) {
+            delete nextExpr[midi];
+        } else {
+            nextExpr[midi] = segments;
+        }
+        const hasAny = Object.keys(nextExpr).length > 0;
+
+        const chords = currentProgression.chords.map((c, i) =>
+            i === chordIndex
+                ? { ...c, expressions: hasAny ? nextExpr : undefined }
+                : c
+        );
+        set({ currentProgression: { ...currentProgression, chords } });
+    },
+
+    removeNoteExpression: (chordIndex: number, midi: number) => {
+        get().setNoteSegments(chordIndex, midi, []);
+    },
+
+    clearAllExpression: () => {
+        const { currentProgression } = get();
+        if (!currentProgression) return;
+        const chords = currentProgression.chords.map((c) =>
+            c.expressions ? { ...c, expressions: undefined } : c
+        );
+        set({ currentProgression: { ...currentProgression, chords } });
     },
 
     // ─── Melody Actions ───
