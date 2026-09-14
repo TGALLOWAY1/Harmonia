@@ -1,3 +1,4 @@
+import type { ChordMood } from "./chordMoods";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { PitchClass } from "@/lib/theory/midiUtils";
 
@@ -9,6 +10,7 @@ export type VoicingStyle =
   | "open"
   | "drop2"
   | "drop3"
+  | "drop24"
   | "spread";
 
 export type VoiceCount = 3 | 4 | 5;
@@ -34,6 +36,14 @@ export type DurationClass =
   | "half"      // 2 beats
   | "quarter"   // 1 beat
   | "eighth";   // half beat
+
+/**
+ * How the progression ends.
+ * - "resolve": rewrite the final chord to the tonic (a full stop).
+ * - "open": keep the plan's own ending, so half, deceptive and loop-friendly
+ *   endings survive instead of every progression landing on I.
+ */
+export type CadenceMode = "resolve" | "open";
 
 export type PhraseRole =
   | "opening"
@@ -84,6 +94,12 @@ export type AdvancedProgressionOptions = {
   useSecondaryDominants: boolean;
   useTritoneSubstitution: boolean;
   useFunctionalSubstitutions?: boolean;
+  /** How the progression ends. Defaults to the mood's preference. */
+  cadence?: CadenceMode;
+  /** Emotional character. Drives tension, register, density and rhythm. */
+  mood?: ChordMood;
+  /** How many candidates to draw and score. Defaults to 8. */
+  candidateCount?: number;
   seed?: number;
 };
 

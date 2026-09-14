@@ -126,7 +126,7 @@ Theory learned silently is theory half-learned. Harmonia plays **every** interac
 <td width="50%" valign="top">
 
 ### 🎼 Chord Progression Generator
-Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility.
+Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates.
 
 </td>
 <td width="50%" valign="top">
@@ -299,14 +299,16 @@ sequenceDiagram
 | Stage | What happens |
 |---|---|
 | **1. Theory setup** | The engine builds the scale and diatonic chord set for the chosen key/mode. |
-| **2. Phrase structure** | Each chord slot gets a role and a target tension from the length-specific tension curve. |
+| **2. Phrase structure** | Each chord slot gets a role and a target tension from the length-specific tension curve, scaled by the mood, plus a duration from the mood's harmonic-rhythm profile. |
 | **3. Extensions & subs** | Complexity level gates 7ths/9ths/13ths/alterations; secondary dominants, tritone subs, passing diminished, and suspensions are injected — then validated against a chromatic-density rule. |
-| **4. Voice leading** | For each chord, candidate voicings are generated and the smoothest (lowest-cost) is chosen relative to the previous chord. |
-| **5. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
-| **6. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
-| **7. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
-| **8. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
-| **9. Save** | Export MIDI or persist to favorites / the sketchpad. |
+| **4. Cadence** | The plan is capped to the requested length *first*, then the ending is set: `resolve` rewrites the final chord to the tonic, `open` keeps the plan's own ending. |
+| **5. Voice leading** | For each chord, candidate voicings are generated and the smoothest (lowest-cost) is chosen relative to the previous chord. The opening and final chords additionally favour a root-position bass so the progression starts and lands on stable ground; near-equal voicings are broken by the seed so a chord is not always voiced identically. |
+| **6. Scoring** | Steps 1-5 run eight times from derived seeds. Each finished progression is scored on cadence strength, bass motion, register arc, voice leading, variety, tension match and mood fit, and the best is kept. |
+| **7. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
+| **8. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
+| **9. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
+| **10. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
+| **11. Save** | Export MIDI or persist to favorites / the sketchpad. |
 
 ---
 
@@ -452,9 +454,12 @@ flowchart TD
 - **Scales (6):** Major, Natural Minor, Dorian, Mixolydian, Phrygian, Major Pentatonic (5-note)
 - **Chord qualities (25+):** `maj`, `min`, `dim`, `aug`, `sus2`, `sus4`, `6`, `min6`, `7`, `maj7`, `min7`, `m7b5`, `dim7`, `9`, `maj9`, `min9`, `add9`, `7b9`, `7#9`, `7b5`, `7#5`, `7alt`, `7sus4`, `7sus2`, …
 - **Substitution categories (6):** diatonic, relative, dominant-function, tritone, modal-mixture, inversion
-- **Voicing styles (6):** auto, closed, open, drop-2, drop-3, spread
+- **Voicing styles (7):** auto, closed, open, drop-2, drop-3, drop-2+4, spread
 - **Voice densities (3):** 3-voice (sparse), 4-voice (standard), 5-voice (rich)
 - **Complexity levels (4):** Simple → Rich → Extended → Altered
+- **Cadence modes (2):** resolve (always lands on the tonic), open (keeps half, deceptive and loop-friendly endings)
+- **Chord moods (4):** dark, emotional, dreamy, energetic — each sets tension, register, density, harmonic rhythm and preferred ending
+- **Harmonic rhythm profiles (4):** even, anchored, accelerating, pedal-opening
 - **Note roles (7):** chord tone, extension, alteration, passing, melody, approach, bass
 
 </details>
@@ -726,6 +731,7 @@ The repository includes several in-depth engineering documents that double as de
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Project overview, architecture, conventions |
 | [`CHORD_ENGINE_AUDIT.md`](CHORD_ENGINE_AUDIT.md) | Deep audit of the chord/voicing engine |
+| [`CHORD_PROGRESSION_ASSESSMENT.md`](CHORD_PROGRESSION_ASSESSMENT.md) | Emotional flow & voicing assessment, with research-backed roadmap |
 | [`AUDIO_ENGINE_ASSESSMENT.md`](AUDIO_ENGINE_ASSESSMENT.md) | Audio architecture & resilience assessment |
 | [`MELODY_ENGINE_ANALYSIS.md`](MELODY_ENGINE_ANALYSIS.md) | Before/after audit of the melody engine |
 | [`MOBILE_UX_AUDIT.md`](MOBILE_UX_AUDIT.md) · [`MOBILE_IMPLEMENTATION_PLAN.md`](MOBILE_IMPLEMENTATION_PLAN.md) | Mobile UX audit & plan |

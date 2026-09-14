@@ -86,31 +86,33 @@ function selectTones(intervals: number[], targetCount: number): number[] {
     return unique;
   }
 
-  // Extra voices: double selectively (root only, then 5th)
+  // Extra voices: keep every chord tone and add safe doublings on top.
+  //
+  // The fifth is only ever dropped when voices are SCARCE (the branch above).
+  // Dropping it here as well meant a 5-voice seventh chord came back with four
+  // tones and three pitch classes — the "Rich" setting sounding thinner than
+  // "Standard", and with no fifth at all.
   const result = [...unique];
   const has7th = unique.some(isSeventh);
 
-  // When chord has a 7th, omit perfect 5th and use the voice for root doubling
-  if (has7th && unique.some(isPerfectFifth) && result.length < targetCount) {
-    const p5idx = result.findIndex(isPerfectFifth);
-    if (p5idx !== -1) {
-      result.splice(p5idx, 1);
-    }
-  }
-
-  // Fill remaining with safe doublings
   while (result.length < targetCount) {
-    // Double root (as octave offset for placement)
-    if (result.filter(i => i === 0).length === 1) {
+    // Double the root first — always safe.
+    if (result.filter((i) => i === 0).length < 2) {
       result.push(0);
       continue;
     }
-    // Double 5th if present and no 7th conflict
-    if (!has7th && result.some(isPerfectFifth) && result.filter(isPerfectFifth).length === 1) {
+    // Then the fifth, which is safe to double on any chord that has one.
+    if (result.some(isPerfectFifth) && result.filter(isPerfectFifth).length < 2) {
       result.push(7);
       continue;
     }
-    break; // no more safe doublings
+    // On a chord with no fifth to double, a third root octave still beats
+    // returning fewer voices than the caller asked for.
+    if (!has7th || result.filter((i) => i === 0).length < 3) {
+      result.push(0);
+      continue;
+    }
+    break;
   }
 
   return result.sort((a, b) => a - b);
@@ -223,6 +225,18 @@ function applyStyle(notes: number[], style: VoicingStyle): number[] {
       }
       return voiced.sort((a, b) => a - b);
     }
+    case "drop24": {
+      // Lower the 2nd and 4th voices from the top by an octave — the widest of
+      // the drop family (roughly two octaves), and the classic dense-piano
+      // spread. Needs four voices to be meaningful.
+      if (voiced.length >= 4) {
+        voiced[voiced.length - 2] -= 12;
+        voiced[voiced.length - 4] -= 12;
+      } else if (voiced.length >= 2) {
+        voiced[voiced.length - 2] -= 12;
+      }
+      return voiced.sort((a, b) => a - b);
+    }
     case "spread": {
       // More restrained spread: only move every other voice, and by less aggressive amounts
       for (let i = 1; i < voiced.length; i += 2) {
@@ -282,7 +296,7 @@ function stylesForContext(style: VoicingStyle, voiceCount: number): VoicingStyle
   if (style !== "auto") return [style];
 
   const styles: VoicingStyle[] = ["closed", "open", "drop2"];
-  if (voiceCount >= 4) styles.push("drop3");
+  if (voiceCount >= 4) styles.push("drop3", "drop24");
   // Omit spread from auto — it's too aggressive for most contexts
   return styles;
 }
@@ -306,7 +320,9 @@ export function generateVoicingCandidates(
   const intervals = toIntervals(chord.root, chord.pitchClasses);
 
   // Cap voice count: never more than unique pitch classes + 1 (for root doubling)
-  const effectiveVoiceCount = Math.min(context.voiceCount, intervals.length + 1);
+  // Allow up to two doublings so a triad can genuinely reach five voices;
+  // capping at +1 made voiceCount 4 and 5 produce identical candidates.
+  const effectiveVoiceCount = Math.min(context.voiceCount, intervals.length + 2);
 
   // For passing/suspension chords, use lighter voicing (3 voices max)
   const roleVoiceCount = (chord.role === "passing" || chord.role === "suspension")
@@ -322,7 +338,9 @@ export function generateVoicingCandidates(
       const rootMidi = pitchClassToMidi(chord.root, octave);
       const base = buildDistributedVoicing(rootMidi, tones, roleVoiceCount);
 
-      const inversionLimit = Math.min(2, Math.max(1, base.length - 1));
+      // Allow every inversion the chord has. Capping at 2 made third
+      // inversions of seventh chords reachable only as a drop-voicing accident.
+      const inversionLimit = Math.max(1, base.length - 1);
       for (let inversion = 0; inversion <= inversionLimit; inversion++) {
         const inverted = invert(base, inversion);
         const styled = applyStyle(inverted, style);

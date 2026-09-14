@@ -4,7 +4,8 @@ import type { Mode } from "../theory/harmonyEngine";
 import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
 import { progressionToMidi, melodyToMidi } from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
-import type { AdvancedProgressionOptions, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
+import type { ChordMood } from "../music/generators/advanced/chordMoods";
+import type { AdvancedProgressionOptions, CadenceMode, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
 import type { ChordSourceType, SubstitutionOption } from "../creative/types";
 import { getSubstitutions } from "../creative/substitutionEngine";
 import { interpretChord } from "../creative/chordInterpreter";
@@ -77,6 +78,8 @@ interface ProgressionState {
 
     // Voicing settings
     voicingStyle: VoicingStyle;
+    cadence: CadenceMode;
+    chordMood: ChordMood;
     voiceCount: VoiceCount;
 
     // Creative iteration state
@@ -92,7 +95,7 @@ interface ProgressionState {
     melodyMood: MelodyMood;
     chordsEnabled: boolean;
 
-    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
+    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount" | "cadence" | "chordMood">>) => void;
     generateNew: () => void;
     toggleLock: (index: number) => void;
     deleteChord: (index: number) => void;
@@ -187,6 +190,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
     // Voicing defaults
     voicingStyle: "auto",
+    cadence: "resolve",
+    chordMood: "emotional",
     voiceCount: 4,
 
     // Creative iteration initial state
@@ -207,7 +212,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateNew: () => {
-        const { rootKey, mode, complexity, numChords, voicingStyle, voiceCount, currentProgression } = get();
+        const { rootKey, mode, complexity, numChords, voicingStyle, voiceCount, cadence, chordMood, currentProgression } = get();
         const rootPC = normalizeToPitchClass(rootKey) || "C";
 
         // Collect locked chords from the current progression (by position)
@@ -223,6 +228,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             mode,
             numChords,
             voicingStyle,
+            cadence,
+            mood: chordMood,
             voiceCount,
             rangeLow: 48,
             rangeHigh: 79,
