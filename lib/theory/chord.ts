@@ -192,6 +192,28 @@ function determineSeventhQuality(
 }
 
 /**
+ * Guard for the stack-of-thirds builders below.
+ *
+ * They index the scale with `(degree + 2) % 7` and `(degree + 4) % 7`, which is
+ * only meaningful for a seven-note scale. Handed a five-note scale those
+ * indices silently read past the end and yield `undefined` pitch classes, so
+ * this fails loudly and points at the right alternative instead.
+ */
+function assertHeptatonic(scale: ScaleDefinition, scaleDegreeIndex: number): void {
+  if (scale.pitchClasses.length !== 7) {
+    throw new Error(
+      `Stacked-thirds chord building requires a 7-note scale, but "${scale.type}" has ` +
+        `${scale.pitchClasses.length}. Use lib/theory/pentatonic.ts for pentatonic harmony.`
+    );
+  }
+  if (scaleDegreeIndex < 0 || scaleDegreeIndex >= 7) {
+    throw new Error(
+      `Scale degree index must be between 0 and 6, got ${scaleDegreeIndex}`
+    );
+  }
+}
+
+/**
  * Build a triad from a scale using scale-degree stacking
  * @param scale - The scale definition
  * @param scaleDegreeIndex - 0-based scale degree (0 = I, 1 = ii, etc.)
@@ -201,11 +223,7 @@ export function buildTriadFromScale(
   scale: ScaleDefinition,
   scaleDegreeIndex: number
 ): Triad {
-  if (scaleDegreeIndex < 0 || scaleDegreeIndex >= 7) {
-    throw new Error(
-      `Scale degree index must be between 0 and 6, got ${scaleDegreeIndex}`
-    );
-  }
+  assertHeptatonic(scale, scaleDegreeIndex);
 
   const root = scale.pitchClasses[scaleDegreeIndex];
   const third = scale.pitchClasses[(scaleDegreeIndex + 2) % 7];
@@ -230,11 +248,7 @@ export function buildSeventhFromScale(
   scale: ScaleDefinition,
   scaleDegreeIndex: number
 ): SeventhChord {
-  if (scaleDegreeIndex < 0 || scaleDegreeIndex >= 7) {
-    throw new Error(
-      `Scale degree index must be between 0 and 6, got ${scaleDegreeIndex}`
-    );
-  }
+  assertHeptatonic(scale, scaleDegreeIndex);
 
   const root = scale.pitchClasses[scaleDegreeIndex];
   const third = scale.pitchClasses[(scaleDegreeIndex + 2) % 7];

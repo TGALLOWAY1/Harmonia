@@ -3,12 +3,16 @@ export type Mode =
   | "aeolian"
   | "dorian"
   | "mixolydian"
-  | "phrygian";
+  | "phrygian"
+  // Five-note scale rather than a mode of the major scale. Its harmony is
+  // built from a separate vocabulary — see lib/theory/pentatonic.ts.
+  | "major_pentatonic";
 
 export type Depth = 0 | 1 | 2;
 
 export type Degree =
   | "I"
+  | "II"
   | "ii"
   | "iii"
   | "IV"
@@ -47,6 +51,7 @@ const MODE_TONICS: Record<Mode, Degree> = {
   dorian: "i",
   mixolydian: "I",
   phrygian: "i",
+  major_pentatonic: "I",
 };
 
 const ROMAN_NUMERALS_MAJOR: Degree[] = ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
@@ -84,6 +89,10 @@ export function generateProgression(params: {
     return [];
   }
 
+  if (mode === "major_pentatonic") {
+    return generatePentatonicProgression(numChords, depth);
+  }
+
   const isMinorKey = mode !== "ionian";
   const scaleNumerals = isMinorKey ? ROMAN_NUMERALS_MINOR : ROMAN_NUMERALS_MAJOR;
   const tonic = getTonicForMode(mode);
@@ -107,6 +116,49 @@ export function generateProgression(params: {
     });
   }
 
+  return chords;
+}
+
+/**
+ * Major pentatonic has no 4th or 7th degree, so the usual triads on ii, iii, IV
+ * and V don't exist. Only four degrees can carry a chord, and two of them are
+ * necessarily sus chords. See lib/theory/pentatonic.ts for the derivation.
+ *
+ * Depth adds colour the same way it does for the other modes, but only with
+ * tones the scale actually contains: the 7th on vi, sus2 on V, and the 9th on
+ * the tonic. (`m(add9)` is deliberately absent — the 9th above vi is the
+ * missing 7th degree, so it would fall outside the scale.)
+ */
+const PENTATONIC_CHORDS_BY_DEPTH: Record<Depth, GeneratedChord[]> = {
+  0: [
+    { degree: "I", quality: "" },       // major triad
+    { degree: "II", quality: "sus4" },  // no 3rd available
+    { degree: "V", quality: "sus4" },   // no 3rd available
+    { degree: "vi", quality: "m" },     // minor triad
+  ],
+  1: [
+    { degree: "I", quality: "" },
+    { degree: "II", quality: "sus4" },
+    { degree: "V", quality: "sus2" },
+    { degree: "vi", quality: "m7" },
+  ],
+  2: [
+    { degree: "I", quality: "add9" },
+    { degree: "II", quality: "sus4" },
+    { degree: "V", quality: "sus2" },
+    { degree: "vi", quality: "m7" },
+  ],
+};
+
+function generatePentatonicProgression(numChords: number, depth: Depth): GeneratedChord[] {
+  const vocabulary = PENTATONIC_CHORDS_BY_DEPTH[depth] ?? PENTATONIC_CHORDS_BY_DEPTH[0];
+
+  // Open on the tonic, then draw from the scale-safe chords.
+  const chords: GeneratedChord[] = [vocabulary[0]];
+  for (let i = 1; i < numChords; i++) {
+    const pick = Math.floor(Math.random() * vocabulary.length);
+    chords.push(vocabulary[pick]);
+  }
   return chords;
 }
 

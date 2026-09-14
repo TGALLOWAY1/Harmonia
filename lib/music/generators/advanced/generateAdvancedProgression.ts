@@ -7,11 +7,22 @@ import {
 } from "@/lib/theory/chord";
 import { midiToNoteName, pitchClassToMidi, PITCH_CLASSES, type PitchClass } from "@/lib/theory/midiUtils";
 import { getChordPitchClasses, toPitchClass } from "@/lib/theory/chordSymbol";
+import {
+  MAJOR_PENTATONIC_TEMPLATES,
+  getPentatonicChord,
+  isPentatonicChordDegree,
+  type PentatonicChordDegree,
+} from "@/lib/theory/pentatonic";
 import { getScaleDefinition } from "@/lib/theory/scale";
 import type { ScaleType } from "@/lib/theory/types";
 
 import { applyComplexityExtensions, type QualityHint } from "./extensions";
-import { getPhraseRoles, getTensionCurve, selectDegreeForRole } from "./phraseStructure";
+import {
+  getPhraseRoles,
+  getTensionCurve,
+  selectDegreeForRole,
+  type DegreeFamily,
+} from "./phraseStructure";
 import {
   applyTritoneSubstitutions,
   injectSecondaryDominants,
@@ -35,6 +46,7 @@ const MODE_TO_SCALE_TYPE: Record<AdvancedProgressionOptions["mode"], ScaleType> 
   dorian: "dorian",
   mixolydian: "mixolydian",
   phrygian: "phrygian",
+  major_pentatonic: "major_pentatonic",
 };
 
 const MAJORISH_ROMANS = ["I", "ii", "iii", "IV", "V", "vi", "vii°"] as const;
@@ -117,7 +129,7 @@ function dominantPitchClasses(root: PitchClass): PitchClass[] {
 function adaptLength(
   template: number[],
   numChords: number,
-  isMinor: boolean,
+  family: DegreeFamily,
   random: () => number
 ): number[] {
   if (numChords <= 0) return [];
@@ -130,7 +142,7 @@ function adaptLength(
   // For each position beyond the template, select a degree based on role
   while (padded.length < numChords) {
     const role = roles[padded.length] ?? "continuation";
-    const degree = selectDegreeForRole(role, isMinor, random);
+    const degree = selectDegreeForRole(role, family, random);
     padded.push(degree);
   }
 
@@ -397,90 +409,22 @@ function assignRoles(midiAscending: number[], root: PitchClass): NoteRole[] {
 }
 
 // ---------------------------------------------------------------------------
-// Main generator
+// Voicing stage (shared by every mode)
 // ---------------------------------------------------------------------------
 
-export function generateAdvancedProgression(
-  options: AdvancedProgressionOptions
+/**
+ * Turn a finished chord plan into voiced MIDI: pick the best voice-led
+ * candidate for each chord, validate it against the chord symbol, and tag each
+ * note with its harmonic role.
+ *
+ * This is deliberately independent of how the plan was built, so the tertian
+ * and pentatonic planners share one code path — and one validation gate.
+ */
+function voicePlannedChords(
+  planned: PlannedAdvancedChord[],
+  options: AdvancedProgressionOptions,
+  seed: number
 ): AdvancedProgressionResult {
-  const numChords = options.numChords ?? 4;
-  const scaleType = MODE_TO_SCALE_TYPE[options.mode] ?? "major";
-  const isMinor = options.mode !== "ionian" && options.mode !== "mixolydian";
-  const romans = isMinor ? MINORISH_ROMANS : MAJORISH_ROMANS;
-
-  const seed = options.seed ?? Math.floor(Math.random() * 2_147_483_647);
-  const random = createSeededRandom(seed);
-
-  // --- Phrase structure ---
-  const phraseRoles = getPhraseRoles(numChords);
-  const tensionCurve = getTensionCurve(numChords);
-
-  // --- Template selection and adaptation ---
-  const chosenTemplatePool = isMinor ? MINORISH_TEMPLATES : MAJORISH_TEMPLATES;
-  const template = chosenTemplatePool[Math.floor(random() * chosenTemplatePool.length)] ?? chosenTemplatePool[0];
-  const baseDegreeIndices = adaptLength(template, numChords, isMinor, random);
-
-  const functionalSwap = maybeApplyFunctionalSwap(
-    baseDegreeIndices,
-    options.useFunctionalSubstitutions ?? options.complexity >= 3,
-    random
-  );
-
-  // --- Build diatonic chord plans with tension levels ---
-  const scale = getScaleDefinition(options.rootKey, scaleType);
-  const plannedDiatonic = functionalSwap.indices.map((degreeIndex, idx) => {
-    const root = scale.pitchClasses[degreeIndex] ?? scale.pitchClasses[0];
-    const degreeLabel = romans[degreeIndex] ?? romans[0];
-    const tension = tensionCurve[idx] ?? 0.5;
-    const isProtected = idx === 0 || idx === functionalSwap.indices.length - 1;
-
-    return buildDiatonicChordPlan({
-      root,
-      degreeLabel,
-      degreeIndex,
-      scale,
-      complexity: options.complexity,
-      random,
-      kind: functionalSwap.swappedIndex === idx ? "functional-substitution" : "diatonic",
-      tensionLevel: tension,
-      isProtected,
-    });
-  });
-
-  // --- Apply substitutions (gated by tension and context) ---
-  let planned = plannedDiatonic;
-  planned = injectSecondaryDominants(planned, options, random);
-  planned = applyTritoneSubstitutions(planned, options, random);
-  planned = insertPassingDiminished(planned, options, random);
-  planned = insertSuspensions(planned, options, random);
-
-  // --- Chromatic density validation (2/3 rule) ---
-  planned = validateChromaticDensity(planned);
-
-  // --- Resolution heuristic: ensure progression ends on tonic ---
-  if (planned.length > 0) {
-    const lastChord = planned[planned.length - 1];
-    if (lastChord.kind === "diatonic" || lastChord.kind === "functional-substitution") {
-      const tonicRoot = scale.pitchClasses[0];
-      if (lastChord.root !== tonicRoot) {
-        planned[planned.length - 1] = buildDiatonicChordPlan({
-          root: tonicRoot,
-          degreeLabel: romans[0],
-          degreeIndex: 0,
-          scale,
-          complexity: options.complexity,
-          random,
-          kind: "diatonic",
-          tensionLevel: 0.0, // cadence = fully resolved
-          isProtected: true,
-        });
-      }
-    }
-  }
-
-  planned = limitLength(planned, numChords);
-
-  // --- Voice each chord ---
   const { low, high } = clampVoiceRange(options.rangeLow, options.rangeHigh);
   const center = (low + high) / 2;
 
@@ -543,4 +487,210 @@ export function generateAdvancedProgression(
       voiceLeadingCosts: costs,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Major pentatonic generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Clean up a raw list of pentatonic degree indices before it becomes chords:
+ *
+ * 1. Drop any degree that can't carry a chord (only the 3rd).
+ * 2. End on the tonic, matching the tertian path's cadence rule.
+ * 3. Remove adjacent repeats — including the doubled tonic that step 2 creates
+ *    when a template already ended near the tonic. A chord repeated back to
+ *    back reads as one long chord, which wastes a slot the user asked for.
+ *
+ * Entirely deterministic: the same input always yields the same output.
+ */
+function resolvePentatonicDegrees(rawDegrees: number[]): PentatonicChordDegree[] {
+  if (rawDegrees.length === 0) return [];
+
+  const degrees: PentatonicChordDegree[] = rawDegrees.map((degree) =>
+    isPentatonicChordDegree(degree) ? degree : 0
+  );
+
+  // Cadence on the tonic.
+  degrees[degrees.length - 1] = 0;
+
+  // Break adjacent repeats by preferring motion away from the previous chord,
+  // ordered by how much contrast each degree gives: V and II are the colour
+  // chords, vi is the other complete triad, I the tonic.
+  const PREFERENCE: PentatonicChordDegree[] = [3, 1, 4, 0];
+
+  for (let i = 1; i < degrees.length; i++) {
+    if (degrees[i] !== degrees[i - 1]) continue;
+
+    const next = degrees[i + 1];
+    const replacement = PREFERENCE.find(
+      (candidate) => candidate !== degrees[i - 1] && candidate !== next
+    );
+    // The last position must stay on the tonic, so fix the one before it instead.
+    if (i === degrees.length - 1) {
+      const previousReplacement = PREFERENCE.find(
+        (candidate) => candidate !== 0 && candidate !== degrees[i - 2]
+      );
+      if (previousReplacement !== undefined) degrees[i - 1] = previousReplacement;
+      continue;
+    }
+    if (replacement !== undefined) degrees[i] = replacement;
+  }
+
+  return degrees;
+}
+
+/**
+ * Plan and voice a progression in major pentatonic.
+ *
+ * This is a separate path rather than a branch inside the tertian planner
+ * because almost every step of that pipeline assumes seven degrees and a
+ * leading tone. Pentatonic has neither, so:
+ *
+ * - chords come from the curated scale-safe vocabulary in `lib/theory/pentatonic`
+ *   rather than from stacked thirds;
+ * - the complexity dial adds scale tones (6ths, 9ths, sus 7ths) instead of
+ *   extensions that would drag in notes from outside the scale;
+ * - the chromatic toggles (secondary dominants, tritone subs, passing
+ *   diminished) are skipped — every one of them introduces a note the scale
+ *   does not contain, which is exactly what a pentatonic setting is asking to
+ *   avoid.
+ *
+ * The phrase-shape machinery (roles, tension curve, tonic cadence) is reused
+ * as-is, so progressions still open and close where a listener expects.
+ */
+function generatePentatonicProgression(
+  options: AdvancedProgressionOptions
+): AdvancedProgressionResult {
+  const numChords = options.numChords ?? 4;
+  const seed = options.seed ?? Math.floor(Math.random() * 2_147_483_647);
+  const random = createSeededRandom(seed);
+
+  const scale = getScaleDefinition(options.rootKey, "major_pentatonic");
+  const tensionCurve = getTensionCurve(numChords);
+
+  const template =
+    MAJOR_PENTATONIC_TEMPLATES[Math.floor(random() * MAJOR_PENTATONIC_TEMPLATES.length)] ??
+    MAJOR_PENTATONIC_TEMPLATES[0];
+
+  const degreeIndices = resolvePentatonicDegrees(
+    adaptLength(template, numChords, "major_pentatonic", random)
+  );
+
+  const planned: PlannedAdvancedChord[] = degreeIndices.map((degreeIndex, idx) => {
+    const isLast = idx === degreeIndices.length - 1;
+    const chord = getPentatonicChord(scale, degreeIndex, options.complexity);
+
+    return {
+      degreeLabel: chord.degreeLabel,
+      symbol: chord.symbol,
+      root: chord.root,
+      pitchClasses: chord.pitchClasses,
+      kind: "diatonic",
+      // No leading tone exists in this scale, so no chord here is a dominant.
+      isDominant: false,
+      role: isLast ? "cadential" : "structural",
+      durationClass: "full",
+      tensionLevel: isLast ? 0 : tensionCurve[idx] ?? 0.5,
+      isProtected: idx === 0 || isLast,
+    };
+  });
+
+  return voicePlannedChords(limitLength(planned, numChords), options, seed);
+}
+
+// ---------------------------------------------------------------------------
+// Main generator
+// ---------------------------------------------------------------------------
+
+export function generateAdvancedProgression(
+  options: AdvancedProgressionOptions
+): AdvancedProgressionResult {
+  if (options.mode === "major_pentatonic") {
+    return generatePentatonicProgression(options);
+  }
+
+  const numChords = options.numChords ?? 4;
+  const scaleType = MODE_TO_SCALE_TYPE[options.mode] ?? "major";
+  const isMinor = options.mode !== "ionian" && options.mode !== "mixolydian";
+  const romans = isMinor ? MINORISH_ROMANS : MAJORISH_ROMANS;
+
+  const seed = options.seed ?? Math.floor(Math.random() * 2_147_483_647);
+  const random = createSeededRandom(seed);
+
+  // --- Phrase structure ---
+  const phraseRoles = getPhraseRoles(numChords);
+  const tensionCurve = getTensionCurve(numChords);
+
+  // --- Template selection and adaptation ---
+  const chosenTemplatePool = isMinor ? MINORISH_TEMPLATES : MAJORISH_TEMPLATES;
+  const template = chosenTemplatePool[Math.floor(random() * chosenTemplatePool.length)] ?? chosenTemplatePool[0];
+  const baseDegreeIndices = adaptLength(
+    template,
+    numChords,
+    isMinor ? "minor" : "major",
+    random
+  );
+
+  const functionalSwap = maybeApplyFunctionalSwap(
+    baseDegreeIndices,
+    options.useFunctionalSubstitutions ?? options.complexity >= 3,
+    random
+  );
+
+  // --- Build diatonic chord plans with tension levels ---
+  const scale = getScaleDefinition(options.rootKey, scaleType);
+  const plannedDiatonic = functionalSwap.indices.map((degreeIndex, idx) => {
+    const root = scale.pitchClasses[degreeIndex] ?? scale.pitchClasses[0];
+    const degreeLabel = romans[degreeIndex] ?? romans[0];
+    const tension = tensionCurve[idx] ?? 0.5;
+    const isProtected = idx === 0 || idx === functionalSwap.indices.length - 1;
+
+    return buildDiatonicChordPlan({
+      root,
+      degreeLabel,
+      degreeIndex,
+      scale,
+      complexity: options.complexity,
+      random,
+      kind: functionalSwap.swappedIndex === idx ? "functional-substitution" : "diatonic",
+      tensionLevel: tension,
+      isProtected,
+    });
+  });
+
+  // --- Apply substitutions (gated by tension and context) ---
+  let planned = plannedDiatonic;
+  planned = injectSecondaryDominants(planned, options, random);
+  planned = applyTritoneSubstitutions(planned, options, random);
+  planned = insertPassingDiminished(planned, options, random);
+  planned = insertSuspensions(planned, options, random);
+
+  // --- Chromatic density validation (2/3 rule) ---
+  planned = validateChromaticDensity(planned);
+
+  // --- Resolution heuristic: ensure progression ends on tonic ---
+  if (planned.length > 0) {
+    const lastChord = planned[planned.length - 1];
+    if (lastChord.kind === "diatonic" || lastChord.kind === "functional-substitution") {
+      const tonicRoot = scale.pitchClasses[0];
+      if (lastChord.root !== tonicRoot) {
+        planned[planned.length - 1] = buildDiatonicChordPlan({
+          root: tonicRoot,
+          degreeLabel: romans[0],
+          degreeIndex: 0,
+          scale,
+          complexity: options.complexity,
+          random,
+          kind: "diatonic",
+          tensionLevel: 0.0, // cadence = fully resolved
+          isProtected: true,
+        });
+      }
+    }
+  }
+
+  planned = limitLength(planned, numChords);
+
+  return voicePlannedChords(planned, options, seed);
 }

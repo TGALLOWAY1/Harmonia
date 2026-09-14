@@ -38,6 +38,7 @@ const MODES: { value: Mode; label: string }[] = [
   { value: "dorian", label: "Dorian" },
   { value: "mixolydian", label: "Mixolydian" },
   { value: "phrygian", label: "Phrygian" },
+  { value: "major_pentatonic", label: "Major Pentatonic" },
 ];
 
 const DURATIONS = [

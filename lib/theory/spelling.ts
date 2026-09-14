@@ -40,6 +40,9 @@ const MODE_TO_IONIAN_OFFSET: Record<string, number> = {
   minor: 3,
   phrygian: 8, // −4
   locrian: 1, // −11
+  // Major pentatonic is a subset of the major scale on the same tonic, so it
+  // borrows that key signature (C major pentatonic spells like C major).
+  major_pentatonic: 0,
 };
 
 function semitoneOf(pc: PitchClass): number {

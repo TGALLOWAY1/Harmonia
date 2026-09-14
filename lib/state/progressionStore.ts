@@ -22,6 +22,7 @@ const MODE_TO_SCALE: Record<Mode, ScaleType> = {
     dorian: "dorian",
     mixolydian: "mixolydian",
     phrygian: "phrygian",
+    major_pentatonic: "major_pentatonic",
 };
 
 /** Build the enharmonic speller for the active key (root + mode). */

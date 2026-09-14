@@ -1,8 +1,13 @@
 /**
  * Scale Generation Functions
- * 
- * Provides functions to generate major and natural minor scales
- * based on a root pitch class.
+ *
+ * Provides functions to generate heptatonic (7-note) scales and modes as well
+ * as the 5-note major pentatonic scale, based on a root pitch class.
+ *
+ * Scales are described by their step pattern (semitones between consecutive
+ * degrees, summing to 12). The number of degrees therefore falls out of the
+ * pattern length, so callers must never assume a ScaleDefinition has 7
+ * pitch classes — `major_pentatonic` has 5.
  */
 
 import type { PitchClass } from "./midiUtils";
@@ -29,6 +34,10 @@ const NATURAL_MINOR_INTERVALS = [2, 1, 2, 2, 1, 2, 2]; // W-H-W-W-H-W-W
 const DORIAN_INTERVALS = [2, 1, 2, 2, 2, 1, 2]; // W-H-W-W-W-H-W
 const MIXOLYDIAN_INTERVALS = [2, 2, 1, 2, 2, 1, 2]; // W-W-H-W-W-H-W
 const PHRYGIAN_INTERVALS = [1, 2, 2, 2, 1, 2, 2]; // H-W-W-W-H-W-W
+// Major pentatonic = major scale with the 4th and 7th (the two half steps)
+// removed: 1-2-3-5-6. Dropping them is what makes it "unable to sound wrong" —
+// there is no tritone and no leading tone anywhere in the scale.
+const MAJOR_PENTATONIC_INTERVALS = [2, 2, 3, 2, 3]; // W-W-m3-W-m3
 
 /**
  * Rotate pitch classes starting from a given root
@@ -53,10 +62,12 @@ function rotatePitchClasses(start: PitchClass): PitchClass[] {
 /**
  * Get a scale definition for a given root and scale type
  * @param root - The root pitch class of the scale
- * @param type - The type of scale: "major" or "natural_minor"
- * @returns ScaleDefinition with root, type, and ordered pitch classes
+ * @param type - The type of scale, e.g. "major", "natural_minor", "major_pentatonic"
+ * @returns ScaleDefinition with root, type, and ordered pitch classes. The
+ *          length matches the scale (7 for the modes, 5 for major pentatonic).
  * @example getScaleDefinition("C", "major") -> { root: "C", type: "major", pitchClasses: ["C", "D", "E", "F", "G", "A", "B"] }
  * @example getScaleDefinition("A", "natural_minor") -> { root: "A", type: "natural_minor", pitchClasses: ["A", "B", "C", "D", "E", "F", "G"] }
+ * @example getScaleDefinition("C", "major_pentatonic") -> { root: "C", type: "major_pentatonic", pitchClasses: ["C", "D", "E", "G", "A"] }
  */
 export function getScaleDefinition(
   root: PitchClass,
@@ -80,6 +91,9 @@ export function getScaleDefinition(
     case "phrygian":
       intervals = PHRYGIAN_INTERVALS;
       break;
+    case "major_pentatonic":
+      intervals = MAJOR_PENTATONIC_INTERVALS;
+      break;
     default:
       throw new Error(`Unsupported scale type: ${type}`);
   }
@@ -87,12 +101,12 @@ export function getScaleDefinition(
   // Get rotated pitch classes starting from root
   const rotatedPitchClasses = rotatePitchClasses(root);
 
-  // Build the scale by walking through intervals
-  // A scale has 7 notes, so we need 6 intervals (the 7th note is the octave, which we exclude)
+  // Build the scale by walking through intervals. The final interval closes the
+  // octave back onto the root, so we walk all but the last one; an N-step
+  // pattern therefore yields N unique pitch classes.
   const pitchClasses: PitchClass[] = [root]; // Start with root
   let currentIndex = 0;
 
-  // Use all but the last interval to get 7 unique pitch classes
   for (let i = 0; i < intervals.length - 1; i++) {
     currentIndex = (currentIndex + intervals[i]) % 12;
     pitchClasses.push(rotatedPitchClasses[currentIndex]);
@@ -158,3 +172,13 @@ export function getPhrygianScale(root: PitchClass): ScaleDefinition {
   return getScaleDefinition(root, "phrygian");
 }
 
+/**
+ * Get a major pentatonic scale definition
+ * Major pentatonic is the major scale without its 4th and 7th degrees: 1-2-3-5-6
+ * @param root - The root pitch class of the major pentatonic scale
+ * @returns ScaleDefinition for the major pentatonic scale (5 pitch classes)
+ * @example getMajorPentatonicScale("C") -> { root: "C", type: "major_pentatonic", pitchClasses: ["C", "D", "E", "G", "A"] }
+ */
+export function getMajorPentatonicScale(root: PitchClass): ScaleDefinition {
+  return getScaleDefinition(root, "major_pentatonic");
+}

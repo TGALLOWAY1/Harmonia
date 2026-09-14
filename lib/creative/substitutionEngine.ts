@@ -7,8 +7,15 @@
 
 import { PITCH_CLASSES, type PitchClass, pitchClassToMidi, midiToNoteName, midiToPitchClass, normalizeToPitchClass } from "../theory/midiUtils";
 import { buildTriadFromRoot, buildSeventhFromRoot, formatChordSymbol, getDiatonicChords } from "../theory/chord";
+import {
+  PENTATONIC_CHORD_DEGREES,
+  getPentatonicChordVariants,
+  type PentatonicChord,
+} from "../theory/pentatonic";
+import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 import type { Mode } from "../theory/harmonyEngine";
+import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import type { SubstitutionOption, SubstitutionCategory } from "./types";
 import type { Chord } from "../theory/progressionTypes";
 
@@ -28,6 +35,7 @@ function modeToScaleType(mode: Mode): ScaleType {
     case "dorian": return "dorian";
     case "mixolydian": return "mixolydian";
     case "phrygian": return "phrygian";
+    case "major_pentatonic": return "major_pentatonic";
     default: return "major";
   }
 }
@@ -97,21 +105,27 @@ export function getSubstitutions(
   const chordRoot = (chord.root ?? normalizeToPitchClass(chord.notes[0]) ?? "C") as PitchClass;
   const chordId = `chord-${chordIndex}`;
   const sourceMidi = chord.midiNotes ?? [];
+
+  // Derive pitch classes from canonical MIDI notes (sharp-spelled) so this stays
+  // correct regardless of how `chord.notes` is enharmonically spelled for
+  // display (e.g. "Bb" in F major).
+  const chordPcs = new Set<PitchClass>(
+    sourceMidi.length > 0
+      ? sourceMidi.map(m => midiToPitchClass(m))
+      : chord.notes.map(n => (normalizeToPitchClass(n) ?? n) as PitchClass)
+  );
+
+  if (mode === "major_pentatonic") {
+    return getPentatonicSubstitutions(chord, chordId, chordRoot, sourceMidi, chordPcs, keyRoot);
+  }
+
   const scaleType = modeToScaleType(mode);
   const diatonicSet = getDiatonicChords(keyRoot, scaleType);
 
   const options: SubstitutionOption[] = [];
 
   // ── 1. Diatonic alternatives ──
-  // All diatonic chords that share at least one pitch class with the selected
-  // chord. Derive pitch classes from canonical MIDI notes (sharp-spelled) so
-  // this stays correct regardless of how `chord.notes` is enharmonically spelled
-  // for display (e.g. "Bb" in F major).
-  const chordPcs = new Set<PitchClass>(
-    sourceMidi.length > 0
-      ? sourceMidi.map(m => midiToPitchClass(m))
-      : chord.notes.map(n => (normalizeToPitchClass(n) ?? n) as PitchClass)
-  );
+  // All diatonic chords that share at least one pitch class with the selected chord.
 
   for (let i = 0; i < diatonicSet.triads.length; i++) {
     const triad = diatonicSet.triads[i];
@@ -300,38 +314,59 @@ export function getSubstitutions(
   }
 
   // ── 6. Inversion variants ──
-  if (sourceMidi.length >= 3) {
-    for (let inv = 1; inv < Math.min(sourceMidi.length, 3); inv++) {
-      const rotatedMidi = [...sourceMidi];
-      // Move bottom notes up an octave
-      for (let j = 0; j < inv; j++) {
-        const lowest = Math.min(...rotatedMidi);
-        const idx = rotatedMidi.indexOf(lowest);
-        rotatedMidi[idx] = lowest + 12;
-      }
-      rotatedMidi.sort((a, b) => a - b);
+  options.push(...inversionOptions(chord, chordId, chordRoot, sourceMidi));
 
-      const inversionNames = ["", "1st inversion", "2nd inversion"];
-      const notesWithOctave = rotatedMidi.map(m => midiToNoteName(m));
+  return rankAndLimit(options);
+}
 
-      options.push({
-        id: makeSubId(),
-        sourceChordId: chordId,
-        candidateSymbol: `${chord.symbol} (${inversionNames[inv]})`,
-        candidateRoot: chordRoot,
-        candidateQuality: chord.quality ?? "",
-        candidateNotes: chord.notes.map(n => n as PitchClass),
-        candidateMidiNotes: rotatedMidi,
-        candidateNotesWithOctave: notesWithOctave,
-        candidateRomanNumeral: chord.romanNumeral,
-        category: "inversion",
-        reason: `${inversionNames[inv]} — same chord with ${inv === 1 ? "third" : "fifth"} in the bass`,
-        confidenceScore: 0.6,
-      });
+/**
+ * Re-voice the source chord with its third or fifth in the bass. Purely a
+ * rearrangement of the notes already sounding, so it is safe in any scale.
+ */
+function inversionOptions(
+  chord: Chord,
+  chordId: string,
+  chordRoot: PitchClass,
+  sourceMidi: number[]
+): SubstitutionOption[] {
+  if (sourceMidi.length < 3) return [];
+
+  const options: SubstitutionOption[] = [];
+
+  for (let inv = 1; inv < Math.min(sourceMidi.length, 3); inv++) {
+    const rotatedMidi = [...sourceMidi];
+    // Move bottom notes up an octave
+    for (let j = 0; j < inv; j++) {
+      const lowest = Math.min(...rotatedMidi);
+      const idx = rotatedMidi.indexOf(lowest);
+      rotatedMidi[idx] = lowest + 12;
     }
+    rotatedMidi.sort((a, b) => a - b);
+
+    const inversionNames = ["", "1st inversion", "2nd inversion"];
+    const notesWithOctave = rotatedMidi.map(m => midiToNoteName(m));
+
+    options.push({
+      id: makeSubId(),
+      sourceChordId: chordId,
+      candidateSymbol: `${chord.symbol} (${inversionNames[inv]})`,
+      candidateRoot: chordRoot,
+      candidateQuality: chord.quality ?? "",
+      candidateNotes: chord.notes.map(n => n as PitchClass),
+      candidateMidiNotes: rotatedMidi,
+      candidateNotesWithOctave: notesWithOctave,
+      candidateRomanNumeral: chord.romanNumeral,
+      category: "inversion",
+      reason: `${inversionNames[inv]} — same chord with ${inv === 1 ? "third" : "fifth"} in the bass`,
+      confidenceScore: 0.6,
+    });
   }
 
-  // Sort by confidence score descending, then deduplicate by symbol
+  return options;
+}
+
+/** Sort by confidence descending, drop duplicates, and cap the list. */
+function rankAndLimit(options: SubstitutionOption[]): SubstitutionOption[] {
   const seen = new Set<string>();
   return options
     .sort((a, b) => b.confidenceScore - a.confidenceScore)
@@ -342,4 +377,115 @@ export function getSubstitutions(
       return true;
     })
     .slice(0, 12); // Limit to 12 best options
+}
+
+/**
+ * Substitutions for major pentatonic keys.
+ *
+ * The general engine's categories mostly don't apply here: secondary dominants,
+ * tritone substitutions and modal mixture all reach for notes the five-note
+ * scale doesn't contain, and there is no dominant to substitute *for*. What is
+ * left — and what this offers — is re-colouring the current degree (Am → Am7 →
+ * Asus4), moving to another scale-safe degree that shares notes, the I↔vi
+ * relative pair, and inversions.
+ */
+function getPentatonicSubstitutions(
+  chord: Chord,
+  chordId: string,
+  chordRoot: PitchClass,
+  sourceMidi: number[],
+  chordPcs: Set<PitchClass>,
+  keyRoot: PitchClass,
+): SubstitutionOption[] {
+  const scale = getScaleDefinition(keyRoot, "major_pentatonic");
+  const options: SubstitutionOption[] = [];
+
+  const push = (
+    candidate: PentatonicChord,
+    category: SubstitutionCategory,
+    reason: string,
+    confidenceScore: number
+  ) => {
+    const voiced = voiceNearSource(candidate.pitchClasses, sourceMidi);
+    options.push({
+      id: makeSubId(),
+      sourceChordId: chordId,
+      candidateSymbol: candidate.symbol,
+      candidateRoot: candidate.root,
+      candidateQuality: candidate.quality,
+      candidateNotes: candidate.pitchClasses,
+      candidateMidiNotes: voiced.midi,
+      candidateNotesWithOctave: voiced.notesWithOctave,
+      candidateRomanNumeral: candidate.degreeLabel,
+      category,
+      reason,
+      confidenceScore,
+    });
+  };
+
+  const tonic = scale.pitchClasses[0];
+  const submediant = scale.pitchClasses[4];
+
+  // Identify the source chord canonically rather than by its printed symbol:
+  // display symbols are respelled for the key (A#6 is shown as Bb6 in flat
+  // keys), so a string comparison would miss the chord being substituted and
+  // offer it back as a substitution for itself.
+  const sourceRoot = normalizeRoot(chord.symbol) ?? chordRoot;
+  const sourceSymbolPcs = getChordPitchClasses(chord.symbol);
+
+  const isSameChord = (candidate: PentatonicChord): boolean => {
+    if (candidate.root !== sourceRoot) return false;
+    // Same root and same tones = the same chord however it is spelled. The root
+    // check matters: C6 and Am7 share a pitch-class set but are distinct chords.
+    if (sourceSymbolPcs.length === 0) return candidate.symbol === chord.symbol;
+    return (
+      candidate.pitchClasses.length === sourceSymbolPcs.length &&
+      candidate.pitchClasses.every((pc) => sourceSymbolPcs.includes(pc))
+    );
+  };
+
+  for (const degree of PENTATONIC_CHORD_DEGREES) {
+    for (const candidate of getPentatonicChordVariants(scale, degree)) {
+      if (isSameChord(candidate)) continue;
+
+      // Same root: a re-colouring of the chord that's already there.
+      if (candidate.root === sourceRoot) {
+        push(
+          candidate,
+          "diatonic",
+          `${candidate.degreeLabel} re-coloured as ${candidate.symbol} — every tone stays in the pentatonic scale`,
+          0.7
+        );
+        continue;
+      }
+
+      // I <-> vi: the scale's only two complete triads, a third apart.
+      const isRelativePair =
+        (sourceRoot === tonic && candidate.root === submediant) ||
+        (sourceRoot === submediant && candidate.root === tonic);
+      if (isRelativePair) {
+        push(
+          candidate,
+          "relative",
+          `Relative ${candidate.root === tonic ? "major" : "minor"} — the scale's other complete triad`,
+          0.72
+        );
+        continue;
+      }
+
+      const sharedNotes = candidate.pitchClasses.filter(pc => chordPcs.has(pc));
+      if (sharedNotes.length === 0) continue;
+
+      push(
+        candidate,
+        "diatonic",
+        `Shares ${sharedNotes.length} note${sharedNotes.length > 1 ? "s" : ""} (${sharedNotes.join(", ")}) — ${candidate.degreeLabel} in ${keyRoot} major pentatonic`,
+        0.5 + sharedNotes.length * 0.12
+      );
+    }
+  }
+
+  options.push(...inversionOptions(chord, chordId, chordRoot, sourceMidi));
+
+  return rankAndLimit(options);
 }
