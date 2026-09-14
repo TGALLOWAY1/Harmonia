@@ -441,22 +441,18 @@ const JITTER = 0.5;
  * This is deliberately independent of how the plan was built, so the tertian
  * and pentatonic planners share one code path — and one validation gate.
  */
-function voicePlannedChords(
+/**
+ * Every voicing each chord could take, before the bass plan narrows them.
+ * Generated ahead of the plan so the planner knows which bass pitches are
+ * actually voiceable.
+ */
+function candidateVoicingsFor(
   planned: PlannedAdvancedChord[],
   options: AdvancedProgressionOptions,
-  seed: number,
   mood: ChordMoodProfile
-): AdvancedProgressionResult {
+): number[][][] {
   const { low, high } = clampVoiceRange(options.rangeLow, options.rangeHigh);
-  // Aim at the mood's register rather than the midpoint of the allowed range,
-  // clamped so a mood can colour the texture but never escape the user's range.
-  const center = Math.max(low + 6, Math.min(high - 6, mood.registerCenter));
-  // Seeded, so a given seed still reproduces exactly — but the voicing stage
-  // has a source of variation for breaking near-ties.
-  const voicingRng = createSeededRandom(seed ^ 0x2545f491);
-  const search: VoicingSearch = options.voicingSearch ?? "beam";
-
-  const candidatesPerChord = planned.map((chord) => {
+  return planned.map((chord) => {
     // Density follows the mood, and rises with the chord's own tension so the
     // peak of the phrase is thicker than its opening.
     const tension = chord.tensionLevel ?? 0.5;
@@ -468,16 +464,69 @@ function voicePlannedChords(
       rangeLow: low,
       rangeHigh: high,
     });
-    // The bass-line planner decided what sits underneath this chord; keep only
-    // the candidates that honour it, provided the range allows any at all.
-    if (chord.plannedBass !== undefined) {
-      const wanted = PITCH_CLASSES.indexOf(chord.plannedBass);
-      const honouring = candidates.filter((voicing) => ((Math.min(...voicing) % 12) + 12) % 12 === wanted);
-      if (honouring.length > 0) return honouring;
-    }
     // A range too narrow for any shaped candidate still gets a playable chord.
     return candidates.length > 0 ? candidates : [buildSafeVoicing(chord.pitchClasses, low, high)];
   });
+}
+
+function voicePlannedChords(
+  planned: PlannedAdvancedChord[],
+  options: AdvancedProgressionOptions,
+  seed: number,
+  mood: ChordMoodProfile,
+  allCandidates: number[][][]
+): AdvancedProgressionResult {
+  const { low, high } = clampVoiceRange(options.rangeLow, options.rangeHigh);
+  // Aim at the mood's register rather than the midpoint of the allowed range,
+  // clamped so a mood can colour the texture but never escape the user's range.
+  const center = Math.max(low + 6, Math.min(high - 6, mood.registerCenter));
+  // Seeded, so a given seed still reproduces exactly — but the voicing stage
+  // has a source of variation for breaking near-ties.
+  const voicingRng = createSeededRandom(seed ^ 0x2545f491);
+  const search: VoicingSearch = options.voicingSearch ?? "beam";
+
+  // How strictly each chord's candidates could honour the bass plan: the exact
+  // pitch, only its pitch class, or not at all. Dependent candidates are held
+  // to the same standard so a transform cannot override the plan.
+  const bassAgreement = (chord: PlannedAdvancedChord, voicing: number[]): "pitch" | "pc" | "none" => {
+    const bass = Math.min(...voicing);
+    if (chord.plannedBassMidi !== undefined && bass === chord.plannedBassMidi) return "pitch";
+    if (chord.plannedBass !== undefined && ((bass % 12) + 12) % 12 === PITCH_CLASSES.indexOf(chord.plannedBass)) {
+      return "pc";
+    }
+    return "none";
+  };
+  const strictness: ("pitch" | "pc" | "none")[] = [];
+
+  const candidatesPerChord = planned.map((chord, index) => {
+    const candidates = allCandidates[index] ?? [buildSafeVoicing(chord.pitchClasses, low, high)];
+    // The bass-line planner decided what sits underneath this chord, and at
+    // which pitch; keep only the candidates that honour it, falling back to
+    // the pitch class and then to everything when the range allows nothing
+    // closer.
+    if (chord.plannedBass !== undefined) {
+      const exact = candidates.filter((voicing) => bassAgreement(chord, voicing) === "pitch");
+      if (exact.length > 0) {
+        strictness[index] = "pitch";
+        return exact;
+      }
+      const sameClass = candidates.filter((voicing) => bassAgreement(chord, voicing) === "pc");
+      if (sameClass.length > 0) {
+        strictness[index] = "pc";
+        return sameClass;
+      }
+    }
+    strictness[index] = "none";
+    return candidates;
+  });
+
+  /** Whether a candidate meets the bass standard its chord's regular candidates met. */
+  const honoursPlan = (index: number, voicing: number[]): boolean => {
+    const required = strictness[index] ?? "none";
+    if (required === "none") return true;
+    const agreement = bassAgreement(planned[index], voicing);
+    return agreement === "pitch" || (required === "pc" && agreement === "pc");
+  };
 
   // The register rises with tension, so the phrase's peak sits higher than
   // its opening and its cadence settles back down.
@@ -517,7 +566,8 @@ function voicePlannedChords(
   };
 
   // A chord reached by a Neo-Riemannian transform brings its own voice
-  // leading: hold the common tones, move the rest by the least possible.
+  // leading: hold the common tones, move the rest by the least possible. It
+  // still has to put the planned note in the bass; the plan is not optional.
   const dependentCandidates = (index: number, previous: number[]) => {
     const chord = planned[index];
     if (!chord.transform) return [];
@@ -526,7 +576,7 @@ function voicePlannedChords(
       chord.pitchClasses.map((pc) => PITCH_CLASSES.indexOf(pc)),
       { low, high }
     );
-    return voicing ? [{ voicing, bonus: TRANSFORM_BONUS }] : [];
+    return voicing && honoursPlan(index, voicing) ? [{ voicing, bonus: TRANSFORM_BONUS }] : [];
   };
 
   let chosen: number[][];
@@ -650,19 +700,27 @@ function finishCandidate(params: {
   scalePitchClasses: PitchClass[];
 }): Candidate {
   const { options, seed, mood } = params;
+  // Voicing candidates come first so the planner only asks for bass pitches
+  // that some voicing can actually put in the bass.
+  const candidates = candidateVoicingsFor(params.planned, options, mood);
   const bassPlan = planBassLine(params.planned, {
     tonic: params.tonic,
     cadence: options.cadence ?? "resolve",
     rhythm: mood.harmonicRhythm,
+    range: clampVoiceRange(options.rangeLow, options.rangeHigh),
+    availableBassPitches: candidates.map((list) => new Set(list.map((voicing) => Math.min(...voicing)))),
+    // The bass lives roughly a tenth below the mood's register centre.
+    registerCentre: mood.registerCenter - 10,
     random: createSeededRandom(seed ^ 0x3c6ef372),
   });
   const planned = params.planned.map((chord, idx) => ({
     ...chord,
     plannedBass: bassPlan[idx]?.bass,
+    plannedBassMidi: bassPlan[idx]?.pitch,
     plannedInversion: bassPlan[idx]?.inversion,
   }));
 
-  const result = voicePlannedChords(planned, options, seed, mood);
+  const result = voicePlannedChords(planned, options, seed, mood, candidates);
   if (result.debug) {
     result.debug.tensionCurve = params.tensionCurve;
     result.debug.brightnessTargets = params.brightnessTargets;

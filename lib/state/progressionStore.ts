@@ -561,7 +561,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-            ...describeInversion(newMidiNotes, chord.root),
+            // The edit may have changed which chord this is; the root, and the
+            // inversion read against it, follow the new interpretation.
+            root: interpretation.root ?? chord.root,
+            ...describeInversion(newMidiNotes, interpretation.root ?? chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
@@ -601,7 +604,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-            ...describeInversion(newMidiNotes, chord.root),
+            // The edit may have changed which chord this is; the root, and the
+            // inversion read against it, follow the new interpretation.
+            root: interpretation.root ?? chord.root,
+            ...describeInversion(newMidiNotes, interpretation.root ?? chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
@@ -648,7 +654,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
-            ...describeInversion(newMidiNotes, chord.root),
+            // The edit may have changed which chord this is; the root, and the
+            // inversion read against it, follow the new interpretation.
+            root: interpretation.root ?? chord.root,
+            ...describeInversion(newMidiNotes, interpretation.root ?? chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>

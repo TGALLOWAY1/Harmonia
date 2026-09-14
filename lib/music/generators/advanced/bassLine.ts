@@ -10,8 +10,13 @@ import type { CadenceMode, PlannedAdvancedChord } from "./types";
  * it was whatever fell out of the voicing search: the lowest note of the
  * cheapest candidate, chosen chord by chord with no notion of inversion. This
  * layer decides the bass *first* — which chord tone sits underneath each
- * chord — as a small dynamic programme over the whole progression, and the
- * voicing stage then realises it.
+ * chord, and in which octave — as a small dynamic programme over the whole
+ * progression, and the voicing stage then realises it.
+ *
+ * The plan is made in concrete MIDI pitches inside the bass register of the
+ * requested range, not in pitch classes: a "step down" from C to B♭ at the
+ * bottom of the range would otherwise be realised an octave up, as a leap of
+ * a seventh, because no lower B♭ exists to voice.
  *
  * Rules encoded (the standard ones from any harmony text):
  * - root position at structural arrivals — the opening chord, the cadence,
@@ -26,13 +31,22 @@ import type { CadenceMode, PlannedAdvancedChord } from "./types";
 export type BassPlanEntry = {
   /** Pitch class chosen for the bass. */
   bass: PitchClass;
+  /** The exact MIDI pitch the bass should sound at. */
+  pitch: number;
   /** 0 root, 1 third, 2 fifth, 3 seventh. */
   inversion: number;
   /** Why this bass was chosen — for debugging and the assessment doc. */
   reason: string;
 };
 
-type BassOption = { pc: number; inversion: number; interval: number };
+export type BassRange = { low: number; high: number };
+
+/** The range the app ships with, used when a caller gives none. */
+const DEFAULT_RANGE: BassRange = { low: 48, high: 79 };
+
+type BassTone = { pc: number; inversion: number; interval: number };
+
+type BassOption = BassTone & { pitch: number };
 
 type State = {
   option: BassOption;
@@ -51,11 +65,11 @@ function intervalsFromRoot(chord: PlannedAdvancedChord): number[] {
 }
 
 /** Which chord tones may sit in the bass, and which inversion each implies. */
-export function bassOptionsFor(chord: PlannedAdvancedChord): BassOption[] {
+export function bassOptionsFor(chord: PlannedAdvancedChord): BassTone[] {
   const rootIndex = PITCH_CLASSES.indexOf(chord.root);
   const intervals = new Set(intervalsFromRoot(chord));
   const hasSeventh = intervals.has(10) || intervals.has(11);
-  const options: BassOption[] = [{ pc: rootIndex, inversion: 0, interval: 0 }];
+  const options: BassTone[] = [{ pc: rootIndex, inversion: 0, interval: 0 }];
 
   for (const interval of intervals) {
     let inversion = -1;
@@ -73,10 +87,51 @@ export function bassOptionsFor(chord: PlannedAdvancedChord): BassOption[] {
   return options;
 }
 
-/** Shortest signed distance between two pitch classes, in −6..6. */
-function signedInterval(from: number, to: number): number {
-  const up = (to - from + 12) % 12;
-  return up <= 6 ? up : up - 12;
+/**
+ * The pitches a bass note may take: the bottom of the range up to an octave
+ * and a fourth above it, leaving room for the upper voices underneath the
+ * ceiling. For the app's C3-G5 range that is C3-E4.
+ */
+export function bassRegister(range: BassRange): { floor: number; ceiling: number } {
+  const floor = Math.min(range.low, range.high);
+  const top = Math.max(range.low, range.high);
+  const ceiling = Math.max(floor, Math.min(floor + 16, top - 7));
+  return { floor, ceiling };
+}
+
+/**
+ * Every pitch in the bass register carrying one of the chord's bass tones.
+ *
+ * When the caller says which bass pitches its voicings can actually produce,
+ * the plan is restricted to those, so a planned step is never realised an
+ * octave away because the exact pitch had no voicing (a close voicing with
+ * its bass on C3 fails the low-register spacing rule, for instance). Pitches
+ * outside the register are accepted only when nothing inside it is voiceable.
+ */
+function bassPitchOptions(
+  chord: PlannedAdvancedChord,
+  range: BassRange,
+  available?: ReadonlySet<number>
+): BassOption[] {
+  const { floor, ceiling } = bassRegister(range);
+  const tones = bassOptionsFor(chord);
+  const inRegister: BassOption[] = [];
+  for (const tone of tones) {
+    for (let pitch = floor; pitch <= ceiling; pitch++) {
+      if (((pitch % 12) + 12) % 12 === tone.pc) inRegister.push({ ...tone, pitch });
+    }
+  }
+  if (!available || available.size === 0) return inRegister;
+
+  const voiceable = inRegister.filter((option) => available.has(option.pitch));
+  if (voiceable.length > 0) return voiceable;
+
+  const anywhere: BassOption[] = [];
+  for (const pitch of [...available].sort((a, b) => a - b)) {
+    const tone = tones.find((t) => t.pc === ((pitch % 12) + 12) % 12);
+    if (tone) anywhere.push({ ...tone, pitch });
+  }
+  return anywhere.length > 0 ? anywhere : inRegister;
 }
 
 export function planBassLine(
@@ -85,6 +140,15 @@ export function planBassLine(
     tonic: PitchClass;
     cadence: CadenceMode;
     rhythm?: HarmonicRhythmProfile;
+    /** The voicing range; the bass is planned inside its lower part. */
+    range?: BassRange;
+    /** Per chord, the bass pitches the voicer can actually realise. */
+    availableBassPitches?: ReadonlySet<number>[];
+    /**
+     * MIDI pitch the bass should gravitate to, so a low, dark mood and a high,
+     * airy one plan different bass registers. Clamped into the bass register.
+     */
+    registerCentre?: number;
     /** Seeded source for breaking near-ties, so equally good plans vary by seed. */
     random?: () => number;
   }
@@ -92,11 +156,20 @@ export function planBassLine(
   const n = planned.length;
   if (n === 0) return [];
   const tonicIndex = PITCH_CLASSES.indexOf(params.tonic);
+  const range = params.range ?? DEFAULT_RANGE;
+  const { floor, ceiling } = bassRegister(range);
+  // The bass sits most naturally in the lower half of its register, unless
+  // the mood asks for somewhere else.
+  const registerCentre = Math.max(
+    floor,
+    Math.min(ceiling, params.registerCentre ?? floor + Math.min(5, ceiling - floor))
+  );
   const jitter = () => (params.random ? (params.random() - 0.5) * 0.4 : 0);
 
   const emission = (index: number, chord: PlannedAdvancedChord, option: BassOption): number => {
-    if (chord.kind === "passing") return 0.5;
-    let cost = INVERSION_COST[option.inversion] ?? 2;
+    const register = Math.abs(option.pitch - registerCentre) * 0.05;
+    if (chord.kind === "passing") return 0.5 + register;
+    let cost = (INVERSION_COST[option.inversion] ?? 2) + register;
     const isArrival = index === 0 || index === n - 1;
     if (option.inversion !== 0) {
       if (isArrival) cost += 6;
@@ -114,7 +187,9 @@ export function planBassLine(
     chord: PlannedAdvancedChord,
     option: BassOption
   ): { cost: number; stepDirection: number; reason: string } => {
-    const delta = signedInterval(previous.option.pc, option.pc);
+    // Real semitones between the two pitches, so a step is a step and a
+    // seventh is a seventh whatever the pitch classes suggest.
+    const delta = option.pitch - previous.option.pitch;
     const size = Math.abs(delta);
     const direction = Math.sign(delta);
     let cost = 0;
@@ -140,8 +215,14 @@ export function planBassLine(
     } else if (size === 6) {
       cost += 2.0;
       reason = "tritone";
+    } else if (size === 12) {
+      cost += 0.3; // an octave is idiomatic for a bass, if not a line
+      reason = "octave";
+    } else if (size > 12) {
+      cost += 2.0;
+      reason = "leap";
     } else {
-      cost += 0.5;
+      cost += 0.8; // sixths and sevenths: disjunct
       reason = "leap";
     }
 
@@ -163,7 +244,7 @@ export function planBassLine(
         cost -= 2.4; // passing 6-4 on a stepwise line
         reason = "passing 6-4";
         passingSixFour = true;
-      } else if (flanksStable && size === 0 && beforePrevious && beforePrevious.pc === previous.option.pc) {
+      } else if (flanksStable && size === 0 && beforePrevious && beforePrevious.pitch === previous.option.pitch) {
         cost -= 2.5; // pedal 6-4: the bass holds under a neighbour chord
         reason = "pedal 6-4";
       } else {
@@ -192,7 +273,8 @@ export function planBassLine(
   };
 
   // Dynamic programme, chord by chord.
-  let states: State[] = bassOptionsFor(planned[0]).map((option) => ({
+  const availableFor = (index: number) => params.availableBassPitches?.[index];
+  let states: State[] = bassPitchOptions(planned[0], range, availableFor(0)).map((option) => ({
     option,
     stepDirection: 0,
     total: emission(0, planned[0], option) + jitter(),
@@ -205,7 +287,7 @@ export function planBassLine(
     const previousChord = planned[index - 1];
     const next: State[] = [];
 
-    for (const option of bassOptionsFor(chord)) {
+    for (const option of bassPitchOptions(chord, range, availableFor(index))) {
       const emit = emission(index, chord, option) + jitter();
       let best: State | null = null;
       for (const previous of states) {
@@ -232,6 +314,7 @@ export function planBassLine(
   while (cursor) {
     plan.unshift({
       bass: PITCH_CLASSES[cursor.option.pc],
+      pitch: cursor.option.pitch,
       inversion: cursor.option.inversion,
       reason: cursor.reason,
     });

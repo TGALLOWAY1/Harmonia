@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bassOptionsFor, inversionOfVoicing, planBassLine } from "@/lib/music/generators/advanced/bassLine";
+import { bassOptionsFor, bassRegister, inversionOfVoicing, planBassLine } from "@/lib/music/generators/advanced/bassLine";
 import type { PlannedAdvancedChord } from "@/lib/music/generators/advanced/types";
 
 const chord = (
@@ -11,6 +11,8 @@ const chord = (
 ): PlannedAdvancedChord => ({ degreeLabel: symbol, symbol, root, pitchClasses, kind: "diatonic", ...over });
 
 const I = chord("C", "C", ["C", "E", "G"]);
+const iii = chord("Em", "E", ["E", "G", "B"]);
+const ii = chord("Dm", "D", ["D", "F", "A"]);
 const IV = chord("F", "F", ["F", "A", "C"]);
 const V = chord("G", "G", ["G", "B", "D"], { isDominant: true });
 const vi = chord("Am", "A", ["A", "C", "E"]);
@@ -40,12 +42,25 @@ describe("bass-line planning", () => {
     expect(plan[3]).toMatchObject({ bass: "C", inversion: 0 });
   });
 
-  it("buys stepwise bass motion with a first inversion", () => {
-    // I - V - vi - IV in root position leaps C G A F; a V6 turns the opening
-    // into a scale line C B A.
+  it("buys a stepwise bass line with a first inversion", () => {
+    // I - iii - ii - V: with ii in first inversion the bass walks E - F - G
+    // into the dominant instead of dropping to D.
+    const plan = planBassLine([I, iii, ii, V, I], { tonic: "C", cadence: "resolve" });
+    expect(plan[2]).toMatchObject({ bass: "F", inversion: 1 });
+    expect(plan[2].reason).toMatch(/step|scale line/);
+    expect(plan[3]).toMatchObject({ bass: "G", inversion: 0 });
+    expect(plan[3].reason).toMatch(/scale line/);
+  });
+
+  it("keeps the bass within a fifth of itself and moves by step somewhere", () => {
     const plan = planBassLine([I, V, vi, IV, I], { tonic: "C", cadence: "resolve" });
-    expect(plan[1]).toMatchObject({ bass: "B", inversion: 1 });
-    expect(plan[2]).toMatchObject({ bass: "A", inversion: 0 });
+    let steps = 0;
+    for (let i = 1; i < plan.length; i++) {
+      const interval = Math.abs(plan[i].pitch - plan[i - 1].pitch);
+      expect(interval).toBeLessThanOrEqual(7);
+      if (interval > 0 && interval <= 2) steps++;
+    }
+    expect(steps).toBeGreaterThan(0);
   });
 
   it("never picks a second inversion without a 6-4 idiom", () => {
@@ -63,9 +78,31 @@ describe("bass-line planning", () => {
       if (entry.inversion !== 3) return;
       const next = plan[i + 1];
       expect(next).toBeDefined();
-      const pcs = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-      const delta = (pcs.indexOf(entry.bass) - pcs.indexOf(next.bass) + 12) % 12;
-      expect([1, 2]).toContain(delta);
+      // Measured in real pitches, so "down by step" cannot be an upward seventh.
+      expect([1, 2]).toContain(entry.pitch - next.pitch);
+    });
+  });
+
+  // Regression: the plan used to be made in pitch classes, so a "step down"
+  // from C to B♭ at the bottom of the range was realised an octave up, as a
+  // leap of a seventh, because no lower B♭ existed to voice.
+  it("plans concrete pitches, so a step stays a step at the range floor", () => {
+    const bVII = chord("A#7", "A#", ["A#", "D", "F", "G#"]);
+    const plan = planBassLine([I, bVII, IV, V, I], { tonic: "C", cadence: "resolve", range: { low: 48, high: 79 } });
+    expect(plan[1].reason).toMatch(/step/);
+    expect(Math.abs(plan[1].pitch - plan[0].pitch)).toBeLessThanOrEqual(2);
+    plan.forEach((entry) => expect(entry.pitch % 12).toBe(["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].indexOf(entry.bass)));
+  });
+
+  it("keeps every planned pitch inside the bass register of the range", () => {
+    const range = { low: 48, high: 79 };
+    const { floor, ceiling } = bassRegister(range);
+    expect(floor).toBe(48);
+    expect(ceiling).toBe(64);
+    const plan = planBassLine([I, vi, IV, V7, I, IV, V, I], { tonic: "C", cadence: "resolve", range });
+    plan.forEach((entry) => {
+      expect(entry.pitch).toBeGreaterThanOrEqual(floor);
+      expect(entry.pitch).toBeLessThanOrEqual(ceiling);
     });
   });
 

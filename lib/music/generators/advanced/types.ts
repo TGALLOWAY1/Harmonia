@@ -138,6 +138,8 @@ export type PlannedAdvancedChord = {
   transform?: string;
   /** Bass pitch class chosen by the bass-line planner. */
   plannedBass?: PitchClass;
+  /** The exact MIDI pitch the planner wants in the bass. */
+  plannedBassMidi?: number;
   /** Inversion the bass-line planner asked for (0 = root position). */
   plannedInversion?: number;
 };
@@ -202,7 +204,7 @@ export type AdvancedProgressionResult = {
     /** Brightness target per slot. */
     brightnessTargets?: number[];
     /** The bass-line planner's choice and reason for each chord. */
-    bassPlan?: { bass: PitchClass; inversion: number; reason: string }[];
+    bassPlan?: { bass: PitchClass; pitch: number; inversion: number; reason: string }[];
   };
 };
 

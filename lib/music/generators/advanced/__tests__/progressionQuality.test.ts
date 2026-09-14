@@ -370,6 +370,54 @@ describe("bass-line planning", () => {
     const stats = sweepBass({ numChords: 5 });
     expect(stats.rootArrivals / stats.arrivals).toBeGreaterThan(0.97);
   });
+
+  // Regression: the plan was made in pitch classes and the voicer chose the
+  // octave, so a planned step could be realised as a leap of a seventh near
+  // the bottom of the range (C ionian, six chords, seed 55).
+  it("realises the planned bass pitch, so planned steps stay steps", () => {
+    let planned = 0;
+    let pitchMisses = 0;
+    let stepsBecameLeaps = 0;
+    for (const voicingStyle of ["auto", "open", "drop2", "closed"] as const) {
+      for (let seed = 0; seed < 150; seed++) {
+        const result = generateAdvancedProgression(options(2, { seed, numChords: 6, voicingStyle }));
+        const bass = result.chords.map((c) => Math.min(...c.midi));
+        result.chords.forEach((_, i) => {
+          const plan = result.debug?.bassPlan?.[i];
+          if (!plan) return;
+          planned++;
+          if (bass[i] !== plan.pitch) pitchMisses++;
+          if (i > 0 && /step|scale line|6-4|seventh resolves/.test(plan.reason) && Math.abs(bass[i] - bass[i - 1]) > 2) {
+            stepsBecameLeaps++;
+          }
+        });
+      }
+    }
+    expect(planned).toBeGreaterThan(0);
+    expect(stepsBecameLeaps).toBe(0);
+    expect(pitchMisses / planned).toBeLessThan(0.005);
+  });
+
+  // Regression: the parsimonious voicing of a Neo-Riemannian transform
+  // bypassed the planned-bass filter (C ionian, open voicing, seed 252 put C
+  // under a root-position Fm7).
+  it("holds transform voicings to the bass plan", () => {
+    const specific = generateAdvancedProgression(options(2, { seed: 252, voicingStyle: "open" }));
+    specific.chords.forEach((chord, i) => {
+      expect(chord.bass).toBe(specific.debug?.bassPlan?.[i]?.bass);
+    });
+
+    let transformed = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, mood: "energetic", voicingStyle: "open" }));
+      result.chords.forEach((chord, i) => {
+        if (!result.debug?.planned[i]?.transform) return;
+        transformed++;
+        expect(chord.bass).toBe(result.debug?.bassPlan?.[i]?.bass);
+      });
+    }
+    expect(transformed).toBeGreaterThan(0);
+  });
 });
 
 describe("modal interchange", () => {
