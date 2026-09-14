@@ -30,6 +30,7 @@ npm run lint      # Run ESLint
 - The `Chord` interface in `lib/theory/progressionTypes.ts` is the canonical chord type used across the app
 - Creative iteration features (substitution, mutation, piano roll editing) track source provenance via `ChordSourceType`
 - Music theory operations should use deterministic rules, not randomness where possible
+- Scales are not all seven notes — `major_pentatonic` has five. Read `ScaleDefinition.pitchClasses.length` rather than assuming 7 degrees, and route pentatonic through `lib/theory/pentatonic.ts` instead of the stacked-thirds helpers in `chord.ts`
 - Piano roll and chord cards are visually aligned using flex multipliers based on `durationClass`
 
 ## File Structure Highlights
@@ -43,6 +44,7 @@ npm run lint      # Run ESLint
 | `lib/theory/` | Core music theory: scales, chords, MIDI, pitch classes |
 | `lib/music/generators/advanced/` | Advanced progression generation pipeline |
 | `lib/music/generators/melody/` | Phrase-based melody engine (phrase plan, contour, motifs, moods, ornaments, scoring) |
+| `lib/theory/pentatonic.ts` | Scale-safe chord vocabulary + templates for major pentatonic (no stacked thirds) |
 | `lib/audio/instrumentCatalog.ts` | Tone-free instrument metadata (ids, labels, quality tiers) |
 | `lib/audio/synthPresets.ts` | Instrument registry: lightweight synth + high-quality sampler realizations per instrument |
 | `lib/state/audioSettingsStore.ts` | Persisted audio settings (instrument, Lightweight/High quality mode) |

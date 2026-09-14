@@ -1,6 +1,7 @@
 import type { PitchClass } from "../theory/midiUtils";
 import type { Mode } from "../theory/harmonyEngine";
 import { buildTriadFromRoot, formatChordSymbol, buildTriadFromScale, buildSeventhFromScale } from "../theory/chord";
+import { getMajorPentatonicChords } from "../theory/pentatonic";
 import { getScaleDefinition } from "../theory/scale";
 import { pitchClassToMidi } from "../theory/midiUtils";
 import type { ScaleType } from "../theory/types";
@@ -15,6 +16,7 @@ function modeToScaleType(mode: Mode): ScaleType {
     case "dorian": return "dorian";
     case "mixolydian": return "mixolydian";
     case "phrygian": return "phrygian";
+    case "major_pentatonic": return "major_pentatonic";
     default: return "major";
   }
 }
@@ -45,6 +47,18 @@ function getNumerals(mode: Mode): string[] {
 }
 
 export function getDiatonicChordsForKey(keyRoot: PitchClass, mode: Mode): DiatonicChordInfo[] {
+  // Major pentatonic has five degrees and no stack-of-thirds harmony, so its
+  // palette comes from the curated scale-safe vocabulary instead.
+  if (mode === "major_pentatonic") {
+    return getMajorPentatonicChords(keyRoot).map((chord) => ({
+      root: chord.root,
+      quality: chord.quality,
+      symbol: chord.symbol,
+      romanNumeral: chord.degreeLabel,
+      pitchClasses: chord.pitchClasses,
+    }));
+  }
+
   const scaleType = modeToScaleType(mode);
   const scale = getScaleDefinition(keyRoot, scaleType);
   const numerals = getNumerals(mode);

@@ -11,7 +11,10 @@ export type ScaleType =
   | "natural_minor"
   | "dorian"
   | "mixolydian"
-  | "phrygian";
+  | "phrygian"
+  // Five-note scale. Everything that consumes a ScaleDefinition must therefore
+  // read `pitchClasses.length` rather than assuming seven degrees.
+  | "major_pentatonic";
 
 export type ScaleDefinition = {
   root: PitchClass;

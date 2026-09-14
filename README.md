@@ -68,7 +68,7 @@ Harmonia is a deep dive into the hard parts of **computational music theory** an
 |---|---|---|---|
 | **Algorithmic progression generation** | Random diatonic chords sound aimless; real progressions have *direction*. | A phrase-structure model assigns each chord a role (opening → pre-dominant → dominant → cadence) along a per-length **tension curve**, then selects degrees to match. | TypeScript, seeded LCG RNG |
 | **Voice-leading optimization** | Connecting chords smoothly is a combinatorial search; bad voice leading produces parallel fifths and ugly leaps. | A weighted **cost function** scores candidate voicings across 7 factors (smoothness, bass motion, common tones, parallel perfects, voice crossing, span, contrary motion) and minimizes it. | Custom search + heuristics |
-| **Chord-symbol ↔ pitch-class engine** | The notes you *see* must always match the chord *label* across 12 roots × 5 modes × 25+ qualities. | A single source of truth (`getChordPitchClasses`) derives allowed pitch classes directly from the symbol; any voicing that drifts is logged and rebuilt safely. | Deterministic parser |
+| **Chord-symbol ↔ pitch-class engine** | The notes you *see* must always match the chord *label* across 12 roots × 6 scales × 25+ qualities. | A single source of truth (`getChordPitchClasses`) derives allowed pitch classes directly from the symbol; any voicing that drifts is logged and rebuilt safely. | Deterministic parser |
 | **Phrase-based melody generation** | Note-by-note melodies wander; catchy melodies have motifs, contour, and call-and-response. | A top-down pipeline: phrase plan → contour → motif → state/vary/answer/densify → resolve, then **8 candidates scored on 8 catchiness dimensions** and the best kept. | Mulberry32 PRNG, Pearson correlation |
 | **Real-time, glitch-free audio** | Mobile browsers start the audio context *suspended*; sample loads stall on flaky networks. | `ensureAudioReady()` unlocks from a real gesture (idempotent, never swallows errors); samplers **hot-swap** over a lightweight synth twin so playback never blocks or changes timbre family. | Tone.js, Web Audio API |
 | **"Hand-played" humanization** | Quantized chords sound robotic. | A pure, dependency-free module applies per-note velocity (±12%) and timing jitter (±12 ms), with block / strum / arpeggio articulations — computed as data, not real-time. | Pure TS (testable) |
@@ -126,7 +126,7 @@ Theory learned silently is theory half-learned. Harmonia plays **every** interac
 <td width="50%" valign="top">
 
 ### 🎼 Chord Progression Generator
-Generate coherent progressions in any key across **5 modes** (Major, Minor, Dorian, Mixolydian, Phrygian) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility.
+Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility.
 
 </td>
 <td width="50%" valign="top">
@@ -335,6 +335,39 @@ flowchart LR
 - **Chromatic-density validation** — A **2-of-3 rule** ensures that in any 4-chord window at least two chords remain diatonic; the least-important chromatic chord is dropped when violated.
 - **Voicing** — Candidate voicings are generated across styles (closed, open, drop-2, drop-3, spread), octaves, and inversions. Tone selection always keeps root/3rd/7th; the 5th is dropped first when space is tight.
 - **Voice leading** — A weighted cost function (below) picks the voicing that connects most smoothly from the previous chord.
+- **Major pentatonic** — Takes a dedicated planning path (`lib/theory/pentatonic.ts`), because the five-note scale breaks the assumptions every other stage makes. See below.
+
+<details>
+<summary><b>Why major pentatonic needs its own harmony</b></summary>
+
+<br/>
+
+Major pentatonic is the major scale with its two half-steps removed — `1 2 3 5 6`, so C major pentatonic is **C D E G A**. Dropping the 4th and 7th is what gives the scale its open, can't-sound-wrong character: there is no tritone and no leading tone anywhere in it.
+
+That also means the familiar major-key chords aren't available. With no F and no B, **IV** (F A C), **V** (G B D) and **iii** (E G B) can't be built as ordinary triads, and "stack every other scale degree" — the recipe the rest of the engine runs on — assumes seven degrees, not five.
+
+So the generator applies one rule instead: **every chord tone must be a note of the scale**. Working that through leaves exactly four usable chord roots:
+
+| Degree | Root | Chords | Why |
+|---|---|---|---|
+| **I** | C | `C` · `C6` · `Cadd9` · `C6(9)` · `Csus2` | full major triad is in the scale |
+| **II** | D | `Dsus4` · `D7sus4` · `Dsus2` · `D7sus2` | no F, so no 3rd → sus |
+| *(III)* | E | — none — | needs B for any 3rd or 7th |
+| **V** | G | `Gsus4` · `Gsus2` | no B, so no 3rd → sus |
+| **vi** | A | `Am` · `Am7` · `Asus4` | full minor triad is in the scale |
+
+The missing III is a property of the scale, not an oversight: E has no scale-mate a 3rd or 7th away, so it's used melodically but never as a chord root.
+
+Two further consequences follow from having no leading tone:
+
+- **The complexity dial adds scale tones, not chromatic tension** — 6ths, 9ths and sus 7ths (`C` → `C6` → `Cadd9` → `C6(9)`) instead of the altered dominants used elsewhere.
+- **Chromatic substitutions are skipped** — secondary dominants, tritone subs and passing diminished each require a note the scale doesn't contain, which is exactly what a pentatonic setting is asking to avoid. The toggles stay in the UI for other scales; here they're inert.
+
+The phrase machinery is unchanged, so progressions still open and cadence where a listener expects — they just lean on the I↔vi pull and use II/V as colour, the way a folk or gospel vamp does: `C6 – D7sus4 – Gsus2 – C6`, or `Am7 – D7sus4 – Gsus2 – C6`.
+
+A test sweep asserts the guarantee directly: across all 12 keys, 4 complexity levels, and every seed and length, **no generated voicing ever contains a note outside the scale**.
+
+</details>
 
 <details>
 <summary><b>Voice-leading cost function (7 weighted factors)</b></summary>
@@ -387,8 +420,9 @@ Melodies are composed **top-down**, not note-by-note:
 | Concept | Module | Representation |
 |---|---|---|
 | **Notes / pitch classes** | `midiUtils.ts` | 12 canonical sharp-spelled pitch classes; MIDI ↔ pitch-class conversion. |
-| **Intervals & scales** | `scale.ts` | Interval patterns (W-W-H-…) rotated from a root → 5 modes. |
+| **Intervals & scales** | `scale.ts` | Interval patterns (W-W-H-…) rotated from a root → 5 seven-note modes + major pentatonic. |
 | **Chords** | `chord.ts`, `chordSymbol.ts` | Diatonic triads/7ths; `getChordPitchClasses` parses any symbol (25+ qualities) → pitch classes. |
+| **Pentatonic harmony** | `pentatonic.ts` | Scale-safe chord vocabulary for major pentatonic, where stacked thirds don't apply. |
 | **Roman numerals / function** | `harmonyEngine.ts`, `degreeInfo.ts` | Degree → numeral + harmonic function (tonic / subdominant / dominant). |
 | **Circle of fifths** | `circle.ts` | 12-node geometry, relative major/minor, IV/V neighbors. |
 | **Inversions** | `inversionLabel.ts` | Root / 1st / 2nd / 3rd / slash, inferred from the bass note. |
@@ -415,7 +449,7 @@ flowchart TD
 
 <br/>
 
-- **Modes (5):** Major, Natural Minor, Dorian, Mixolydian, Phrygian
+- **Scales (6):** Major, Natural Minor, Dorian, Mixolydian, Phrygian, Major Pentatonic (5-note)
 - **Chord qualities (25+):** `maj`, `min`, `dim`, `aug`, `sus2`, `sus4`, `6`, `min6`, `7`, `maj7`, `min7`, `m7b5`, `dim7`, `9`, `maj9`, `min9`, `add9`, `7b9`, `7#9`, `7b5`, `7#5`, `7alt`, `7sus4`, `7sus2`, …
 - **Substitution categories (6):** diatonic, relative, dominant-function, tritone, modal-mixture, inversion
 - **Voicing styles (6):** auto, closed, open, drop-2, drop-3, spread
@@ -487,9 +521,10 @@ Harmonia/
 │   └── globals.css               #   Tailwind base styles
 │
 ├── lib/
-│   ├── theory/                   # 🎼 Tone-free music theory core (13 modules)
+│   ├── theory/                   # 🎼 Tone-free music theory core (14 modules)
 │   │   ├── chordSymbol.ts         #   getChordPitchClasses — the single source of truth
 │   │   ├── scale.ts · circle.ts   #   Scales/modes · circle of fifths
+│   │   ├── pentatonic.ts          #   Scale-safe chord vocabulary for major pentatonic
 │   │   ├── harmonyEngine.ts        #   Roman numerals + functional harmony
 │   │   ├── spelling.ts · midiUtils.ts · inversionLabel.ts
 │   │   └── progressionTypes.ts     #   Canonical `Chord` interface
@@ -546,9 +581,9 @@ Harmonia/
 | **Composition engines** | 2 (advanced progression + phrase-based melody) |
 | **Zustand state stores** | 6 |
 | **Audio engine modules** (`lib/audio/`) | 6 |
-| **Test suites** (active, Vitest) | 20 |
-| **Test LOC** | ~1,700 |
-| **Supported scales / modes** | 5 |
+| **Test suites** (active, Vitest) | 22 |
+| **Test LOC** | ~2,100 |
+| **Supported scales / modes** | 6 |
 | **Supported chord qualities** | 25+ |
 | **Progression complexity levels** | 4 |
 | **Substitution categories** | 6 |

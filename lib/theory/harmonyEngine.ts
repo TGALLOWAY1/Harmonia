@@ -3,7 +3,10 @@ export type Mode =
   | "aeolian"
   | "dorian"
   | "mixolydian"
-  | "phrygian";
+  | "phrygian"
+  // Five-note scale rather than a mode of the major scale. Its harmony is
+  // built from a separate vocabulary — see lib/theory/pentatonic.ts.
+  | "major_pentatonic";
 
 export type Depth = 0 | 1 | 2;
 
@@ -47,6 +50,7 @@ const MODE_TONICS: Record<Mode, Degree> = {
   dorian: "i",
   mixolydian: "I",
   phrygian: "i",
+  major_pentatonic: "I",
 };
 
 const ROMAN_NUMERALS_MAJOR: Degree[] = ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
@@ -84,6 +88,10 @@ export function generateProgression(params: {
     return [];
   }
 
+  if (mode === "major_pentatonic") {
+    return generatePentatonicProgression(numChords);
+  }
+
   const isMinorKey = mode !== "ionian";
   const scaleNumerals = isMinorKey ? ROMAN_NUMERALS_MINOR : ROMAN_NUMERALS_MAJOR;
   const tonic = getTonicForMode(mode);
@@ -107,6 +115,28 @@ export function generateProgression(params: {
     });
   }
 
+  return chords;
+}
+
+/**
+ * Major pentatonic has no 4th or 7th degree, so the usual triads on ii, iii, IV
+ * and V don't exist. Only four degrees can carry a chord, and two of them are
+ * necessarily sus chords. See lib/theory/pentatonic.ts for the derivation.
+ */
+const PENTATONIC_CHORDS: GeneratedChord[] = [
+  { degree: "I", quality: "" },       // major triad
+  { degree: "ii", quality: "sus4" },  // no 3rd available
+  { degree: "V", quality: "sus4" },   // no 3rd available
+  { degree: "vi", quality: "m" },     // minor triad
+];
+
+function generatePentatonicProgression(numChords: number): GeneratedChord[] {
+  // Open on the tonic, then draw from the scale-safe chords.
+  const chords: GeneratedChord[] = [PENTATONIC_CHORDS[0]];
+  for (let i = 1; i < numChords; i++) {
+    const pick = Math.floor(Math.random() * PENTATONIC_CHORDS.length);
+    chords.push(PENTATONIC_CHORDS[pick]);
+  }
   return chords;
 }
 

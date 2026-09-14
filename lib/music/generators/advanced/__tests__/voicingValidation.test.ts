@@ -5,11 +5,18 @@ import { getChordPitchClasses, toPitchClass } from "@/lib/theory/chordSymbol";
 import type { PitchClass } from "@/lib/theory/midiUtils";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 
-// All 12 sharp-only roots and the 5 modes the generator supports.
+// All 12 sharp-only roots and every scale the generator supports.
 const ROOTS: PitchClass[] = [
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
-const MODES: Mode[] = ["ionian", "aeolian", "dorian", "mixolydian", "phrygian"];
+const MODES: Mode[] = [
+  "ionian",
+  "aeolian",
+  "dorian",
+  "mixolydian",
+  "phrygian",
+  "major_pentatonic",
+];
 const COMPLEXITIES: AdvancedComplexity[] = [1, 2, 3, 4];
 
 function baseOptions(

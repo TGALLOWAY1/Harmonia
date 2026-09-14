@@ -88,6 +88,8 @@ function formatScaleType(type: ScaleType): string {
       return "Mixolydian";
     case "phrygian":
       return "Phrygian";
+    case "major_pentatonic":
+      return "major pentatonic";
   }
 }
 

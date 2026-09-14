@@ -3,6 +3,7 @@ import {
   getMajorScale,
   getNaturalMinorScale,
   getDorianScale,
+  getMajorPentatonicScale,
 } from "../scale";
 
 describe("scale golden tests", () => {
@@ -21,6 +22,22 @@ describe("scale golden tests", () => {
       expect(scale.root).toBe("A");
       expect(scale.type).toBe("natural_minor");
       expect(scale.pitchClasses).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
+    });
+  });
+
+  describe("C major pentatonic", () => {
+    it("returns C D E G A — the major scale without its 4th and 7th", () => {
+      const scale = getMajorPentatonicScale("C");
+      expect(scale.root).toBe("C");
+      expect(scale.type).toBe("major_pentatonic");
+      expect(scale.pitchClasses).toEqual(["C", "D", "E", "G", "A"]);
+    });
+  });
+
+  describe("F# major pentatonic", () => {
+    it("returns F# G# A# C# D#", () => {
+      const scale = getMajorPentatonicScale("F#");
+      expect(scale.pitchClasses).toEqual(["F#", "G#", "A#", "C#", "D#"]);
     });
   });
 
