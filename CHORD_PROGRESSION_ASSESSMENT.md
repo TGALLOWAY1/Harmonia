@@ -27,7 +27,9 @@ The analogy: the previous audit (`CHORD_ENGINE_AUDIT.md`, March) rebuilt the eng
 | 4 | No emotional parameter for chords at all | Melody has a 13-field mood model; chords have 0 | `advanced/types.ts:73-88` |
 | 5 | "Rich" (5 voices) is **thinner** than "Standard" (4) | 3 distinct pitch classes vs 4; 7 candidates vs 14 | `voicing.ts:93-99` |
 
-Finding 2 deserves emphasis. At the shipped defaults (C ionian, 4 chords, complexity 2) only two `random()` draws ever execute. Running the real generator over **20,000 seeds produced 24 distinct MIDI sequences**. A user clicking Generate is drawing from a 24-card deck with replacement; by the tenth click they have very likely seen everything the product can make.
+Finding 2 deserves emphasis. At the shipped defaults (C ionian, 4 chords, complexity 2) only two `random()` draws ever execute. Running the real generator over **20,000 seeds produced 24 distinct MIDI sequences**, the most common accounting for 10.1% of generations and the top three for 23.8%.
+
+A user clicking Generate is drawing from a 24-card deck with replacement. Measured against that empirical distribution: a repeat is **92.0% likely within ten clicks**, and ten clicks surface only about **8.1 of the 24** progressions on average. Exhausting the deck is not the point — the point is that repetition starts almost immediately and the ceiling is 24.
 
 ---
 
@@ -90,7 +92,7 @@ Measured over 3,000 seeds per complexity, using the store's own presets (`comple
 
 Two reproducible examples at store defaults: seed 5 → `I-Cmaj7 | V-G7 | V/IV-C7 | IV-Fmaj7`; seed 24 → `I-Cmaj7 | IV-Fmaj7 | V/ii-A7 | ii-Dm7`. Neither resolves. Both also spend a user-requested chord slot on a chromatic insertion, so the template's own ending never sounds.
 
-**This single fix is the largest available improvement in the codebase**, and it is a two-line reordering.
+**This is the largest available improvement in the codebase.** The reordering is the bulk of it, but reordering alone is not sufficient: once truncation runs first, the final slot can hold an inserted `pass°` or suspension, and the heuristic's `kind === "diatonic" || kind === "functional-substitution"` guard skips exactly those. The guard has to go too, so the cadence rewrites whatever chord ends up last. With both halves applied, the non-tonic rate is 0.0% at every complexity.
 
 ### 3.2 The forced cadence erases every ending that isn't a full stop — *critical*
 
@@ -147,7 +149,9 @@ Neither `voicing.ts` nor `voiceLeading.ts` imports, accepts, or calls a random s
 
 Over 6,000 default generations: the opening chord was `[55,64,71,72]` 5,575 times and `[55,64,69,72]` 425 times — **nothing else**. Cmaj7 received 6 distinct voicings across 10,007 appearances; Em7 and A7 received exactly one each.
 
-Worse, the cost function **cannot see chord identity**. Both entry points take bare MIDI arrays (`calculateVoiceLeadingCost(previous: number[], next: number[])`, line 154). No root, quality, `isDominant`, phrase role or tension reaches it. `grep -niE "leadingtone|tendency|resolution"` over the file exits with no matches. **A V-I where the leading tone falls to the 5th scores identically to a correct resolution**, as long as total semitone motion matches. Every dominant in the app is voiced by geometry alone.
+Worse, the cost function **cannot see chord identity**. Both entry points take bare MIDI arrays (`calculateVoiceLeadingCost(previous: number[], next: number[])`, line 154). No root, quality, `isDominant`, phrase role or tension reaches it. `grep -niE "leadingtone|tendency|resolution"` over the file exits with no matches.
+
+To be precise about what follows: the seven cost terms (smoothness, bass motion, common tones, parallels, crossings, span, contrary motion) do distinguish many pairs of voicings, so two candidates with equal total motion rarely score *identically*. The defect is that **none of those terms knows a leading tone from any other note**. A V-I where the leading tone falls to the 5th is therefore preferred whenever its aggregate geometric score happens to be lower — nothing in the objective can recognise a correct resolution *as* a resolution, or pay anything to obtain one. Every dominant in the app is voiced by geometry alone.
 
 ### 4.3 Nothing enforces root position at a cadence — *critical*
 
@@ -169,7 +173,11 @@ A user reaching for more body gets a doubled root, a 3rd and a 7th with no fifth
 
 ### 4.6 Inversions exist but have no policy — *high*
 
-This one correction matters: inversions **are** produced (both drop2 and drop3 yield 7th-in-bass voicings, and both are in the `auto` pool). What is missing is *policy and labelling*, not the capability. `inversionLimit` is capped at 2 (line 325), no beat/cadence/bass rule exists, and `VoicedChord` has no inversion or bass field — so the choice can be neither displayed, locked, edited, nor round-tripped. The canonical `Chord` type (`progressionTypes.ts:6-22`) likewise has no `bass`/`inversion` field, so a deliberate pedal point or descending bass is impossible to author or preserve.
+This one correction matters: inversions **are** produced (both drop2 and drop3 yield 7th-in-bass voicings, and both are in the `auto` pool). What is missing is *policy and semantic labelling*, not the capability, and not persistence either.
+
+Be careful not to overstate this. The realised voicing round-trips perfectly well today: `progressionStore.ts:249` stores `midiNotes: voiced.midi`, so the exact bass note survives; `shiftNote` (319-339) edits those notes from the piano roll; locked chords are carried through regeneration wholesale (219 plus the merge at 256-259); and favourites serialise the whole progression. A user can already author and keep a specific bass note by hand.
+
+What is missing is that no layer *knows* what it is looking at. Neither `VoicedChord` nor the canonical `Chord` (`progressionTypes.ts:6-22`) carries a `bass` or `inversion` field, so the generator cannot plan a bass line, the UI cannot label a chord as a 6-4 or render a slash symbol, and nothing can reason about inversion when substituting. `inversionLimit` is also capped at 2 (line 325) and no beat/cadence/bass rule exists. Recommendation #12 adds planning and labelling — it does not restore a capability the product lacks.
 
 ### 4.7 Voicing never varies across the phrase — *high*
 
@@ -271,7 +279,7 @@ Ranked by impact per hour of work.
 
 | # | Change | Fixes | Effort | Impact |
 |---|---|---|---|---|
-| 1 | **Move `limitLength` before the cadence heuristic** | 33-50% of progressions never resolving | **S** | Transformative |
+| 1 | **Move `limitLength` before the cadence heuristic, *and* let the cadence rewrite a non-diatonic final chord** | 33-50% of progressions never resolving | **S** | Transformative |
 | 2 | **Fix `voiceCount: 5`** so "Rich" adds a voice instead of deleting the fifth | user-facing defect | **S** | High |
 | 3 | **Cadence-aware voicing**: pass chord index + a root-position bonus into selection | final chord never lands; the G pedal | **S** | Transformative |
 | 4 | **Drop-voicing family + jazz dictionary** | voicing vocabulary (~16×) | **S** | Transformative |
