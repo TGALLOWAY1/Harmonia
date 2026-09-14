@@ -726,6 +726,7 @@ The repository includes several in-depth engineering documents that double as de
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Project overview, architecture, conventions |
 | [`CHORD_ENGINE_AUDIT.md`](CHORD_ENGINE_AUDIT.md) | Deep audit of the chord/voicing engine |
+| [`CHORD_PROGRESSION_ASSESSMENT.md`](CHORD_PROGRESSION_ASSESSMENT.md) | Emotional flow & voicing assessment, with research-backed roadmap |
 | [`AUDIO_ENGINE_ASSESSMENT.md`](AUDIO_ENGINE_ASSESSMENT.md) | Audio architecture & resilience assessment |
 | [`MELODY_ENGINE_ANALYSIS.md`](MELODY_ENGINE_ANALYSIS.md) | Before/after audit of the melody engine |
 | [`MOBILE_UX_AUDIT.md`](MOBILE_UX_AUDIT.md) · [`MOBILE_IMPLEMENTATION_PLAN.md`](MOBILE_IMPLEMENTATION_PLAN.md) | Mobile UX audit & plan |
