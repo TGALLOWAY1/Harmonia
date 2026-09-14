@@ -31,6 +31,27 @@ Finding 2 deserves emphasis. At the shipped defaults (C ionian, 4 chords, comple
 
 ---
 
+## 1a. Implementation status
+
+Phase 1 and part of Phase 2 have since been implemented on this branch. Measurements below are before → after, over 3,000 seeds per complexity at the store's own presets.
+
+| # | Change | Before | After |
+|---|---|---|---|
+| 1 | Length cap moved before the cadence | 33.4% never resolve (50.0% at cx3) | **0.0% at every complexity** |
+| 5 | Mode-aware dominant + scale-derived romans | dorian/phrygian/mixolydian emit out-of-scale notes and wrong labels | **every note in-scale; `IV` in dorian, `bII` in phrygian, `bVII` in mixolydian** |
+| 2 | `voiceCount: 5` keeps the fifth | Cmaj7 → 3 pitch classes, 4 notes, no fifth | **4 pitch classes, 5 notes, fifth in every candidate** |
+| 3 | Root-position bias at structural arrivals | final chord routinely a 6-4; opener a second inversion | **96.3% root-position endings, 92.7% openers** |
+| 4 | Drop-2+4 added, inversion cap lifted | Cmaj7 → 14 candidates | **22 candidates, all four bass notes reachable** |
+| 6 | `cadence: "open"` | every progression ends on I; axis progression unreachable | **half/plagal/deceptive endings reachable; `I-V-vi-IV` now generates** |
+
+Aeolian deliberately keeps its raised (harmonic-minor) `v|E` — that is idiomatic, not a modal violation.
+
+Covered by 16 regression tests in `advanced/__tests__/progressionQuality.test.ts`, **9 of which fail on the pre-fix code**. Full suite: 695 passing.
+
+Still open: everything from recommendation #7 onward — best-of-N generation, mood presets, modal interchange, harmonic rhythm, bass-line planning, and the tension-curve spine. The two deepest remaining limits are unchanged: the voicing stage is still deterministic (one opening voicing dominates 93% of generations) and the cost function still cannot see chord identity.
+
+---
+
 ## 2. How the generator works today
 
 `generateAdvancedProgression()` (696 lines) runs one linear pass:

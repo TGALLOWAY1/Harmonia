@@ -13,6 +13,7 @@ import {
   isPentatonicChordDegree,
   type PentatonicChordDegree,
 } from "@/lib/theory/pentatonic";
+import { romanNumeralsForScale } from "@/lib/theory/romanNumeral";
 import { getScaleDefinition } from "@/lib/theory/scale";
 import type { ScaleType } from "@/lib/theory/types";
 
@@ -33,6 +34,7 @@ import {
 import type {
   AdvancedProgressionOptions,
   AdvancedProgressionResult,
+  CadenceMode,
   DurationClass,
   NoteRole,
   PlannedAdvancedChord,
@@ -49,8 +51,18 @@ const MODE_TO_SCALE_TYPE: Record<AdvancedProgressionOptions["mode"], ScaleType> 
   major_pentatonic: "major_pentatonic",
 };
 
-const MAJORISH_ROMANS = ["I", "ii", "iii", "IV", "V", "vi", "vii°"] as const;
-const MINORISH_ROMANS = ["i", "ii°", "III", "iv", "v", "bVI", "bVII"] as const;
+/**
+ * Modes whose fifth degree is raised to a major/dominant chord.
+ *
+ * In ionian the fifth is already major, so this is a no-op. In aeolian, raising
+ * it is the deliberate harmonic-minor V that gives minor keys a leading tone.
+ * Dorian, phrygian and mixolydian are defined against their parent scales by
+ * precisely this chord, so raising it there erases the mode the user picked.
+ */
+const MODES_WITH_RAISED_DOMINANT: ReadonlySet<AdvancedProgressionOptions["mode"]> = new Set([
+  "ionian",
+  "aeolian",
+]);
 
 const MAJORISH_TEMPLATES: number[][] = [
   [0, 3, 4, 0],   // I - IV - V - I (authentic cadence)
@@ -270,13 +282,21 @@ function buildDiatonicChordPlan(params: {
   kind: PlannedAdvancedChord["kind"];
   tensionLevel?: number;
   isProtected?: boolean;
+  /** Whether degree 5 may be raised to a major/dominant chord in this mode. */
+  allowRaisedDominant?: boolean;
 }): PlannedAdvancedChord {
   const { root, degreeLabel, degreeIndex, scale, complexity, random, kind, tensionLevel, isProtected } = params;
+  const allowRaisedDominant = params.allowRaisedDominant ?? true;
 
   const triad = buildTriadFromScale(scale, degreeIndex);
   const seventh = buildSeventhFromScale(scale, degreeIndex);
 
-  const isDominant = degreeIndex === 4 || degreeLabel.startsWith("V/") || degreeLabel.startsWith("sub(V");
+  // Applied dominants (V/x, sub(V/x)) are dominant by construction in any mode.
+  // The diatonic fifth degree is only a dominant where the mode has a leading tone.
+  const isDominant =
+    (degreeIndex === 4 && allowRaisedDominant) ||
+    degreeLabel.startsWith("V/") ||
+    degreeLabel.startsWith("sub(V");
   const triadQuality = isDominant ? "maj" : triad.quality;
   // For complexity 1 (triads), key the hint off the triad; for seventh chords
   // and beyond, key it off the actual seventh quality so we never add a 7th
@@ -432,7 +452,7 @@ function voicePlannedChords(
   const costs: number[] = [];
   let previousVoicing: number[] | null = null;
 
-  for (const chord of planned) {
+  planned.forEach((chord, index) => {
     const candidates = generateVoicingCandidates(chord, {
       style: options.voicingStyle,
       voiceCount: options.voiceCount,
@@ -440,7 +460,13 @@ function voicePlannedChords(
       rangeHigh: high,
     });
 
-    const selection = pickBestVoiceLedCandidate(previousVoicing, candidates, center);
+    // The opening and the cadence are structural arrivals: put the root in the
+    // bass so the progression starts and finishes on stable ground.
+    const isStructuralArrival = index === 0 || index === planned.length - 1;
+    const selection = pickBestVoiceLedCandidate(previousVoicing, candidates, center, {
+      preferRootPosition: isStructuralArrival,
+      rootPitchClass: PITCH_CLASSES.indexOf(chord.root),
+    });
     let finalVoicing = [...selection.voicing].sort((a, b) => a - b);
 
     // --- Validation: every voiced pitch class must be implied by the symbol ---
@@ -476,7 +502,7 @@ function voicePlannedChords(
 
     costs.push(selection.cost);
     previousVoicing = finalVoicing;
-  }
+  });
 
   return {
     chords: voiced,
@@ -600,6 +626,57 @@ function generatePentatonicProgression(
 }
 
 // ---------------------------------------------------------------------------
+// Cadence
+// ---------------------------------------------------------------------------
+
+/**
+ * Decide the chord the progression ends on.
+ *
+ * "resolve" rewrites the final chord to the tonic whatever it currently is —
+ * including a chromatic insertion, which the previous kind-gated version left
+ * alone and so frequently ended on. "open" leaves the plan's own ending in
+ * place, which is what makes half cadences, deceptive endings and loop-friendly
+ * progressions (I-V-vi-IV chief among them) reachable at all.
+ *
+ * Must run after the length cap: rewriting a chord that is about to be sliced
+ * off resolves nothing.
+ */
+function applyCadence(
+  planned: PlannedAdvancedChord[],
+  params: {
+    cadence: CadenceMode;
+    scale: ReturnType<typeof getScaleDefinition>;
+    romans: string[];
+    complexity: AdvancedProgressionOptions["complexity"];
+    random: () => number;
+    allowRaisedDominant: boolean;
+  }
+): PlannedAdvancedChord[] {
+  if (planned.length === 0) return planned;
+  if (params.cadence === "open") return planned;
+
+  const { scale, romans, complexity, random, allowRaisedDominant } = params;
+  const tonicRoot = scale.pitchClasses[0];
+  const lastChord = planned[planned.length - 1];
+  if (lastChord.root === tonicRoot && lastChord.kind === "diatonic") return planned;
+
+  const next = [...planned];
+  next[next.length - 1] = buildDiatonicChordPlan({
+    root: tonicRoot,
+    degreeLabel: romans[0] ?? "I",
+    degreeIndex: 0,
+    scale,
+    complexity,
+    random,
+    kind: "diatonic",
+    tensionLevel: 0.0, // cadence = fully resolved
+    isProtected: true,
+    allowRaisedDominant,
+  });
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Main generator
 // ---------------------------------------------------------------------------
 
@@ -613,7 +690,7 @@ export function generateAdvancedProgression(
   const numChords = options.numChords ?? 4;
   const scaleType = MODE_TO_SCALE_TYPE[options.mode] ?? "major";
   const isMinor = options.mode !== "ionian" && options.mode !== "mixolydian";
-  const romans = isMinor ? MINORISH_ROMANS : MAJORISH_ROMANS;
+  const allowRaisedDominant = MODES_WITH_RAISED_DOMINANT.has(options.mode);
 
   const seed = options.seed ?? Math.floor(Math.random() * 2_147_483_647);
   const random = createSeededRandom(seed);
@@ -640,6 +717,9 @@ export function generateAdvancedProgression(
 
   // --- Build diatonic chord plans with tension levels ---
   const scale = getScaleDefinition(options.rootKey, scaleType);
+  // Labels come from the scale itself, so they agree with the chords that sound
+  // in every mode rather than only in ionian and aeolian.
+  const romans = romanNumeralsForScale(scale);
   const plannedDiatonic = functionalSwap.indices.map((degreeIndex, idx) => {
     const root = scale.pitchClasses[degreeIndex] ?? scale.pitchClasses[0];
     const degreeLabel = romans[degreeIndex] ?? romans[0];
@@ -656,6 +736,7 @@ export function generateAdvancedProgression(
       kind: functionalSwap.swappedIndex === idx ? "functional-substitution" : "diatonic",
       tensionLevel: tension,
       isProtected,
+      allowRaisedDominant,
     });
   });
 
@@ -669,28 +750,21 @@ export function generateAdvancedProgression(
   // --- Chromatic density validation (2/3 rule) ---
   planned = validateChromaticDensity(planned);
 
-  // --- Resolution heuristic: ensure progression ends on tonic ---
-  if (planned.length > 0) {
-    const lastChord = planned[planned.length - 1];
-    if (lastChord.kind === "diatonic" || lastChord.kind === "functional-substitution") {
-      const tonicRoot = scale.pitchClasses[0];
-      if (lastChord.root !== tonicRoot) {
-        planned[planned.length - 1] = buildDiatonicChordPlan({
-          root: tonicRoot,
-          degreeLabel: romans[0],
-          degreeIndex: 0,
-          scale,
-          complexity: options.complexity,
-          random,
-          kind: "diatonic",
-          tensionLevel: 0.0, // cadence = fully resolved
-          isProtected: true,
-        });
-      }
-    }
-  }
-
+  // --- Length cap runs BEFORE the cadence ---
+  // The substitution passes above grow the array past numChords. Capping after
+  // the cadence was written would slice the resolution back off, so the chord
+  // the listener actually ends on must be decided first.
   planned = limitLength(planned, numChords);
+
+  // --- Resolution: ensure the progression ends where the cadence asks ---
+  planned = applyCadence(planned, {
+    cadence: options.cadence ?? "resolve",
+    scale,
+    romans,
+    complexity: options.complexity,
+    random,
+    allowRaisedDominant,
+  });
 
   return voicePlannedChords(planned, options, seed);
 }

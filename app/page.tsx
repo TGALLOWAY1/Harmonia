@@ -33,7 +33,7 @@ import { midiToNoteName, normalizeToPitchClass, type PitchClass } from "@/lib/th
 import { keyPrefersFlats } from "@/lib/theory/spelling";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
-import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
+import type { CadenceMode, VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
 import type { MelodyStyle, MelodyHarmony, MelodyMood } from "@/lib/music/generators/melody/types";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -50,7 +50,15 @@ const CHORD_COUNTS = [3, 4, 5, 6, 7, 8];
 const VOICING_STYLES: { value: VoicingStyle; label: string }[] = [
   { value: "closed", label: "Tight" },
   { value: "auto", label: "Balanced" },
+  { value: "drop2", label: "Drop 2" },
+  { value: "drop3", label: "Drop 3" },
+  { value: "drop24", label: "Drop 2+4" },
   { value: "spread", label: "Open" },
+];
+
+const CADENCE_MODES: { value: CadenceMode; label: string }[] = [
+  { value: "resolve", label: "Resolve" },
+  { value: "open", label: "Open end" },
 ];
 
 const VOICE_COUNTS: { value: VoiceCount; label: string }[] = [
@@ -90,6 +98,7 @@ export default function HarmoniaPage() {
     numChords,
     voicingStyle,
     voiceCount,
+    cadence,
     setSettings,
     generateNew,
     toggleLock,
@@ -821,6 +830,17 @@ export default function HarmoniaPage() {
                 >
                   {VOICING_STYLES.map((vs) => (
                     <option key={vs.value} value={vs.value}>{vs.label}</option>
+                  ))}
+                </select>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <select
+                  value={cadence}
+                  onChange={(e) => setSettings({ cadence: e.target.value as CadenceMode })}
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  title="Ending — resolve to the tonic, or keep the progression's own open ending"
+                >
+                  {CADENCE_MODES.map((cm) => (
+                    <option key={cm.value} value={cm.value}>{cm.label}</option>
                   ))}
                 </select>
               </div>

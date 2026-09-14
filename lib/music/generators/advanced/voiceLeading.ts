@@ -220,10 +220,33 @@ export function calculateVoiceLeadingCost(previous: number[], next: number[]): n
 // Candidate selection
 // ---------------------------------------------------------------------------
 
+export type VoicingPreference = {
+  /**
+   * Reward candidates whose lowest note is the chord root. Structural arrivals
+   * — the opening chord and the final cadence — need the root in the bass to
+   * sound settled; without this the pure minimum-motion argmin routinely ends a
+   * progression on a second-inversion tonic, which never lands.
+   */
+  preferRootPosition?: boolean;
+  /** Pitch class (0-11) of the chord root, required by `preferRootPosition`. */
+  rootPitchClass?: number;
+};
+
+/** How strongly a root-position bass is favoured at a structural arrival. */
+const ROOT_POSITION_BONUS = 6;
+
+function rootPositionBonus(candidate: number[], preference?: VoicingPreference): number {
+  if (!preference?.preferRootPosition) return 0;
+  if (preference.rootPitchClass === undefined) return 0;
+  const bass = Math.min(...candidate);
+  return ((bass % 12) + 12) % 12 === preference.rootPitchClass ? -ROOT_POSITION_BONUS : 0;
+}
+
 export function pickBestVoiceLedCandidate(
   previous: number[] | null,
   candidates: number[][],
-  fallbackCenter: number
+  fallbackCenter: number,
+  preference?: VoicingPreference
 ): VoiceLeadingSelection {
   if (candidates.length === 0) {
     return {
@@ -238,7 +261,8 @@ export function pickBestVoiceLedCandidate(
 
     for (const candidate of candidates) {
       const center = (candidate[0] + candidate[candidate.length - 1]) / 2;
-      const distance = Math.abs(center - fallbackCenter) + spanPenalty(candidate);
+      const distance =
+        Math.abs(center - fallbackCenter) + spanPenalty(candidate) + rootPositionBonus(candidate, preference);
       if (distance < bestDistance) {
         bestDistance = distance;
         best = candidate;
@@ -255,7 +279,7 @@ export function pickBestVoiceLedCandidate(
   let winnerCost = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
-    const cost = calculateVoiceLeadingCost(previous, candidate);
+    const cost = calculateVoiceLeadingCost(previous, candidate) + rootPositionBonus(candidate, preference);
     if (cost < winnerCost) {
       winner = candidate;
       winnerCost = cost;
