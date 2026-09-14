@@ -58,6 +58,7 @@ describe("cross-key generator correctness", () => {
               useSuspensions: true,
               useSecondaryDominants: true,
               useTritoneSubstitution: true,
+              useModalInterchange: true,
               seed,
             });
 
@@ -108,6 +109,7 @@ describe("cross-key spelling layer is lossless and key-correct", () => {
         useSuspensions: true,
         useSecondaryDominants: true,
         useTritoneSubstitution: true,
+              useModalInterchange: true,
         seed: 2024,
       });
 

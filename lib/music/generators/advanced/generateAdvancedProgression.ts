@@ -17,14 +17,25 @@ import { romanNumeralsForScale } from "@/lib/theory/romanNumeral";
 import { getScaleDefinition } from "@/lib/theory/scale";
 import type { ScaleType } from "@/lib/theory/types";
 
-import { chordMoodProfile, harmonicRhythmFor, type ChordMoodProfile } from "./chordMoods";
+import { inversionOfVoicing, planBassLine } from "./bassLine";
+import { chordMoodProfile, DEFAULT_CHORD_MOOD, harmonicRhythmFor, type ChordMoodProfile } from "./chordMoods";
 import { applyComplexityExtensions, type QualityHint } from "./extensions";
 import {
+  brightnessTargetsFor,
+  buildBorrowedChordPlan,
+  diatonicBrightness,
+  picardyTonic,
+  resolveBrightnessCurve,
+} from "./modalInterchange";
+import { parsimoniousVoicing } from "./neoRiemannian";
+import {
   getPhraseRoles,
-  getTensionCurve,
   selectDegreeForRole,
   type DegreeFamily,
 } from "./phraseStructure";
+import { scoreProgression } from "./progressionScore";
+import { voicingRoughness } from "./roughness";
+import { planSlots } from "./slotPlanner";
 import {
   applyTritoneSubstitutions,
   injectSecondaryDominants,
@@ -32,18 +43,27 @@ import {
   insertSuspensions,
   validateChromaticDensity,
 } from "./substitutions";
+import { tensionCurveFor } from "./tensionCurve";
 import type {
   AdvancedProgressionOptions,
   AdvancedProgressionResult,
   CadenceMode,
   VoiceCount,
   DurationClass,
+  HarmonicFunction,
   NoteRole,
   PlannedAdvancedChord,
+  VoicingSearch,
 } from "./types";
-import { scoreProgression } from "./progressionScore";
-import { pickBestVoiceLedCandidate } from "./voiceLeading";
+import {
+  calculateVoiceLeadingCost,
+  pickBestVoiceLedCandidate,
+  PLANNED_BASS_BONUS,
+  ROOT_POSITION_BONUS,
+  spanPenalty,
+} from "./voiceLeading";
 import { generateVoicingCandidates, normalizeVoicingToRange } from "./voicing";
+import { searchVoicings } from "./voicingSearch";
 
 const MODE_TO_SCALE_TYPE: Record<AdvancedProgressionOptions["mode"], ScaleType> = {
   ionian: "major",
@@ -102,6 +122,8 @@ const MINORISH_TEMPLATES: number[][] = [
   [5, 6, 0, 4],   // bVI - bVII - i - v
   [0, 3, 0, 6],   // i - iv - i - bVII
 ];
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 function clampVoiceRange(low: number, high: number): { low: number; high: number } {
   if (low <= high) return { low, high };
@@ -165,95 +187,6 @@ function adaptLength(
 }
 
 // ---------------------------------------------------------------------------
-// Functional substitution
-// ---------------------------------------------------------------------------
-
-function familyForDegreeIndex(degreeIndex: number): "tonic" | "subdominant" | "dominant" | null {
-  if ([0, 2, 5].includes(degreeIndex)) return "tonic";
-  if ([1, 3].includes(degreeIndex)) return "subdominant";
-  if ([4, 6].includes(degreeIndex)) return "dominant";
-  return null;
-}
-
-function familyAlternates(degreeIndex: number): number[] {
-  const family = familyForDegreeIndex(degreeIndex);
-  if (family === "tonic") return [0, 2, 5].filter((idx) => idx !== degreeIndex);
-  if (family === "subdominant") return [1, 3].filter((idx) => idx !== degreeIndex);
-  if (family === "dominant") return [4, 6].filter((idx) => idx !== degreeIndex);
-  return [];
-}
-
-/**
- * Apply functional substitution with weighted probabilities.
- * Key changes:
- * - Never substitute at protected positions (first/last)
- * - Weight substitution candidates: I(1.0) > vi(0.4) > iii(0.15)
- */
-/** Degrees whose diatonic triad is major-quality in a majorish mode. */
-const BRIGHT_DEGREES = new Set([0, 3, 4]);
-
-/**
- * Vary the interior of a template within functional families.
- *
- * Previously this swapped at most ONE interior chord, only at complexity 3+,
- * and returned early 45% of the time. Combined with a 15-template pool that
- * left roughly 24 distinct progressions reachable at the shipped defaults —
- * the measured root cause of "the results feel the same".
- *
- * Each interior position is now considered independently. Swaps stay inside the
- * chord's functional family (tonic I/iii/vi, subdominant ii/IV, dominant
- * V/vii°), so the template's harmonic argument is preserved while its surface
- * varies. The mood's brightness biases which alternate is taken.
- */
-function varyInteriorDegrees(
-  degreeIndices: number[],
-  enabled: boolean,
-  brightness: number,
-  random: () => number
-): { indices: number[]; swappedIndices: Set<number> } {
-  const swappedIndices = new Set<number>();
-  if (!enabled || degreeIndices.length < 3) {
-    return { indices: degreeIndices, swappedIndices };
-  }
-
-  const next = [...degreeIndices];
-
-  // First and last are structural arrivals and stay put.
-  for (let i = 1; i < next.length - 1; i++) {
-    if (random() > 0.45) continue;
-
-    const alternates = familyAlternates(next[i] ?? 0);
-    if (alternates.length === 0) continue;
-
-    // Weight alternates by how well their brightness matches the mood's.
-    const weights = alternates.map((degree) => {
-      const isBright = BRIGHT_DEGREES.has(degree);
-      const match = isBright ? brightness : -brightness;
-      return Math.max(0.15, 1 + match);
-    });
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
-
-    let draw = random() * totalWeight;
-    let chosen = alternates[alternates.length - 1];
-    for (let a = 0; a < alternates.length; a++) {
-      draw -= weights[a];
-      if (draw <= 0) {
-        chosen = alternates[a];
-        break;
-      }
-    }
-
-    // Avoid creating a back-to-back repeat, which reads as one long chord.
-    if (chosen === next[i - 1] || chosen === next[i + 1]) continue;
-
-    next[i] = chosen;
-    swappedIndices.add(i);
-  }
-
-  return { indices: next, swappedIndices };
-}
-
-// ---------------------------------------------------------------------------
 // Chord plan building
 // ---------------------------------------------------------------------------
 
@@ -299,6 +232,18 @@ function qualityHintFromSeventh(quality: SeventhQuality, isDominant: boolean): Q
     case "dim7": return "dim";
     // min7 and half-dim7 both carry a minor 7th (interval 10)
     default: return "min";
+  }
+}
+
+/** Harmonic function of a scale degree, for the tension model. */
+function functionForDegree(degreeIndex: number): HarmonicFunction {
+  switch (degreeIndex) {
+    case 0: return "tonic";
+    case 2:
+    case 5: return "mediant";
+    case 1:
+    case 3: return "predominant";
+    default: return "dominant";
   }
 }
 
@@ -389,12 +334,20 @@ function buildDiatonicChordPlan(params: {
     durationClass: "full",
     tensionLevel: tensionLevel ?? 0.5,
     isProtected: isProtected ?? false,
+    degreeIndex,
+    functionTag: functionForDegree(degreeIndex),
+    brightness: diatonicBrightness(triadQuality),
   };
 }
 
 function limitLength(chords: PlannedAdvancedChord[], maxLength: number): PlannedAdvancedChord[] {
   if (chords.length <= maxLength) return chords;
   return chords.slice(0, maxLength);
+}
+
+/** Chords that occupy a slot the user asked for, as opposed to inserted passing events. */
+function isStructuralKind(kind: PlannedAdvancedChord["kind"]): boolean {
+  return kind === "diatonic" || kind === "functional-substitution" || kind === "borrowed";
 }
 
 // ---------------------------------------------------------------------------
@@ -462,10 +415,28 @@ function assignRoles(midiAscending: number[], root: PitchClass): NoteRole[] {
 // Voicing stage (shared by every mode)
 // ---------------------------------------------------------------------------
 
+/** How much a voicing's distance from its register target costs, per semitone. */
+const REGISTER_WEIGHT = 0.3;
+/** Weight on sensory roughness; see roughness.ts for the scale. */
+const ROUGHNESS_WEIGHT = 0.25;
+/** Bonus for the voice leading a Neo-Riemannian transform names. */
+const TRANSFORM_BONUS = 2;
+/** Beam search bounds — sized so the search costs about what greedy did. */
+const BEAM_WIDTH = 4;
+const MAX_CANDIDATES_PER_CHORD = 16;
+/** Seeded jitter ceiling, matching the greedy path's tie band. */
+const JITTER = 0.5;
+
 /**
- * Turn a finished chord plan into voiced MIDI: pick the best voice-led
- * candidate for each chord, validate it against the chord symbol, and tag each
- * note with its harmonic role.
+ * Turn a finished chord plan into voiced MIDI: connect per-chord voicing
+ * candidates across the whole progression, validate each choice against the
+ * chord symbol, and tag each note with its harmonic role.
+ *
+ * Each candidate is charged for its own qualities (distance from the register
+ * the tension curve asks for, whether it puts the planned bass note in the
+ * bass, sensory roughness) and for the voice leading from the chord before;
+ * a bounded Viterbi search then picks the cheapest path rather than the
+ * cheapest next step.
  *
  * This is deliberately independent of how the plan was built, so the tertian
  * and pentatonic planners share one code path — and one validation gate.
@@ -480,37 +451,129 @@ function voicePlannedChords(
   // Aim at the mood's register rather than the midpoint of the allowed range,
   // clamped so a mood can colour the texture but never escape the user's range.
   const center = Math.max(low + 6, Math.min(high - 6, mood.registerCenter));
-
-  const voiced = [] as AdvancedProgressionResult["chords"];
-  const costs: number[] = [];
-  let previousVoicing: number[] | null = null;
   // Seeded, so a given seed still reproduces exactly — but the voicing stage
-  // finally has a source of variation at all.
+  // has a source of variation for breaking near-ties.
   const voicingRng = createSeededRandom(seed ^ 0x2545f491);
+  const search: VoicingSearch = options.voicingSearch ?? "beam";
 
-  planned.forEach((chord, index) => {
+  const candidatesPerChord = planned.map((chord) => {
     // Density follows the mood, and rises with the chord's own tension so the
     // peak of the phrase is thicker than its opening.
     const tension = chord.tensionLevel ?? 0.5;
     const densityShift = Math.round(mood.densityBias * 1.5 + (tension - 0.5));
     const voiceCount = Math.max(3, Math.min(5, options.voiceCount + densityShift)) as VoiceCount;
-
     const candidates = generateVoicingCandidates(chord, {
       style: options.voicingStyle,
       voiceCount,
       rangeLow: low,
       rangeHigh: high,
     });
+    // The bass-line planner decided what sits underneath this chord; keep only
+    // the candidates that honour it, provided the range allows any at all.
+    if (chord.plannedBass !== undefined) {
+      const wanted = PITCH_CLASSES.indexOf(chord.plannedBass);
+      const honouring = candidates.filter((voicing) => ((Math.min(...voicing) % 12) + 12) % 12 === wanted);
+      if (honouring.length > 0) return honouring;
+    }
+    // A range too narrow for any shaped candidate still gets a playable chord.
+    return candidates.length > 0 ? candidates : [buildSafeVoicing(chord.pitchClasses, low, high)];
+  });
 
-    // The opening and the cadence are structural arrivals: put the root in the
-    // bass so the progression starts and finishes on stable ground.
-    const isStructuralArrival = index === 0 || index === planned.length - 1;
-    const selection = pickBestVoiceLedCandidate(previousVoicing, candidates, center, {
-      preferRootPosition: isStructuralArrival,
-      rootPitchClass: PITCH_CLASSES.indexOf(chord.root),
-      rng: voicingRng,
+  // The register rises with tension, so the phrase's peak sits higher than
+  // its opening and its cadence settles back down.
+  const registerTargetFor = (chord: PlannedAdvancedChord): number =>
+    Math.max(low + 6, Math.min(high - 6, center + ((chord.tensionLevel ?? 0.5) - 0.4) * 6));
+
+  const jitters = new Map<string, number>();
+  const jitterFor = (index: number, voicing: number[]): number => {
+    const key = `${index}:${voicing.join(",")}`;
+    let value = jitters.get(key);
+    if (value === undefined) {
+      value = voicingRng() * JITTER;
+      jitters.set(key, value);
+    }
+    return value;
+  };
+
+  const emission = (index: number, voicing: number[]): number => {
+    const chord = planned[index];
+    const centre = (voicing[0] + voicing[voicing.length - 1]) / 2;
+    let cost = Math.abs(centre - registerTargetFor(chord)) * REGISTER_WEIGHT;
+    if (index === 0) cost += spanPenalty(voicing) * 0.1;
+
+    const bass = ((Math.min(...voicing) % 12) + 12) % 12;
+    if (chord.plannedBass !== undefined) {
+      if (bass === PITCH_CLASSES.indexOf(chord.plannedBass)) cost -= PLANNED_BASS_BONUS;
+    } else if (
+      (index === 0 || index === planned.length - 1) &&
+      bass === PITCH_CLASSES.indexOf(chord.root)
+    ) {
+      cost -= ROOT_POSITION_BONUS;
+    }
+
+    cost += ROUGHNESS_WEIGHT * voicingRoughness(voicing);
+    cost += jitterFor(index, voicing);
+    return cost;
+  };
+
+  // A chord reached by a Neo-Riemannian transform brings its own voice
+  // leading: hold the common tones, move the rest by the least possible.
+  const dependentCandidates = (index: number, previous: number[]) => {
+    const chord = planned[index];
+    if (!chord.transform) return [];
+    const voicing = parsimoniousVoicing(
+      previous,
+      chord.pitchClasses.map((pc) => PITCH_CLASSES.indexOf(pc)),
+      { low, high }
+    );
+    return voicing ? [{ voicing, bonus: TRANSFORM_BONUS }] : [];
+  };
+
+  let chosen: number[][];
+  let costs: number[];
+
+  if (search === "greedy") {
+    chosen = [];
+    costs = [];
+    let previous: number[] | null = null;
+    planned.forEach((chord, index) => {
+      const extra = previous ? dependentCandidates(index, previous).map((entry) => entry.voicing) : [];
+      const isStructuralArrival = index === 0 || index === planned.length - 1;
+      const selection = pickBestVoiceLedCandidate(
+        previous,
+        [...candidatesPerChord[index], ...extra],
+        registerTargetFor(chord),
+        {
+          preferRootPosition: isStructuralArrival,
+          rootPitchClass: PITCH_CLASSES.indexOf(chord.root),
+          preferredBassPitchClass:
+            chord.plannedBass !== undefined ? PITCH_CLASSES.indexOf(chord.plannedBass) : undefined,
+          rng: voicingRng,
+        }
+      );
+      chosen.push(selection.voicing);
+      costs.push(selection.cost);
+      previous = selection.voicing;
     });
-    let finalVoicing = [...selection.voicing].sort((a, b) => a - b);
+  } else {
+    const searched = searchVoicings({
+      candidates: candidatesPerChord,
+      emission,
+      transition: (previous, next) => calculateVoiceLeadingCost(previous, next),
+      dependentCandidates,
+      beamWidth: BEAM_WIDTH,
+      maxCandidates: MAX_CANDIDATES_PER_CHORD,
+    });
+    chosen = searched.voicings;
+    costs = searched.costs;
+  }
+
+  const voiced = [] as AdvancedProgressionResult["chords"];
+
+  planned.forEach((chord, index) => {
+    let finalVoicing = [...(chosen[index] ?? buildSafeVoicing(chord.pitchClasses, low, high))].sort(
+      (a, b) => a - b
+    );
 
     // --- Validation: every voiced pitch class must be implied by the symbol ---
     // The chord symbol is the single source of truth. If the voicing somehow
@@ -534,6 +597,8 @@ function voicePlannedChords(
       }
     }
 
+    const { bass, inversion } = inversionOfVoicing(finalVoicing, chord.root);
+
     voiced.push({
       degreeLabel: chord.degreeLabel,
       symbol: chord.symbol,
@@ -541,10 +606,9 @@ function voicePlannedChords(
       notes: finalVoicing.map((midi) => midiToNoteName(midi)),
       roles: assignRoles(finalVoicing, chord.root),
       durationClass: chord.durationClass ?? "full",
+      bass,
+      inversion,
     });
-
-    costs.push(selection.cost);
-    previousVoicing = finalVoicing;
   });
 
   return {
@@ -555,6 +619,62 @@ function voicePlannedChords(
       planned,
       voiceLeadingCosts: costs,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Finishing a candidate: bass plan, voicing, debug
+// ---------------------------------------------------------------------------
+
+type Candidate = {
+  result: AdvancedProgressionResult;
+  planned: PlannedAdvancedChord[];
+  tensionCurve: number[];
+  brightnessTargets: number[];
+  scalePitchClasses: PitchClass[];
+};
+
+/**
+ * Plan the bass line for a finished chord plan, voice it, and attach the
+ * curves the planner worked against so the scorer can judge the result on
+ * the same terms.
+ */
+function finishCandidate(params: {
+  planned: PlannedAdvancedChord[];
+  options: AdvancedProgressionOptions;
+  seed: number;
+  mood: ChordMoodProfile;
+  tonic: PitchClass;
+  tensionCurve: number[];
+  brightnessTargets: number[];
+  scalePitchClasses: PitchClass[];
+}): Candidate {
+  const { options, seed, mood } = params;
+  const bassPlan = planBassLine(params.planned, {
+    tonic: params.tonic,
+    cadence: options.cadence ?? "resolve",
+    rhythm: mood.harmonicRhythm,
+    random: createSeededRandom(seed ^ 0x3c6ef372),
+  });
+  const planned = params.planned.map((chord, idx) => ({
+    ...chord,
+    plannedBass: bassPlan[idx]?.bass,
+    plannedInversion: bassPlan[idx]?.inversion,
+  }));
+
+  const result = voicePlannedChords(planned, options, seed, mood);
+  if (result.debug) {
+    result.debug.tensionCurve = params.tensionCurve;
+    result.debug.brightnessTargets = params.brightnessTargets;
+    result.debug.bassPlan = bassPlan;
+  }
+
+  return {
+    result,
+    planned,
+    tensionCurve: params.tensionCurve,
+    brightnessTargets: params.brightnessTargets,
+    scalePitchClasses: params.scalePitchClasses,
   };
 }
 
@@ -621,12 +741,12 @@ function resolvePentatonicDegrees(rawDegrees: number[]): PentatonicChordDegree[]
  * - the complexity dial adds scale tones (6ths, 9ths, sus 7ths) instead of
  *   extensions that would drag in notes from outside the scale;
  * - the chromatic toggles (secondary dominants, tritone subs, passing
- *   diminished) are skipped — every one of them introduces a note the scale
- *   does not contain, which is exactly what a pentatonic setting is asking to
- *   avoid.
+ *   diminished, borrowed chords) are skipped — every one of them introduces a
+ *   note the scale does not contain, which is exactly what a pentatonic
+ *   setting is asking to avoid.
  *
- * The phrase-shape machinery (roles, tension curve, tonic cadence) is reused
- * as-is, so progressions still open and close where a listener expects.
+ * The phrase-shape machinery (tension curve, tonic cadence, bass plan) is
+ * reused as-is, so progressions still open and close where a listener expects.
  */
 function generatePentatonicProgression(
   options: AdvancedProgressionOptions,
@@ -637,8 +757,13 @@ function generatePentatonicProgression(
   const random = createSeededRandom(seed);
 
   const scale = getScaleDefinition(options.rootKey, "major_pentatonic");
-  const tensionCurve = getTensionCurve(numChords).map((t) =>
-    Math.max(0, Math.min(1, t * mood.tensionScale))
+  const tensionCurve = tensionCurveFor(options.tensionShape ?? "phrase", numChords).map((t) =>
+    clamp01(t * mood.tensionScale)
+  );
+  const brightnessTargets = brightnessTargetsFor(
+    resolveBrightnessCurve(options.brightnessCurve, options.mood ?? DEFAULT_CHORD_MOOD),
+    mood.brightness,
+    numChords
   );
   const rhythm = harmonicRhythmFor(mood.harmonicRhythm, numChords);
 
@@ -666,15 +791,20 @@ function generatePentatonicProgression(
       durationClass: rhythm[idx] ?? "full",
       tensionLevel: isLast ? 0 : tensionCurve[idx] ?? 0.5,
       isProtected: idx === 0 || isLast,
+      functionTag: degreeIndex === 0 ? "tonic" : degreeIndex === 3 ? "dominant" : "predominant",
     };
   });
 
-  const capped = limitLength(planned, numChords);
-  return {
-    result: voicePlannedChords(capped, options, seed, mood),
-    planned: capped,
+  return finishCandidate({
+    planned: limitLength(planned, numChords),
+    options,
+    seed,
+    mood,
+    tonic: scale.pitchClasses[0],
     tensionCurve,
-  };
+    brightnessTargets,
+    scalePitchClasses: scale.pitchClasses,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -690,6 +820,10 @@ function generatePentatonicProgression(
  * place, which is what makes half cadences, deceptive endings and loop-friendly
  * progressions (I-V-vi-IV chief among them) reachable at all.
  *
+ * A minor-mode progression may close on its major tonic instead — the Picardy
+ * third — when the phrase is asked to end bright; that is decided by the
+ * caller and passed in as `picardy`.
+ *
  * Must run after the length cap: rewriting a chord that is about to be sliced
  * off resolves nothing.
  */
@@ -702,6 +836,8 @@ function applyCadence(
     complexity: AdvancedProgressionOptions["complexity"];
     random: () => number;
     allowRaisedDominant: boolean;
+    picardy: boolean;
+    mode: AdvancedProgressionOptions["mode"];
   }
 ): PlannedAdvancedChord[] {
   if (planned.length === 0) return planned;
@@ -710,9 +846,15 @@ function applyCadence(
   const { scale, romans, complexity, random, allowRaisedDominant } = params;
   const tonicRoot = scale.pitchClasses[0];
   const lastChord = planned[planned.length - 1];
+  const next = [...planned];
+
+  if (params.picardy) {
+    next[next.length - 1] = picardyTonic({ tonic: tonicRoot, complexity, mode: params.mode });
+    return next;
+  }
+
   if (lastChord.root === tonicRoot && lastChord.kind === "diatonic") return planned;
 
-  const next = [...planned];
   next[next.length - 1] = buildDiatonicChordPlan({
     root: tonicRoot,
     degreeLabel: romans[0] ?? "I",
@@ -740,12 +882,6 @@ function deriveSeed(baseSeed: number, index: number): number {
   return (baseSeed + index * 0x9e3779b1) >>> 0;
 }
 
-type Candidate = {
-  result: AdvancedProgressionResult;
-  planned: PlannedAdvancedChord[];
-  tensionCurve: number[];
-};
-
 /**
  * Plan and voice one progression. Everything above this used to BE the
  * generator; it is now a single draw that the orchestrator can compare against
@@ -760,13 +896,20 @@ function generateCandidate(
   const scaleType = MODE_TO_SCALE_TYPE[options.mode] ?? "major";
   const isMinor = options.mode !== "ionian" && options.mode !== "mixolydian";
   const allowRaisedDominant = MODES_WITH_RAISED_DOMINANT.has(options.mode);
+  const cadence = options.cadence ?? "resolve";
 
   const random = createSeededRandom(seed);
 
-  // --- Phrase structure ---
-  // The mood scales the curve, so "dreamy" stays flat where "dark" bites.
-  const tensionCurve = getTensionCurve(numChords).map((t) =>
-    Math.max(0, Math.min(1, t * mood.tensionScale))
+  // --- Phrase structure: the spine ---
+  // Every slot gets a target tension from the chosen shape (scaled by the
+  // mood, so "dreamy" stays flat where "dark" bites) and a target brightness.
+  const tensionCurve = tensionCurveFor(options.tensionShape ?? "phrase", numChords).map((t) =>
+    clamp01(t * mood.tensionScale)
+  );
+  const brightnessTargets = brightnessTargetsFor(
+    resolveBrightnessCurve(options.brightnessCurve, options.mood ?? DEFAULT_CHORD_MOOD),
+    mood.brightness,
+    numChords
   );
   // Chord lengths come from the mood's harmonic-rhythm profile rather than
   // every chord being hardcoded to a full bar.
@@ -782,34 +925,70 @@ function generateCandidate(
     random
   );
 
-  // Interior variation is on by default now: it is diatonic, functionally safe,
-  // and it is the main thing standing between the user and a 24-item output space.
-  const functionalSwap = varyInteriorDegrees(
-    baseDegreeIndices,
-    options.useFunctionalSubstitutions ?? true,
-    mood.brightness,
-    random
-  );
-
-  // --- Build diatonic chord plans with tension levels ---
+  // --- Slot planning against the curves ---
   const scale = getScaleDefinition(options.rootKey, scaleType);
   // Labels come from the scale itself, so they agree with the chords that sound
   // in every mode rather than only in ionian and aeolian.
   const romans = romanNumeralsForScale(scale);
-  const plannedDiatonic = functionalSwap.indices.map((degreeIndex, idx) => {
-    const root = scale.pitchClasses[degreeIndex] ?? scale.pitchClasses[0];
-    const degreeLabel = romans[degreeIndex] ?? romans[0];
+  const tonic = scale.pitchClasses[0];
+
+  // Probes inspect what a chord *would* be without consuming the seed.
+  const probeRandom = () => 0.5;
+  const slots = planSlots({
+    baseDegreeIndices,
+    mode: options.mode,
+    scalePitchClasses: scale.pitchClasses,
+    allowRaisedDominant,
+    tensionTargets: tensionCurve,
+    brightnessTargets,
+    chromaticism: mood.chromaticism,
+    varyDiatonic: options.useFunctionalSubstitutions ?? true,
+    allowChromatic: options.useModalInterchange ?? false,
+    probeDegree: (degreeIndex, tensionLevel) =>
+      buildDiatonicChordPlan({
+        root: scale.pitchClasses[degreeIndex] ?? tonic,
+        degreeLabel: romans[degreeIndex] ?? romans[0],
+        degreeIndex,
+        scale,
+        complexity: options.complexity,
+        random: probeRandom,
+        kind: "diatonic",
+        tensionLevel,
+        allowRaisedDominant,
+      }),
+    probeChromatic: (spec, tensionLevel) =>
+      buildBorrowedChordPlan({ spec, tonic, complexity: options.complexity, tensionLevel }),
+    triadQualityOf: (degreeIndex) =>
+      degreeIndex === 4 && allowRaisedDominant ? "maj" : buildTriadFromScale(scale, degreeIndex).quality,
+    random,
+  });
+
+  const plannedSlots = slots.map((choice, idx) => {
     const tension = tensionCurve[idx] ?? 0.5;
-    const isProtected = idx === 0 || idx === functionalSwap.indices.length - 1;
+    const isProtected = idx === 0 || idx === slots.length - 1;
+
+    if (choice.type === "chromatic") {
+      return {
+        ...buildBorrowedChordPlan({
+          spec: choice.spec,
+          tonic,
+          complexity: options.complexity,
+          tensionLevel: tension,
+          transform: choice.transform,
+          source: choice.transform ? `neo-riemannian:${choice.transform}` : undefined,
+        }),
+        isProtected,
+      };
+    }
 
     return buildDiatonicChordPlan({
-      root,
-      degreeLabel,
-      degreeIndex,
+      root: scale.pitchClasses[choice.degreeIndex] ?? tonic,
+      degreeLabel: romans[choice.degreeIndex] ?? romans[0],
+      degreeIndex: choice.degreeIndex,
       scale,
       complexity: options.complexity,
       random,
-      kind: functionalSwap.swappedIndices.has(idx) ? "functional-substitution" : "diatonic",
+      kind: choice.swapped ? "functional-substitution" : "diatonic",
       tensionLevel: tension,
       isProtected,
       allowRaisedDominant,
@@ -817,7 +996,7 @@ function generateCandidate(
   });
 
   // --- Apply substitutions (gated by tension and context) ---
-  let planned = plannedDiatonic;
+  let planned = plannedSlots;
   planned = injectSecondaryDominants(planned, options, random);
   planned = applyTritoneSubstitutions(planned, options, random);
   planned = insertPassingDiminished(planned, options, random);
@@ -833,29 +1012,44 @@ function generateCandidate(
   planned = limitLength(planned, numChords);
 
   // --- Resolution: ensure the progression ends where the cadence asks ---
+  // A minor progression asked to end bright may close on a Picardy third.
+  const tonicIsMinor = buildTriadFromScale(scale, 0).quality === "min";
+  const picardy =
+    tonicIsMinor &&
+    cadence === "resolve" &&
+    (options.useModalInterchange ?? false) &&
+    random() < clamp01(brightnessTargets[numChords - 1] ?? 0) * mood.chromaticism;
+
   planned = applyCadence(planned, {
-    cadence: options.cadence ?? "resolve",
+    cadence,
     scale,
     romans,
     complexity: options.complexity,
     random,
     allowRaisedDominant,
+    picardy,
+    mode: options.mode,
   });
 
   // --- Harmonic rhythm: structural chords take the mood's profile ---
   // Inserted chromatic chords keep the shorter duration they were given; those
   // are passing events and lengthening them would defeat the point.
   planned = planned.map((chord, idx) =>
-    chord.kind === "diatonic" || chord.kind === "functional-substitution"
+    isStructuralKind(chord.kind)
       ? { ...chord, durationClass: rhythm[idx] ?? chord.durationClass }
       : chord
   );
 
-  return {
-    result: voicePlannedChords(planned, options, seed, mood),
+  return finishCandidate({
     planned,
+    options,
+    seed,
+    mood,
+    tonic,
     tensionCurve,
-  };
+    brightnessTargets,
+    scalePitchClasses: scale.pitchClasses,
+  });
 }
 
 /**
@@ -897,6 +1091,8 @@ export function generateAdvancedProgression(
       tensionCurve: candidate.tensionCurve,
       tonic,
       mood,
+      scalePitchClasses: candidate.scalePitchClasses,
+      brightnessTargets: candidate.brightnessTargets,
     });
     scored.push({ candidate, total: score.total });
   }

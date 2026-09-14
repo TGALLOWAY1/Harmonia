@@ -34,7 +34,13 @@ import { keyPrefersFlats } from "@/lib/theory/spelling";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { ChordMood } from "@/lib/music/generators/advanced/chordMoods";
-import type { CadenceMode, VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
+import type {
+  BrightnessCurve,
+  CadenceMode,
+  TensionShape,
+  VoicingStyle,
+  VoiceCount,
+} from "@/lib/music/generators/advanced/types";
 import type { MelodyStyle, MelodyHarmony, MelodyMood } from "@/lib/music/generators/melody/types";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -67,6 +73,24 @@ const CHORD_MOODS: { value: ChordMood; label: string }[] = [
 const CADENCE_MODES: { value: CadenceMode; label: string }[] = [
   { value: "resolve", label: "Resolve" },
   { value: "open", label: "Open end" },
+];
+
+const TENSION_SHAPES: { value: TensionShape; label: string; title: string }[] = [
+  { value: "phrase", label: "Phrase", title: "Classical phrase: builds to the dominant, then resolves" },
+  { value: "arch", label: "Arch", title: "Depart, peak in the middle, return" },
+  { value: "ramp", label: "Build", title: "Relentless build — pairs well with an open ending" },
+  { value: "question", label: "Question", title: "Antecedent rises to a half cadence, consequent answers" },
+  { value: "plateau", label: "Plateau", title: "Stillness, then one surge before the close" },
+  { value: "collapse", label: "Collapse", title: "Open at maximum tension and decay to rest" },
+];
+
+const BRIGHTNESS_CURVES: { value: BrightnessCurve; label: string; title: string }[] = [
+  { value: "auto", label: "Auto", title: "Let the mood choose how brightness travels" },
+  { value: "steady", label: "Steady", title: "Brightness holds at the mood's level" },
+  { value: "darkening", label: "Darken", title: "Borrow from darker modes as the phrase goes on" },
+  { value: "sunrise", label: "Sunrise", title: "Start shaded, end in lydian light" },
+  { value: "arch", label: "Lift", title: "Brighten through the middle, settle at the ends" },
+  { value: "collapse", label: "Fade", title: "Start bright, darken toward the close" },
 ];
 
 const VOICE_COUNTS: { value: VoiceCount; label: string }[] = [
@@ -108,6 +132,8 @@ export default function HarmoniaPage() {
     voiceCount,
     cadence,
     chordMood,
+    tensionShape,
+    brightnessCurve,
     setSettings,
     generateNew,
     toggleLock,
@@ -861,6 +887,37 @@ export default function HarmoniaPage() {
                 >
                   {CADENCE_MODES.map((cm) => (
                     <option key={cm.value} value={cm.value}>{cm.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Shape Group — the tension spine and the brightness curve */}
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[260px]">
+              <label className="flex items-center gap-1.5 text-[11px] lg:text-[10px] font-bold text-muted uppercase tracking-widest pl-1">
+                <Sparkles className="w-3 h-3 text-amber-500/70" />
+                Shape
+              </label>
+              <div className="flex items-center bg-background/50 border border-border-subtle rounded-xl shadow-inner p-1">
+                <select
+                  value={tensionShape}
+                  onChange={(e) => setSettings({ tensionShape: e.target.value as TensionShape })}
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  title="Tension shape — the curve every chord is chosen against"
+                >
+                  {TENSION_SHAPES.map((ts) => (
+                    <option key={ts.value} value={ts.value} title={ts.title}>{ts.label}</option>
+                  ))}
+                </select>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <select
+                  value={brightnessCurve}
+                  onChange={(e) => setSettings({ brightnessCurve: e.target.value as BrightnessCurve })}
+                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  title="Color — how brightness travels; picks which borrowed chords are reached for"
+                >
+                  {BRIGHTNESS_CURVES.map((bc) => (
+                    <option key={bc.value} value={bc.value} title={bc.title}>{bc.label}</option>
                   ))}
                 </select>
               </div>

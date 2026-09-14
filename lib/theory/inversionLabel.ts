@@ -30,3 +30,22 @@ export function getInversionLabel(midiNotes: number[], root: PitchClass): string
   // Other bass notes (e.g., extensions)
   return "Slash";
 }
+
+/**
+ * The bass that actually sounds and the inversion it implies, for keeping a
+ * chord's `bass`/`inversion` fields in step with its notes after edits.
+ * Inversion is −1 when the lowest note is not a chord tone (a pedal or an
+ * extension in the bass).
+ */
+export function describeInversion(
+  midiNotes: number[] | undefined,
+  root: PitchClass | undefined
+): { bass?: PitchClass; inversion?: number } {
+  if (!midiNotes || midiNotes.length === 0 || !root) return {};
+  const lowest = Math.min(...midiNotes);
+  const bass = midiToPitchClass(lowest);
+  const label = getInversionLabel(midiNotes, root);
+  const inversion =
+    label === "Root" ? 0 : label === "1st inv" ? 1 : label === "2nd inv" ? 2 : label === "3rd inv" ? 3 : -1;
+  return { bass, inversion };
+}

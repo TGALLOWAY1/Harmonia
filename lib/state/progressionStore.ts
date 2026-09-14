@@ -5,7 +5,15 @@ import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClas
 import { progressionToMidi, melodyToMidi } from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { ChordMood } from "../music/generators/advanced/chordMoods";
-import type { AdvancedProgressionOptions, CadenceMode, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
+import type {
+    AdvancedProgressionOptions,
+    BrightnessCurve,
+    CadenceMode,
+    TensionShape,
+    VoicingStyle,
+    VoiceCount,
+} from "../music/generators/advanced/types";
+import { describeInversion } from "../theory/inversionLabel";
 import type { ChordSourceType, SubstitutionOption } from "../creative/types";
 import { getSubstitutions } from "../creative/substitutionEngine";
 import { interpretChord } from "../creative/chordInterpreter";
@@ -81,6 +89,10 @@ interface ProgressionState {
     cadence: CadenceMode;
     chordMood: ChordMood;
     voiceCount: VoiceCount;
+    /** Target-tension curve the chords are chosen against. */
+    tensionShape: TensionShape;
+    /** How brightness travels across the phrase; "auto" lets the mood decide. */
+    brightnessCurve: BrightnessCurve;
 
     // Creative iteration state
     chordSourceTypes: ChordSourceType[];
@@ -95,7 +107,7 @@ interface ProgressionState {
     melodyMood: MelodyMood;
     chordsEnabled: boolean;
 
-    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount" | "cadence" | "chordMood">>) => void;
+    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount" | "cadence" | "chordMood" | "tensionShape" | "brightnessCurve">>) => void;
     generateNew: () => void;
     toggleLock: (index: number) => void;
     deleteChord: (index: number) => void;
@@ -137,7 +149,12 @@ interface ProgressionState {
 
 type ComplexityOptions = Pick<
     AdvancedProgressionOptions,
-    "complexity" | "useSecondaryDominants" | "usePassingChords" | "useSuspensions" | "useTritoneSubstitution"
+    | "complexity"
+    | "useSecondaryDominants"
+    | "usePassingChords"
+    | "useSuspensions"
+    | "useTritoneSubstitution"
+    | "useModalInterchange"
 >;
 
 function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
@@ -149,6 +166,8 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
                 usePassingChords: false,
                 useSuspensions: false,
                 useTritoneSubstitution: false,
+                // "Simple" stays inside the scale: no borrowed harmony either.
+                useModalInterchange: false,
             };
         case 2:
             return {
@@ -157,6 +176,7 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
                 usePassingChords: false,
                 useSuspensions: false,
                 useTritoneSubstitution: false,
+                useModalInterchange: true,
             };
         case 3:
             return {
@@ -165,6 +185,7 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
                 usePassingChords: true,
                 useSuspensions: true,
                 useTritoneSubstitution: false,
+                useModalInterchange: true,
             };
         case 4:
             return {
@@ -173,6 +194,7 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
                 usePassingChords: true,
                 useSuspensions: true,
                 useTritoneSubstitution: true,
+                useModalInterchange: true,
             };
     }
 }
@@ -193,6 +215,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     cadence: "resolve",
     chordMood: "emotional",
     voiceCount: 4,
+    tensionShape: "phrase",
+    brightnessCurve: "auto",
 
     // Creative iteration initial state
     chordSourceTypes: [],
@@ -212,7 +236,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateNew: () => {
-        const { rootKey, mode, complexity, numChords, voicingStyle, voiceCount, cadence, chordMood, currentProgression } = get();
+        const {
+            rootKey, mode, complexity, numChords, voicingStyle, voiceCount, cadence, chordMood,
+            tensionShape, brightnessCurve, currentProgression,
+        } = get();
         const rootPC = normalizeToPitchClass(rootKey) || "C";
 
         // Collect locked chords from the current progression (by position)
@@ -230,6 +257,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             voicingStyle,
             cadence,
             mood: chordMood,
+            tensionShape,
+            brightnessCurve,
             voiceCount,
             rangeLow: 48,
             rangeHigh: 79,
@@ -253,6 +282,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
                 midiNotes: voiced.midi,
                 root,
                 durationClass: voiced.durationClass,
+                bass: voiced.bass,
+                inversion: voiced.inversion,
             }, speller);
         });
 
@@ -340,7 +371,12 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
         const chords = currentProgression.chords.map((c, i) =>
             i === chordIndex
-                ? { ...c, midiNotes: newMidiNotes, notesWithOctave: newNotesWithOctave }
+                ? {
+                    ...c,
+                    midiNotes: newMidiNotes,
+                    notesWithOctave: newNotesWithOctave,
+                    ...describeInversion(newMidiNotes, c.root),
+                }
                 : c
         );
 
@@ -456,6 +492,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             notesWithOctave: option.candidateNotesWithOctave,
             isLocked: currentProgression.chords[chordIndex].isLocked,
             durationClass: currentProgression.chords[chordIndex].durationClass,
+            ...describeInversion(option.candidateMidiNotes, option.candidateRoot),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
@@ -524,6 +561,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
+            ...describeInversion(newMidiNotes, chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
@@ -563,6 +601,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
+            ...describeInversion(newMidiNotes, chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>
@@ -609,6 +648,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             symbol: interpretation.isCustomVoicing && interpretation.customLabel
                 ? interpretation.customLabel
                 : interpretation.symbol,
+            ...describeInversion(newMidiNotes, chord.root),
         }, spellerFor(rootKey, mode));
 
         const chords = currentProgression.chords.map((c, i) =>

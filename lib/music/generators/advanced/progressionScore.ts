@@ -1,6 +1,7 @@
 import { PITCH_CLASSES, type PitchClass } from "@/lib/theory/midiUtils";
 
 import type { ChordMoodProfile } from "./chordMoods";
+import { TENSION_TARGET_SCALE, chordTension } from "./tensionCurve";
 import type { PlannedAdvancedChord, VoicedChord } from "./types";
 
 /**
@@ -110,7 +111,19 @@ function scoreBassLine(voiced: VoicedChord[]): number {
   const distinct = new Set(bass).size;
   const stagnation = distinct === 1 ? 0.5 : 0;
 
-  return Math.max(0, Math.min(1, motion - stagnation));
+  // An unmotivated second inversion — one that is neither the penultimate
+  // cadential 6-4 nor sitting on a stepwise line — reads as a mistake.
+  let looseSixFours = 0;
+  for (let i = 0; i < voiced.length; i++) {
+    if (voiced[i].inversion !== 2) continue;
+    const cadential = i === voiced.length - 2;
+    const onLine =
+      i > 0 && i < voiced.length - 1 &&
+      Math.abs(bass[i] - bass[i - 1]) <= 2 && Math.abs(bass[i + 1] - bass[i]) <= 2;
+    if (!cadential && !onLine) looseSixFours++;
+  }
+
+  return Math.max(0, Math.min(1, motion - stagnation - 0.25 * looseSixFours));
 }
 
 /**
@@ -184,38 +197,48 @@ function scoreVariety(planned: PlannedAdvancedChord[], tonic: PitchClass): numbe
 /**
  * How closely the realised tension follows the phrase's target curve.
  *
- * The generator has always computed a tension curve; nothing ever checked
- * whether the chords it picked actually followed it.
+ * Realised tension is the full deterministic formula — function, chromaticism,
+ * dissonance, the inversion that was actually voiced, and the distance the
+ * voices travelled to get there — so the planner's choices and the voicer's
+ * are judged together against the same spine.
  */
-function scoreTensionMatch(planned: PlannedAdvancedChord[], target: number[]): number {
+function scoreTensionMatch(
+  planned: PlannedAdvancedChord[],
+  voiced: VoicedChord[],
+  target: number[],
+  scalePitchClasses: PitchClass[]
+): number {
   if (planned.length === 0 || target.length === 0) return 0.5;
 
   let error = 0;
   let counted = 0;
   for (let i = 0; i < planned.length && i < target.length; i++) {
-    const realised = realisedTension(planned[i]);
-    error += Math.abs(realised - target[i]);
+    const realised = chordTension({
+      chord: planned[i],
+      scalePitchClasses,
+      inversion: voiced[i]?.inversion,
+      previousVoicing: i > 0 ? voiced[i - 1]?.midi : null,
+      voicing: voiced[i]?.midi,
+    });
+    error += Math.abs(realised - target[i] * TENSION_TARGET_SCALE);
     counted++;
   }
   if (counted === 0) return 0.5;
-  return Math.max(0, 1 - error / counted);
+  // Errors are on the formula's compressed scale; 0.35 is a chord in the
+  // wrong function entirely.
+  return Math.max(0, 1 - error / (counted * 0.35));
 }
 
-/** Tension a chord actually carries, from its function and colour. */
-function realisedTension(chord: PlannedAdvancedChord): number {
-  let tension = 0;
-  if (chord.isDominant) tension += 0.6;
-  if (chord.kind === "secondary-dominant") tension += 0.25;
-  if (chord.kind === "tritone-substitution") tension += 0.35;
-  if (chord.kind === "passing") tension += 0.3;
-  if (chord.kind === "suspension") tension += 0.2;
-  // More pitch classes means more colour, and more colour means more tension.
-  tension += Math.max(0, chord.pitchClasses.length - 3) * 0.12;
-  return Math.min(1, tension);
-}
-
-/** Does the realised texture sit where the mood asked for it? */
-function scoreMoodMatch(voiced: VoicedChord[], profile: ChordMoodProfile): number {
+/**
+ * Does the realised texture sit where the mood asked for it — in register,
+ * in spread, and in brightness?
+ */
+function scoreMoodMatch(
+  voiced: VoicedChord[],
+  planned: PlannedAdvancedChord[],
+  profile: ChordMoodProfile,
+  brightnessTargets: number[]
+): number {
   if (voiced.length === 0) return 0.5;
 
   const centres = voiced.map((chord) => (Math.min(...chord.midi) + Math.max(...chord.midi)) / 2);
@@ -229,7 +252,19 @@ function scoreMoodMatch(voiced: VoicedChord[], profile: ChordMoodProfile): numbe
   const spanTarget = profile.registerSpan;
   const spanScore = Math.max(0, 1 - Math.abs(meanSpan - spanTarget) / 18);
 
-  return Math.max(0, Math.min(1, 0.6 * centreScore + 0.4 * spanScore));
+  let brightnessScore = 0.5;
+  if (brightnessTargets.length > 0) {
+    let error = 0;
+    let counted = 0;
+    planned.forEach((chord, i) => {
+      if (chord.brightness === undefined) return;
+      error += Math.abs(chord.brightness - (brightnessTargets[i] ?? 0));
+      counted++;
+    });
+    if (counted > 0) brightnessScore = Math.max(0, 1 - error / (counted * 1.5));
+  }
+
+  return Math.max(0, Math.min(1, 0.45 * centreScore + 0.3 * spanScore + 0.25 * brightnessScore));
 }
 
 export function scoreProgression(params: {
@@ -239,8 +274,13 @@ export function scoreProgression(params: {
   tensionCurve: number[];
   tonic: PitchClass;
   mood: ChordMoodProfile;
+  /** Home scale, for the chromaticism term. Defaults to the tonic alone. */
+  scalePitchClasses?: PitchClass[];
+  /** Brightness target per slot; omitted means brightness is not judged. */
+  brightnessTargets?: number[];
 }): ProgressionScore {
   const { voiced, planned, voiceLeadingCosts, tensionCurve, tonic, mood } = params;
+  const scalePitchClasses = params.scalePitchClasses ?? [tonic];
 
   const breakdown = {
     cadence: scoreCadence(voiced, planned, tonic),
@@ -248,8 +288,8 @@ export function scoreProgression(params: {
     registerArc: scoreRegisterArc(voiced),
     voiceLeading: scoreVoiceLeading(voiceLeadingCosts),
     variety: scoreVariety(planned, tonic),
-    tensionMatch: scoreTensionMatch(planned, tensionCurve),
-    moodMatch: scoreMoodMatch(voiced, mood),
+    tensionMatch: scoreTensionMatch(planned, voiced, tensionCurve, scalePitchClasses),
+    moodMatch: scoreMoodMatch(voiced, planned, mood, params.brightnessTargets ?? []),
   };
 
   const total = (Object.keys(breakdown) as (keyof typeof breakdown)[]).reduce(

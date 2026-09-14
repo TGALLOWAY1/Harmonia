@@ -32,6 +32,8 @@ npm run lint      # Run ESLint
 - Music theory operations should use deterministic rules, not randomness where possible
 - Scales are not all seven notes — `major_pentatonic` has five. Read `ScaleDefinition.pitchClasses.length` rather than assuming 7 degrees, and route pentatonic through `lib/theory/pentatonic.ts` instead of the stacked-thirds helpers in `chord.ts`
 - Piano roll and chord cards are visually aligned using flex multipliers based on `durationClass`
+- Every generated `Chord` carries `bass` and `inversion`; store actions that change `midiNotes` must keep them in step (use `describeInversion` from `lib/theory/inversionLabel.ts`)
+- Borrowed harmony (`ChordKind` `"borrowed"`) is opt-in via `useModalInterchange`, which the store's complexity presets enable from "Rich" upward; "Simple" and the pentatonic path stay inside the scale
 
 ## File Structure Highlights
 
@@ -43,6 +45,12 @@ npm run lint      # Run ESLint
 | `lib/creative/` | Substitution engine, mutation engine, chord interpreter, types |
 | `lib/theory/` | Core music theory: scales, chords, MIDI, pitch classes |
 | `lib/music/generators/advanced/` | Advanced progression generation pipeline |
+| `lib/music/generators/advanced/tensionCurve.ts` | Tension shapes + the per-chord tension formula every stage plans and scores against |
+| `lib/music/generators/advanced/slotPlanner.ts` | Fills each slot against the tension/brightness targets; one borrowed chord per phrase |
+| `lib/music/generators/advanced/modalInterchange.ts` | Borrowed-chord catalogue derived per mode, keyed to brightness; Picardy third |
+| `lib/music/generators/advanced/neoRiemannian.ts` | Neo-Riemannian transforms and parsimonious voice leading |
+| `lib/music/generators/advanced/bassLine.ts` | Bass-line planner (inversion per chord as a small DP) |
+| `lib/music/generators/advanced/voicingSearch.ts` | Bounded Viterbi search connecting voicings across the whole progression |
 | `lib/music/generators/melody/` | Phrase-based melody engine (phrase plan, contour, motifs, moods, ornaments, scoring) |
 | `lib/theory/pentatonic.ts` | Scale-safe chord vocabulary + templates for major pentatonic (no stacked thirds) |
 | `lib/audio/instrumentCatalog.ts` | Tone-free instrument metadata (ids, labels, quality tiers) |

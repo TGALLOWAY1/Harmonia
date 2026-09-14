@@ -64,7 +64,25 @@ Generation now costs ~10.7ms versus ~1.4ms, and remains fully deterministic per 
 
 One finding worth recording: best-of-N under a **strict argmax made variety worse**, cutting distinct outputs from 24 to 15, because scores cluster and the same few progressions kept winning. Quality rose and variety fell. The fix was two-part — widen the underlying plan space (interior variation within functional families) and treat near-equal candidates as tied — after which both moved in the right direction together.
 
-Still open: everything from recommendation #10 onward — best-of-N generation, mood presets, modal interchange, harmonic rhythm, bass-line planning, and the tension-curve spine. The deepest remaining limit is unchanged: the voice-leading cost function still cannot see chord identity, so tendency-tone resolution remains impossible (recommendation #13 and the Lerdahl/Tymoczko work in §5.1).
+### Phase 2 remainder and Phase 4 (recommendations #10, #12, #13, #14, #15)
+
+Measured over 400 seeds at the store's own presets (C ionian, 4 chords, complexity 2, mood *emotional*), before → after.
+
+| # | Change | Before | After |
+|---|---|---|---|
+| 15 | **Target-tension curve as the spine.** Six shapes (`phrase`, `arch`, `ramp`, `question`, `plateau`, `collapse`); the §5.2 per-chord formula (`0.40·functional + 0.20·chromaticism + 0.15·dissonance + 0.10·inversion + 0.15·voice-leading`) replaces the ad-hoc tension gates; slots are filled by distance to the target and scored against the same formula | the curve only gated extensions; nothing checked the chords followed it | **`collapse` opens off the tonic in >50% of runs, `plateau` puts its surge on the penultimate chord in >70%, `ramp` + open ending leaves >60% unresolved**; realised tension is judged by the planner's own formula |
+| 12 | **Bass-line planner**; `bass`/`inversion` on `VoicedChord` and `Chord`; slash labels on the cards | 16.0% of chords in second inversion, 6.6% as unmotivated 6-4s; bass static on 17.5% of chord changes; opening voicing identical in 83% of runs | **1.4% second inversions, every one a cadential, passing or pedal 6-4; static bass 0.7%; the planned bass is realised on 100% of chords; identical opener 34%** |
+| 10 | **Modal interchange keyed to brightness.** A 16-idiom catalogue derived per mode from the parallel modes (lydian +3 … phrygian −2), five brightness curves, one surprise per phrase, Picardy third | no borrowed chord reachable by generation | **35% of default generations carry one borrowed chord (dark 54%, energetic 67%, dreamy 23%); dark reaches bII/iv/bVI/ii°, dreamy II/#iv°, never more than one per four-chord phrase** |
+| 14 | **Neo-Riemannian engine.** P/L/R/S/N/H/LP/PL, chromatic mediants offered from the previous chord, the transform's parsimonious voicing added as a candidate | distant triads unreachable | III, bVI, bvi and the hexatonic pole reachable; every transformed chord shares a held voice with its predecessor (the pole excepted, by definition) |
+| 13 | **Bounded Viterbi voicing search** (beam 4, 16 candidates per chord) plus a Plomp-Levelt/Sethares roughness term | greedy chord-by-chord argmin | whole-progression paths; generation ~13.8ms versus ~10.7ms, still deterministic per seed |
+
+Distinct outputs at the defaults: 57 per 1,000 seeds → 88 per 400.
+
+Two design decisions are worth recording. First, the borrowed chord is deliberately singular: Cheung et al.'s result is that pleasure tracks *one* surprise against an otherwise predictable context, and an early version that let the catalogue fill any slot it fitted dissolved the key exactly as §3.6 warned. Second, the bass plan is a hard constraint on the voicer, not a bonus: with a bonus, the beam search overrode the planned bass on about 15% of chords whenever a smoother path existed, which put the pedal back.
+
+Covered by 5 new module test files (66 tests) and 16 further generator-level regressions in `progressionQuality.test.ts`.
+
+Still open: the voice-leading cost function still cannot see chord identity, so tendency-tone resolution (the leading tone rising, the seventh falling) is enforced for the *bass* by the planner but not for inner voices (§4.2 and the Lerdahl/Tymoczko work in §5.1). The corpus-fitted 12-feature weight vector is adopted only for its roughness term; the remaining weights stay hand-tuned. The pentatonic path takes the tension shapes and the bass plan but, by design, no borrowed harmony.
 
 ---
 

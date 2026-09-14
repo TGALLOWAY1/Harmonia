@@ -12,6 +12,22 @@ const DURATION_LABEL: Record<string, string> = {
   eighth: "½ beat",
 };
 
+/**
+ * Display name of the note actually sounding in the bass, for the slash label
+ * of an inverted chord. Read from the spelled note names so it matches the
+ * key's accidentals ("Bb", not "A#"); falls back to the canonical pitch class.
+ */
+function bassDisplayName(chord: Chord): string | null {
+  if (chord.inversion === undefined || chord.inversion === 0) return null;
+  if (!chord.midiNotes || chord.midiNotes.length === 0) return chord.bass ?? null;
+  let lowest = 0;
+  chord.midiNotes.forEach((midi, i) => {
+    if (midi < (chord.midiNotes as number[])[lowest]) lowest = i;
+  });
+  const spelled = chord.notesWithOctave?.[lowest];
+  return spelled ? spelled.replace(/-?\d+$/, "") : chord.bass ?? null;
+}
+
 /** Provenance styling — kept as a small dot so it never crowds the chord name. */
 const SOURCE_META: Record<ChordSourceType, { dot: string; label: string }> = {
   generated: { dot: "", label: "" },
@@ -52,6 +68,7 @@ export function ChordCard({
   onRevert,
 }: ChordCardProps) {
   const source = SOURCE_META[sourceType];
+  const bassName = bassDisplayName(chord);
   const durationLabel =
     chord.durationClass && chord.durationClass !== "full"
       ? DURATION_LABEL[chord.durationClass]
@@ -136,8 +153,12 @@ export function ChordCard({
         <div className="w-full truncate text-[11px] font-mono text-muted mb-0.5 tracking-wider">
           {chord.romanNumeral}
         </div>
-        <div className="w-full truncate text-base sm:text-lg lg:text-xl font-semibold leading-tight">
+        <div
+          className="w-full truncate text-base sm:text-lg lg:text-xl font-semibold leading-tight"
+          title={bassName ? `${chord.symbol} with ${bassName} in the bass` : undefined}
+        >
           {chord.symbol}
+          {bassName && <span className="font-normal text-muted">/{bassName}</span>}
         </div>
         <div className="hidden sm:block w-full truncate text-[10px] text-muted opacity-70 mt-1">
           {chord.notes.join(" · ")}

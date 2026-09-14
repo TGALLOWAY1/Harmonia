@@ -3,8 +3,82 @@
 exports[`advanced generator > is deterministic with a fixed seed 1`] = `
 [
   {
+    "bass": "C",
     "degreeLabel": "I",
     "durationClass": "full",
+    "inversion": 0,
+    "midi": [
+      48,
+      55,
+      59,
+      64,
+    ],
+    "notes": [
+      "C3",
+      "G3",
+      "B3",
+      "E4",
+    ],
+    "roles": [
+      "bass",
+      "chordTone",
+      "chordTone",
+      "chordTone",
+    ],
+    "symbol": "Cmaj7",
+  },
+  {
+    "bass": "D",
+    "degreeLabel": "ii",
+    "durationClass": "full",
+    "inversion": 0,
+    "midi": [
+      50,
+      57,
+      60,
+      65,
+    ],
+    "notes": [
+      "D3",
+      "A3",
+      "C4",
+      "F4",
+    ],
+    "roles": [
+      "bass",
+      "chordTone",
+      "chordTone",
+      "chordTone",
+    ],
+    "symbol": "Dm7",
+  },
+  {
+    "bass": "G",
+    "degreeLabel": "V(sus4)",
+    "durationClass": "quarter",
+    "inversion": 0,
+    "midi": [
+      55,
+      65,
+      72,
+    ],
+    "notes": [
+      "G3",
+      "F4",
+      "C5",
+    ],
+    "roles": [
+      "bass",
+      "chordTone",
+      "extension",
+    ],
+    "symbol": "G7sus4",
+  },
+  {
+    "bass": "E",
+    "degreeLabel": "I",
+    "durationClass": "full",
+    "inversion": 1,
     "midi": [
       52,
       60,
@@ -24,75 +98,6 @@ exports[`advanced generator > is deterministic with a fixed seed 1`] = `
       "chordTone",
     ],
     "symbol": "Cmaj7(9)",
-  },
-  {
-    "degreeLabel": "IV",
-    "durationClass": "full",
-    "midi": [
-      53,
-      60,
-      64,
-      69,
-    ],
-    "notes": [
-      "F3",
-      "C4",
-      "E4",
-      "A4",
-    ],
-    "roles": [
-      "bass",
-      "chordTone",
-      "chordTone",
-      "chordTone",
-    ],
-    "symbol": "Fmaj7",
-  },
-  {
-    "degreeLabel": "vi",
-    "durationClass": "full",
-    "midi": [
-      55,
-      59,
-      60,
-      69,
-    ],
-    "notes": [
-      "G3",
-      "B3",
-      "C4",
-      "A4",
-    ],
-    "roles": [
-      "bass",
-      "extension",
-      "chordTone",
-      "chordTone",
-    ],
-    "symbol": "Am7(9)",
-  },
-  {
-    "degreeLabel": "I",
-    "durationClass": "full",
-    "midi": [
-      52,
-      59,
-      60,
-      67,
-    ],
-    "notes": [
-      "E3",
-      "B3",
-      "C4",
-      "G4",
-    ],
-    "roles": [
-      "bass",
-      "chordTone",
-      "chordTone",
-      "chordTone",
-    ],
-    "symbol": "Cmaj7",
   },
 ]
 `;

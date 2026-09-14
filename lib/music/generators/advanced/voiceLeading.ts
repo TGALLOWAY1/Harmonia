@@ -140,7 +140,7 @@ function scoreBassMotion(prevBass: number, nextBass: number): number {
 // Span penalty
 // ---------------------------------------------------------------------------
 
-function spanPenalty(voicing: number[]): number {
+export function spanPenalty(voicing: number[]): number {
   if (voicing.length < 2) return 0;
   const span = voicing[voicing.length - 1] - voicing[0];
   // Penalize spans over 28 semitones (about 2.3 octaves)
@@ -231,6 +231,12 @@ export type VoicingPreference = {
   /** Pitch class (0-11) of the chord root, required by `preferRootPosition`. */
   rootPitchClass?: number;
   /**
+   * Pitch class (0-11) the bass-line planner asked for. Candidates with this
+   * note in the bass are favoured strongly enough that the plan wins whenever
+   * the range allows it at all.
+   */
+  preferredBassPitchClass?: number;
+  /**
    * Seeded source used to choose between voicings whose costs are effectively
    * equal. The voicing stage had no randomness at all, so a given chord got the
    * same shape in over 90% of generations; a strict argmin is far more
@@ -267,13 +273,19 @@ function resolveTies(
 }
 
 /** How strongly a root-position bass is favoured at a structural arrival. */
-const ROOT_POSITION_BONUS = 6;
+export const ROOT_POSITION_BONUS = 6;
+
+/** How strongly the bass the planner asked for is favoured. */
+export const PLANNED_BASS_BONUS = 6;
 
 function rootPositionBonus(candidate: number[], preference?: VoicingPreference): number {
-  if (!preference?.preferRootPosition) return 0;
-  if (preference.rootPitchClass === undefined) return 0;
-  const bass = Math.min(...candidate);
-  return ((bass % 12) + 12) % 12 === preference.rootPitchClass ? -ROOT_POSITION_BONUS : 0;
+  if (!preference) return 0;
+  const bass = ((Math.min(...candidate) % 12) + 12) % 12;
+  if (preference.preferredBassPitchClass !== undefined) {
+    return bass === preference.preferredBassPitchClass ? -PLANNED_BASS_BONUS : 0;
+  }
+  if (!preference.preferRootPosition || preference.rootPitchClass === undefined) return 0;
+  return bass === preference.rootPitchClass ? -ROOT_POSITION_BONUS : 0;
 }
 
 export function pickBestVoiceLedCandidate(
