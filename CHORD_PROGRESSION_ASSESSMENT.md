@@ -50,7 +50,21 @@ Aeolian deliberately keeps its raised (harmonic-minor) `v|E` — that is idiomat
 
 Covered by 16 regression tests in `advanced/__tests__/progressionQuality.test.ts`, **9 of which fail on the pre-fix code**. Full suite: 695 passing.
 
-Still open: everything from recommendation #7 onward — best-of-N generation, mood presets, modal interchange, harmonic rhythm, bass-line planning, and the tension-curve spine. The two deepest remaining limits are unchanged: the voicing stage is still deterministic (one opening voicing dominates 93% of generations) and the cost function still cannot see chord identity.
+### Phase 3 (recommendations #7, #8, #9, #11)
+
+| # | Change | Before | After |
+|---|---|---|---|
+| 7 | Best-of-8 with a whole-progression rubric | single pass; static bass in 26.4% of generations | **0.0% static bass, 2.5% frozen soprano** |
+| — | Interior degree variation + tie-banded selection | 24 distinct progressions reachable | **64 distinct (2.7x)** |
+| 8 | Tension and mood drive voicing register/density; seeded tie-breaking | voicing stage had no variation at all | opening voicing 93% → 82% identical |
+| 9 | `ChordMood` profiles (dark/emotional/dreamy/energetic) | no emotional parameter for chords | **mood sets tension, register, density, rhythm, cadence** |
+| 11 | Harmonic-rhythm profiles | 1-2 rhythms, every chord a full bar | even / anchored / accelerating / pedal-opening |
+
+Generation now costs ~10.7ms versus ~1.4ms, and remains fully deterministic per seed.
+
+One finding worth recording: best-of-N under a **strict argmax made variety worse**, cutting distinct outputs from 24 to 15, because scores cluster and the same few progressions kept winning. Quality rose and variety fell. The fix was two-part — widen the underlying plan space (interior variation within functional families) and treat near-equal candidates as tied — after which both moved in the right direction together.
+
+Still open: everything from recommendation #10 onward — best-of-N generation, mood presets, modal interchange, harmonic rhythm, bass-line planning, and the tension-curve spine. The deepest remaining limit is unchanged: the voice-leading cost function still cannot see chord identity, so tendency-tone resolution remains impossible (recommendation #13 and the Lerdahl/Tymoczko work in §5.1).
 
 ---
 

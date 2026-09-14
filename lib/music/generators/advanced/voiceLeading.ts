@@ -230,7 +230,41 @@ export type VoicingPreference = {
   preferRootPosition?: boolean;
   /** Pitch class (0-11) of the chord root, required by `preferRootPosition`. */
   rootPitchClass?: number;
+  /**
+   * Seeded source used to choose between voicings whose costs are effectively
+   * equal. The voicing stage had no randomness at all, so a given chord got the
+   * same shape in over 90% of generations; a strict argmin is far more
+   * confident than the cost differences justify. Omit for pure argmin.
+   */
+  rng?: () => number;
 };
+
+/**
+ * Cost difference below which two voicings count as equally good.
+ *
+ * Calibrated against this cost function's scale: the terms are weighted so a
+ * whole extra step of voice motion is worth ~0.25, so half that is comfortably
+ * inside the noise floor of "which of these sounds better".
+ */
+const COST_TIE_BAND = 0.5;
+
+/** Pick among candidates whose cost ties the best, or the sole best if none. */
+function resolveTies(
+  entries: { voicing: number[]; cost: number }[],
+  rng: (() => number) | undefined
+): { voicing: number[]; cost: number } {
+  let bestCost = Number.POSITIVE_INFINITY;
+  for (const entry of entries) {
+    if (entry.cost < bestCost) bestCost = entry.cost;
+  }
+
+  const tied = entries.filter((entry) => entry.cost <= bestCost + COST_TIE_BAND);
+  if (tied.length === 0) return entries[0];
+  if (!rng || tied.length === 1) return tied[0];
+
+  const pick = Math.floor(rng() * tied.length);
+  return tied[Math.min(pick, tied.length - 1)];
+}
 
 /** How strongly a root-position bass is favoured at a structural arrival. */
 const ROOT_POSITION_BONUS = 6;
@@ -256,38 +290,21 @@ export function pickBestVoiceLedCandidate(
   }
 
   if (!previous) {
-    let best = candidates[0];
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (const candidate of candidates) {
+    const entries = candidates.map((candidate) => {
       const center = (candidate[0] + candidate[candidate.length - 1]) / 2;
-      const distance =
-        Math.abs(center - fallbackCenter) + spanPenalty(candidate) + rootPositionBonus(candidate, preference);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = candidate;
-      }
-    }
-
-    return {
-      voicing: best,
-      cost: bestDistance,
-    };
+      return {
+        voicing: candidate,
+        cost:
+          Math.abs(center - fallbackCenter) + spanPenalty(candidate) + rootPositionBonus(candidate, preference),
+      };
+    });
+    return resolveTies(entries, preference?.rng);
   }
 
-  let winner = candidates[0];
-  let winnerCost = Number.POSITIVE_INFINITY;
+  const entries = candidates.map((candidate) => ({
+    voicing: candidate,
+    cost: calculateVoiceLeadingCost(previous, candidate) + rootPositionBonus(candidate, preference),
+  }));
 
-  for (const candidate of candidates) {
-    const cost = calculateVoiceLeadingCost(previous, candidate) + rootPositionBonus(candidate, preference);
-    if (cost < winnerCost) {
-      winner = candidate;
-      winnerCost = cost;
-    }
-  }
-
-  return {
-    voicing: winner,
-    cost: winnerCost,
-  };
+  return resolveTies(entries, preference?.rng);
 }

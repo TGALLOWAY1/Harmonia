@@ -126,7 +126,7 @@ Theory learned silently is theory half-learned. Harmonia plays **every** interac
 <td width="50%" valign="top">
 
 ### 🎼 Chord Progression Generator
-Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences.
+Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates.
 
 </td>
 <td width="50%" valign="top">
@@ -299,15 +299,16 @@ sequenceDiagram
 | Stage | What happens |
 |---|---|
 | **1. Theory setup** | The engine builds the scale and diatonic chord set for the chosen key/mode. |
-| **2. Phrase structure** | Each chord slot gets a role and a target tension from the length-specific tension curve. |
+| **2. Phrase structure** | Each chord slot gets a role and a target tension from the length-specific tension curve, scaled by the mood, plus a duration from the mood's harmonic-rhythm profile. |
 | **3. Extensions & subs** | Complexity level gates 7ths/9ths/13ths/alterations; secondary dominants, tritone subs, passing diminished, and suspensions are injected — then validated against a chromatic-density rule. |
 | **4. Cadence** | The plan is capped to the requested length *first*, then the ending is set: `resolve` rewrites the final chord to the tonic, `open` keeps the plan's own ending. |
-| **5. Voice leading** | For each chord, candidate voicings are generated and the smoothest (lowest-cost) is chosen relative to the previous chord. The opening and final chords additionally favour a root-position bass so the progression starts and lands on stable ground. |
-| **6. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
-| **7. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
-| **8. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
-| **9. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
-| **10. Save** | Export MIDI or persist to favorites / the sketchpad. |
+| **5. Voice leading** | For each chord, candidate voicings are generated and the smoothest (lowest-cost) is chosen relative to the previous chord. The opening and final chords additionally favour a root-position bass so the progression starts and lands on stable ground; near-equal voicings are broken by the seed so a chord is not always voiced identically. |
+| **6. Scoring** | Steps 1-5 run eight times from derived seeds. Each finished progression is scored on cadence strength, bass motion, register arc, voice leading, variety, tension match and mood fit, and the best is kept. |
+| **7. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
+| **8. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
+| **9. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
+| **10. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
+| **11. Save** | Export MIDI or persist to favorites / the sketchpad. |
 
 ---
 
@@ -457,6 +458,8 @@ flowchart TD
 - **Voice densities (3):** 3-voice (sparse), 4-voice (standard), 5-voice (rich)
 - **Complexity levels (4):** Simple → Rich → Extended → Altered
 - **Cadence modes (2):** resolve (always lands on the tonic), open (keeps half, deceptive and loop-friendly endings)
+- **Chord moods (4):** dark, emotional, dreamy, energetic — each sets tension, register, density, harmonic rhythm and preferred ending
+- **Harmonic rhythm profiles (4):** even, anchored, accelerating, pedal-opening
 - **Note roles (7):** chord tone, extension, alteration, passing, melody, approach, bass
 
 </details>

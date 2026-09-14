@@ -183,3 +183,112 @@ describe("voicing vocabulary", () => {
     expect(Math.max(...spans)).toBeGreaterThan(12);
   });
 });
+
+describe("mood and candidate selection", () => {
+  const sweep = (over: Partial<AdvancedProgressionOptions>, seeds = 400) => {
+    const signatures = new Set<string>();
+    let staticBass = 0;
+    let frozenSoprano = 0;
+    const rhythms = new Set<string>();
+
+    for (let seed = 0; seed < seeds; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, ...over }));
+      signatures.add(result.chords.map((c) => c.midi.join(".")).join("|"));
+      const bass = result.chords.map((c) => Math.min(...c.midi));
+      const soprano = result.chords.map((c) => Math.max(...c.midi));
+      if (new Set(bass).size === 1) staticBass++;
+      if (new Set(soprano).size === 1) frozenSoprano++;
+      rhythms.add(result.chords.map((c) => c.durationClass).join(","));
+    }
+
+    return { distinct: signatures.size, staticBass, frozenSoprano, rhythms };
+  };
+
+  it("stays deterministic for a seed despite drawing several candidates", () => {
+    for (const mood of ["dark", "emotional", "dreamy", "energetic"] as const) {
+      for (const seed of [0, 7, 123]) {
+        const a = generateAdvancedProgression(options(3, { seed, mood }));
+        const b = generateAdvancedProgression(options(3, { seed, mood }));
+        expect(a).toEqual(b);
+      }
+    }
+  });
+
+  // Regression: scoring whole progressions is what lets the generator reject a
+  // draw whose bass never moves. A static bass reads as a pedal and was the
+  // mechanism behind progressions that felt like one sustained sonority.
+  it("scores away the static-bass failure mode", () => {
+    const scored = sweep({});
+    const unscored = sweep({ candidateCount: 1 });
+
+    expect(scored.staticBass).toBeLessThan(unscored.staticBass);
+    expect(scored.staticBass / 400).toBeLessThan(0.02);
+  });
+
+  it("keeps the top voice moving", () => {
+    expect(sweep({}).frozenSoprano / 400).toBeLessThan(0.1);
+  });
+
+  // Regression: a strict argmax over 8 candidates collapsed the distinct-output
+  // count, which sharpens the sameness the rubric exists to relieve. Interior
+  // variation plus tie-banded selection has to leave variety ahead, not behind.
+  it("produces more distinct progressions than the single-draw path", () => {
+    expect(sweep({}).distinct).toBeGreaterThan(30);
+  });
+
+  it("gives each mood an audibly different texture", () => {
+    const register = (mood: "dark" | "dreamy") => {
+      let total = 0;
+      for (let seed = 0; seed < 200; seed++) {
+        const chords = generateAdvancedProgression(options(2, { seed, mood })).chords;
+        total += chords.reduce((s, c) => s + (Math.min(...c.midi) + Math.max(...c.midi)) / 2, 0) / chords.length;
+      }
+      return total / 200;
+    };
+
+    // "dark" sits low and "dreamy" high; the gap should be plainly audible.
+    expect(register("dreamy") - register("dark")).toBeGreaterThan(4);
+  });
+
+  it("varies harmonic rhythm by mood instead of one chord per bar", () => {
+    // "even" holds every chord a bar; "accelerating" must not.
+    const durationsFor = (mood: "emotional" | "energetic") => {
+      const shapes = new Set<string>();
+      for (let seed = 0; seed < 100; seed++) {
+        shapes.add(
+          generateAdvancedProgression(options(1, { seed, mood, numChords: 5 }))
+            .chords.map((c) => c.durationClass)
+            .join(",")
+        );
+      }
+      return shapes;
+    };
+
+    const energetic = [...durationsFor("energetic")];
+    expect(energetic.some((shape) => shape.includes("half") || shape.includes("quarter"))).toBe(true);
+  });
+
+  it("lets a mood choose its own ending when the caller does not", () => {
+    // "dreamy" prefers an open ending; "emotional" resolves.
+    const endsOnTonic = (mood: "dreamy" | "emotional") => {
+      let count = 0;
+      for (let seed = 0; seed < 200; seed++) {
+        const chords = generateAdvancedProgression(options(2, { seed, mood })).chords;
+        if (chords[chords.length - 1].degreeLabel === "I") count++;
+      }
+      return count / 200;
+    };
+
+    expect(endsOnTonic("emotional")).toBe(1);
+    expect(endsOnTonic("dreamy")).toBeLessThan(1);
+  });
+
+  it("still honours an explicit cadence over the mood's preference", () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const chords = generateAdvancedProgression(
+        options(2, { seed, mood: "dreamy", cadence: "resolve" })
+      ).chords;
+      expect(chords[chords.length - 1].degreeLabel).toBe("I");
+    }
+  });
+});

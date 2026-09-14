@@ -1,3 +1,4 @@
+import type { ChordMood } from "./chordMoods";
 import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { PitchClass } from "@/lib/theory/midiUtils";
 
@@ -93,8 +94,12 @@ export type AdvancedProgressionOptions = {
   useSecondaryDominants: boolean;
   useTritoneSubstitution: boolean;
   useFunctionalSubstitutions?: boolean;
-  /** How the progression ends. Defaults to "resolve". */
+  /** How the progression ends. Defaults to the mood's preference. */
   cadence?: CadenceMode;
+  /** Emotional character. Drives tension, register, density and rhythm. */
+  mood?: ChordMood;
+  /** How many candidates to draw and score. Defaults to 8. */
+  candidateCount?: number;
   seed?: number;
 };
 
