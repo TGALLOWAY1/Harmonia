@@ -15,6 +15,7 @@ import {
 import { getScaleDefinition } from "../theory/scale";
 import type { ScaleType } from "../theory/types";
 import type { Mode } from "../theory/harmonyEngine";
+import { getChordPitchClasses, normalizeRoot } from "../theory/chordSymbol";
 import type { SubstitutionOption, SubstitutionCategory } from "./types";
 import type { Chord } from "../theory/progressionTypes";
 
@@ -425,12 +426,30 @@ function getPentatonicSubstitutions(
   const tonic = scale.pitchClasses[0];
   const submediant = scale.pitchClasses[4];
 
+  // Identify the source chord canonically rather than by its printed symbol:
+  // display symbols are respelled for the key (A#6 is shown as Bb6 in flat
+  // keys), so a string comparison would miss the chord being substituted and
+  // offer it back as a substitution for itself.
+  const sourceRoot = normalizeRoot(chord.symbol) ?? chordRoot;
+  const sourceSymbolPcs = getChordPitchClasses(chord.symbol);
+
+  const isSameChord = (candidate: PentatonicChord): boolean => {
+    if (candidate.root !== sourceRoot) return false;
+    // Same root and same tones = the same chord however it is spelled. The root
+    // check matters: C6 and Am7 share a pitch-class set but are distinct chords.
+    if (sourceSymbolPcs.length === 0) return candidate.symbol === chord.symbol;
+    return (
+      candidate.pitchClasses.length === sourceSymbolPcs.length &&
+      candidate.pitchClasses.every((pc) => sourceSymbolPcs.includes(pc))
+    );
+  };
+
   for (const degree of PENTATONIC_CHORD_DEGREES) {
     for (const candidate of getPentatonicChordVariants(scale, degree)) {
-      if (candidate.symbol === chord.symbol) continue;
+      if (isSameChord(candidate)) continue;
 
       // Same root: a re-colouring of the chord that's already there.
-      if (candidate.root === chordRoot) {
+      if (candidate.root === sourceRoot) {
         push(
           candidate,
           "diatonic",
@@ -442,8 +461,8 @@ function getPentatonicSubstitutions(
 
       // I <-> vi: the scale's only two complete triads, a third apart.
       const isRelativePair =
-        (chordRoot === tonic && candidate.root === submediant) ||
-        (chordRoot === submediant && candidate.root === tonic);
+        (sourceRoot === tonic && candidate.root === submediant) ||
+        (sourceRoot === submediant && candidate.root === tonic);
       if (isRelativePair) {
         push(
           candidate,

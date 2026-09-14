@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getSubstitutions } from "../substitutionEngine";
+import { makeSpeller } from "@/lib/theory/spelling";
+import { pitchClassToMidi } from "@/lib/theory/midiUtils";
 import { generateAdvancedProgression } from "@/lib/music/generators/advanced/generateAdvancedProgression";
 import { getChordPitchClasses, normalizeRoot, toPitchClass } from "@/lib/theory/chordSymbol";
 import { PITCH_CLASSES, type PitchClass } from "@/lib/theory/midiUtils";
@@ -68,6 +70,49 @@ describe("substitutions in major pentatonic", () => {
     for (let i = 0; i < chords.length; i++) {
       for (const option of getSubstitutions(chords[i], i, chords, "C", "major_pentatonic")) {
         expect(["diatonic", "relative", "inversion"]).toContain(option.category);
+      }
+    }
+  });
+
+  // Regression: display symbols are respelled per key (A#6 prints as Bb6 in
+  // flat keys) while roots stay sharp-canonical. Comparing display symbols
+  // missed the source chord and offered it back as its own substitution,
+  // burning one of the 12 result slots on a no-op.
+  it("never offers the source chord back under a different spelling", () => {
+    for (const root of PITCH_CLASSES) {
+      const speller = makeSpeller(root, "major_pentatonic");
+      const scale = getMajorPentatonicScale(root);
+
+      for (const degree of [0, 1, 3, 4] as const) {
+        for (const suffix of ["", "6", "add9", "sus4", "sus2", "m", "m7"]) {
+          const symbol = `${scale.pitchClasses[degree]}${suffix}`;
+          const pcs = getChordPitchClasses(symbol);
+          if (pcs.length === 0) continue;
+          if (pcs.some((pc) => !scale.pitchClasses.includes(pc))) continue;
+
+          const chord: Chord = {
+            symbol: speller.symbol(symbol), // what the store actually holds
+            notes: pcs.map((pc) => speller.pc(pc)),
+            romanNumeral: "I",
+            midiNotes: pcs.map((pc) => pitchClassToMidi(pc, 4)),
+            root: normalizeRoot(symbol) ?? "C",
+          };
+
+          const options = getSubstitutions(chord, 0, [chord], root, "major_pentatonic");
+          const sourcePcs = [...pcs].sort().join(",");
+
+          for (const option of options) {
+            if (option.category === "inversion") continue;
+            const candidatePcs = getChordPitchClasses(option.candidateSymbol);
+            const isSameChord =
+              option.candidateRoot === chord.root &&
+              [...candidatePcs].sort().join(",") === sourcePcs;
+            expect(
+              isSameChord,
+              `${root}: ${chord.symbol} was offered ${option.candidateSymbol} — the same chord respelled`
+            ).toBe(false);
+          }
+        }
       }
     }
   });

@@ -12,6 +12,7 @@ export type Depth = 0 | 1 | 2;
 
 export type Degree =
   | "I"
+  | "II"
   | "ii"
   | "iii"
   | "IV"
@@ -89,7 +90,7 @@ export function generateProgression(params: {
   }
 
   if (mode === "major_pentatonic") {
-    return generatePentatonicProgression(numChords);
+    return generatePentatonicProgression(numChords, depth);
   }
 
   const isMinorKey = mode !== "ionian";
@@ -122,20 +123,41 @@ export function generateProgression(params: {
  * Major pentatonic has no 4th or 7th degree, so the usual triads on ii, iii, IV
  * and V don't exist. Only four degrees can carry a chord, and two of them are
  * necessarily sus chords. See lib/theory/pentatonic.ts for the derivation.
+ *
+ * Depth adds colour the same way it does for the other modes, but only with
+ * tones the scale actually contains: the 7th on vi, sus2 on V, and the 9th on
+ * the tonic. (`m(add9)` is deliberately absent — the 9th above vi is the
+ * missing 7th degree, so it would fall outside the scale.)
  */
-const PENTATONIC_CHORDS: GeneratedChord[] = [
-  { degree: "I", quality: "" },       // major triad
-  { degree: "ii", quality: "sus4" },  // no 3rd available
-  { degree: "V", quality: "sus4" },   // no 3rd available
-  { degree: "vi", quality: "m" },     // minor triad
-];
+const PENTATONIC_CHORDS_BY_DEPTH: Record<Depth, GeneratedChord[]> = {
+  0: [
+    { degree: "I", quality: "" },       // major triad
+    { degree: "II", quality: "sus4" },  // no 3rd available
+    { degree: "V", quality: "sus4" },   // no 3rd available
+    { degree: "vi", quality: "m" },     // minor triad
+  ],
+  1: [
+    { degree: "I", quality: "" },
+    { degree: "II", quality: "sus4" },
+    { degree: "V", quality: "sus2" },
+    { degree: "vi", quality: "m7" },
+  ],
+  2: [
+    { degree: "I", quality: "add9" },
+    { degree: "II", quality: "sus4" },
+    { degree: "V", quality: "sus2" },
+    { degree: "vi", quality: "m7" },
+  ],
+};
 
-function generatePentatonicProgression(numChords: number): GeneratedChord[] {
+function generatePentatonicProgression(numChords: number, depth: Depth): GeneratedChord[] {
+  const vocabulary = PENTATONIC_CHORDS_BY_DEPTH[depth] ?? PENTATONIC_CHORDS_BY_DEPTH[0];
+
   // Open on the tonic, then draw from the scale-safe chords.
-  const chords: GeneratedChord[] = [PENTATONIC_CHORDS[0]];
+  const chords: GeneratedChord[] = [vocabulary[0]];
   for (let i = 1; i < numChords; i++) {
-    const pick = Math.floor(Math.random() * PENTATONIC_CHORDS.length);
-    chords.push(PENTATONIC_CHORDS[pick]);
+    const pick = Math.floor(Math.random() * vocabulary.length);
+    chords.push(vocabulary[pick]);
   }
   return chords;
 }
