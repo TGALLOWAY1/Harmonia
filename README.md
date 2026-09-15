@@ -299,16 +299,18 @@ sequenceDiagram
 | Stage | What happens |
 |---|---|
 | **1. Theory setup** | The engine builds the scale and diatonic chord set for the chosen key/mode. |
-| **2. Phrase structure** | Each chord slot gets a role and a target tension from the length-specific tension curve, scaled by the mood, plus a duration from the mood's harmonic-rhythm profile. |
-| **3. Extensions & subs** | Complexity level gates 7ths/9ths/13ths/alterations; secondary dominants, tritone subs, passing diminished, and suspensions are injected — then validated against a chromatic-density rule. |
-| **4. Cadence** | The plan is capped to the requested length *first*, then the ending is set: `resolve` rewrites the final chord to the tonic, `open` keeps the plan's own ending. |
-| **5. Voice leading** | For each chord, candidate voicings are generated and the smoothest (lowest-cost) is chosen relative to the previous chord. The opening and final chords additionally favour a root-position bass so the progression starts and lands on stable ground; near-equal voicings are broken by the seed so a chord is not always voiced identically. |
-| **6. Scoring** | Steps 1-5 run eight times from derived seeds. Each finished progression is scored on cadence strength, bass motion, register arc, voice leading, variety, tension match and mood fit, and the best is kept. |
-| **7. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
-| **8. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
-| **9. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
-| **10. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
-| **11. Save** | Export MIDI or persist to favorites / the sketchpad. |
+| **2. The spine** | Every chord slot gets a target tension from the chosen **tension shape** (phrase, arch, build, question, plateau, collapse), scaled by the mood; a target brightness from the **brightness curve** (steady, darkening, sunrise, lift, fade — or the mood's own); and a duration from the mood's harmonic-rhythm profile. |
+| **3. Slot planning** | Each slot is filled against those targets: diatonic alternates within the functional family (tonic I/iii/vi, subdominant ii/IV, dominant V/vii°), plus at most **one borrowed chord per phrase** — modal interchange from a parallel mode, or a Neo-Riemannian transform of the previous chord — chosen by how closely its tension and brightness fit the slot. |
+| **4. Extensions & subs** | Complexity level gates 7ths/9ths/13ths/alterations; secondary dominants, tritone subs, passing diminished, and suspensions are injected — then validated against a chromatic-density rule. |
+| **5. Cadence** | The plan is capped to the requested length *first*, then the ending is set: `resolve` rewrites the final chord to the tonic (a minor key asked to end bright may close on a Picardy third), `open` keeps the plan's own ending. |
+| **6. Bass line** | A small dynamic programme decides the bass note of every chord *before* voicing: root position at the opening, the cadence and the dominant that prepares it; first inversion where it buys a stepwise line; second inversion only as a cadential, passing or pedal 6-4; a seventh in the bass resolves down by step. Every chord carries its `bass` and `inversion`. |
+| **7. Voice leading** | Candidates that honour the planned bass are connected by a bounded Viterbi (beam) search over the *whole* progression, not chord by chord. Each candidate is charged for its register (which rises with tension), its sensory roughness (Plomp-Levelt/Sethares), and the voice leading from the previous chord; a chord reached by a Neo-Riemannian transform adds its own parsimonious voicing. |
+| **8. Scoring** | Steps 1-7 run eight times from derived seeds. Each finished progression is scored on cadence strength, bass motion, register arc, voice leading, variety, tension match (against the same formula the planner used) and mood fit including brightness, and the best is kept. |
+| **9. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
+| **10. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
+| **11. Visualization** | Chord cards (with slash labels for inverted chords) and the piano roll render in sync, aligned by duration class. |
+| **12. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
+| **13. Save** | Export MIDI or persist to favorites / the sketchpad. |
 
 ---
 
@@ -320,23 +322,28 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    T["Template<br/>selection"] --> P["Phrase structure<br/>roles + tension"]
-    P --> D["Diatonic<br/>chord plan"]
-    D --> E["Extensions<br/>(complexity-gated)"]
+    T["Template<br/>selection"] --> P["The spine<br/>tension shape + brightness"]
+    P --> Q["Slot planning<br/>family alternates + one borrowed chord"]
+    Q --> E["Extensions<br/>(complexity-gated)"]
     E --> S["Substitutions<br/>injected"]
     S --> C["Chromatic-density<br/>validation (2/3 rule)"]
-    C --> V["Voicing<br/>candidates"]
-    V --> L["Voice-leading<br/>cost minimization"]
+    C --> B["Bass-line<br/>plan"]
+    B --> V["Voicing<br/>candidates"]
+    V --> L["Beam search<br/>voice leading + roughness"]
     style P fill:#7c3aed,color:#fff
+    style B fill:#b45309,color:#fff
     style L fill:#0f766e,color:#fff
 ```
 
-- **Phrase structure** — Each chord is assigned one of 5 roles (`opening`, `continuation`, `pre-dominant`, `dominant`, `cadence`). A length-specific **tension curve** (e.g. length 4 → `[0.1, 0.3, 0.8, 0.0]`) drives degree selection and how rich each chord may become.
+- **The tension spine** — Each chord is assigned one of 5 roles (`opening`, `continuation`, `pre-dominant`, `dominant`, `cadence`) and a target tension from a named **tension shape**: `phrase` (the classical arch, length 4 → `[0.1, 0.3, 0.8, 0.0]`), `arch`, `ramp`, `question` (antecedent to a half cadence, consequent to a full close), `plateau` (stillness, one surge) or `collapse` (open at maximum tension). Every chord's realised tension is a deterministic score — `0.40·function + 0.20·chromaticism + 0.15·dissonance + 0.10·inversion instability + 0.15·voice-leading distance` — and chords are chosen by distance to the target, so the curve shapes the harmony rather than merely gating its extensions.
+- **Modal interchange** — A catalogue of borrowed chords is *derived* for the home mode: every chord diatonic to a parallel mode (lydian, ionian, mixolydian, dorian, aeolian, phrygian) but foreign to the home mode, tagged with the brightness of the nearest mode that contains it — iv, bVI, bIII and ii° from aeolian, bVII and v from mixolydian, the Neapolitan bII from phrygian, II and #iv° from lydian, the dorian IV in minor keys, and the harmonic-minor V and vii°7. A **brightness curve** (`steady`, `darkening`, `sunrise`, `arch`, `collapse`, or the mood's own) decides which are reached for; at most one is placed per phrase, so it reads as a surprise against a predictable context rather than as a dissolving key. A minor progression asked to end bright may close on a **Picardy third**.
+- **Neo-Riemannian transforms** — `P L R S N H LP PL` on major/minor triads reach chromatic mediants and the hexatonic pole from the previous chord, and each transform *names* its voice leading: the voicer adds the parsimonious voicing (common tones held, the rest moved by the least possible) as a candidate.
+- **Bass line** — Planned before voicing as a dynamic programme over the whole progression: root position at structural arrivals, first inversion for stepwise lines (a run of steps in one direction is rewarded), second inversion only as a cadential, passing or pedal 6-4, sevenths in the bass resolving down. Every chord carries `bass` and `inversion`, and the chord cards show inverted chords as slash chords (`C/E`).
 - **Extensions** — Tension-gated: stable chords stay simple (≤ 7th); high-tension dominants receive 9ths, 13ths, and — at complexity 4 — altered tensions (`b9 #9 b5 #5 b13`).
 - **Substitutions** — Secondary dominants (V/x), tritone substitutions, passing diminished, and suspensions are injected, with the first/last chords protected.
 - **Chromatic-density validation** — A **2-of-3 rule** ensures that in any 4-chord window at least two chords remain diatonic; the least-important chromatic chord is dropped when violated.
 - **Voicing** — Candidate voicings are generated across styles (closed, open, drop-2, drop-3, spread), octaves, and inversions. Tone selection always keeps root/3rd/7th; the 5th is dropped first when space is tight.
-- **Voice leading** — A weighted cost function (below) picks the voicing that connects most smoothly from the previous chord.
+- **Voice leading** — Candidates honouring the planned bass are connected by a bounded **Viterbi (beam) search** over the whole progression, charging each candidate for register (rising with tension), **sensory roughness** (Plomp-Levelt, Sethares parameterisation, so low close voicings are heard as mud rather than caught by a rule) and the weighted voice-leading cost below.
 - **Major pentatonic** — Takes a dedicated planning path (`lib/theory/pentatonic.ts`), because the five-note scale breaks the assumptions every other stage makes. See below.
 
 <details>
@@ -430,7 +437,9 @@ Melodies are composed **top-down**, not note-by-note:
 | **Inversions** | `inversionLabel.ts` | Root / 1st / 2nd / 3rd / slash, inferred from the bass note. |
 | **Extensions & alterations** | `chordSymbol.ts` | 7 / 9 / 11 / 13, `b9 #9 b5 #5`, sus, add. |
 | **Enharmonic spelling** | `spelling.ts` | Key-aware respelling (A♯ → B♭ in F major). |
-| **Voice leading** | `…/advanced/voiceLeading.ts` | Cost-based smooth connection (see above). |
+| **Voice leading** | `…/advanced/voiceLeading.ts`, `voicingSearch.ts` | Cost-based smooth connection, searched over the whole progression (see above). |
+| **Bass line & inversions** | `…/advanced/bassLine.ts` | Plans the bass of every chord; `bass`/`inversion` travel with the chord. |
+| **Borrowed harmony** | `…/advanced/modalInterchange.ts`, `neoRiemannian.ts` | Parallel-mode catalogue keyed to brightness; triadic transforms for chromatic mediants. |
 
 ```mermaid
 flowchart TD
@@ -457,9 +466,14 @@ flowchart TD
 - **Voicing styles (7):** auto, closed, open, drop-2, drop-3, drop-2+4, spread
 - **Voice densities (3):** 3-voice (sparse), 4-voice (standard), 5-voice (rich)
 - **Complexity levels (4):** Simple → Rich → Extended → Altered
-- **Cadence modes (2):** resolve (always lands on the tonic), open (keeps half, deceptive and loop-friendly endings)
-- **Chord moods (4):** dark, emotional, dreamy, energetic — each sets tension, register, density, harmonic rhythm and preferred ending
+- **Cadence modes (2):** resolve (always lands on the tonic; a Picardy third when a minor phrase ends bright), open (keeps half, deceptive and loop-friendly endings)
+- **Chord moods (4):** dark, emotional, dreamy, energetic — each sets tension, register, density, harmonic rhythm, brightness curve and preferred ending
+- **Tension shapes (6):** phrase, arch, ramp, question, plateau, collapse — the spine every chord is chosen against
+- **Brightness curves (5 + auto):** steady, darkening, sunrise, arch, collapse
+- **Borrowed chords (16 idioms, derived per mode):** iv, bVI, bIII, bII, II, #iv°, bVII, v, ii°, dorian IV, harmonic-minor V and vii°7, Picardy I, …
+- **Neo-Riemannian transforms (8):** P, L, R, S, N, H, LP, PL
 - **Harmonic rhythm profiles (4):** even, anchored, accelerating, pedal-opening
+- **Inversions:** planned per chord (root, 1st, 2nd only as a 6-4 idiom, 3rd resolving down) and labelled as slash chords
 - **Note roles (7):** chord tone, extension, alteration, passing, melody, approach, bass
 
 </details>
@@ -536,9 +550,16 @@ Harmonia/
 │   │
 │   ├── music/generators/
 │   │   ├── advanced/              # 🧠 Progression engine
-│   │   │   ├── phraseStructure.ts  #   Roles + tension curves
+│   │   │   ├── phraseStructure.ts  #   Roles + the classical tension curve
+│   │   │   ├── tensionCurve.ts     #   Tension shapes + per-chord tension formula (the spine)
+│   │   │   ├── slotPlanner.ts      #   Fill each slot against the curves; one surprise per phrase
+│   │   │   ├── modalInterchange.ts #   Borrowed-chord catalogue keyed to brightness; Picardy
+│   │   │   ├── neoRiemannian.ts    #   P/L/R/S/N/H/LP/PL + parsimonious voice leading
+│   │   │   ├── bassLine.ts         #   Bass-line planner (inversions as a DP)
+│   │   │   ├── chordMoods.ts · progressionScore.ts
 │   │   │   ├── extensions.ts · substitutions.ts
-│   │   │   ├── voicing.ts · voiceLeading.ts
+│   │   │   ├── voicing.ts · voiceLeading.ts · roughness.ts
+│   │   │   ├── voicingSearch.ts    #   Bounded Viterbi over the whole progression
 │   │   │   └── generateAdvancedProgression.ts
 │   │   └── melody/                # 🎶 Phrase-based melody engine
 │   │       ├── phrasePlan.ts · contour.ts · motif.ts

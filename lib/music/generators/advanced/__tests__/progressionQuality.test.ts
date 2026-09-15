@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { generateAdvancedProgression } from "@/lib/music/generators/advanced/generateAdvancedProgression";
 import { generateVoicingCandidates } from "@/lib/music/generators/advanced/voicing";
+import { getChordPitchClasses } from "@/lib/theory/chordSymbol";
 import { PITCH_CLASSES } from "@/lib/theory/midiUtils";
 import { romanNumeralsForScale } from "@/lib/theory/romanNumeral";
 import { getScaleDefinition } from "@/lib/theory/scale";
@@ -9,10 +10,10 @@ import type { AdvancedProgressionOptions, PlannedAdvancedChord } from "@/lib/mus
 
 /** The substitution flags the app actually ships, per `complexityToOptions`. */
 const COMPLEXITY_PRESETS = {
-  1: { useSecondaryDominants: false, usePassingChords: false, useSuspensions: false, useTritoneSubstitution: false },
-  2: { useSecondaryDominants: true, usePassingChords: false, useSuspensions: false, useTritoneSubstitution: false },
-  3: { useSecondaryDominants: true, usePassingChords: true, useSuspensions: true, useTritoneSubstitution: false },
-  4: { useSecondaryDominants: true, usePassingChords: true, useSuspensions: true, useTritoneSubstitution: true },
+  1: { useSecondaryDominants: false, usePassingChords: false, useSuspensions: false, useTritoneSubstitution: false, useModalInterchange: false },
+  2: { useSecondaryDominants: true, usePassingChords: false, useSuspensions: false, useTritoneSubstitution: false, useModalInterchange: true },
+  3: { useSecondaryDominants: true, usePassingChords: true, useSuspensions: true, useTritoneSubstitution: false, useModalInterchange: true },
+  4: { useSecondaryDominants: true, usePassingChords: true, useSuspensions: true, useTritoneSubstitution: true, useModalInterchange: true },
 } as const;
 
 function options(complexity: 1 | 2 | 3 | 4, over: Partial<AdvancedProgressionOptions> = {}): AdvancedProgressionOptions {
@@ -216,12 +217,14 @@ describe("mood and candidate selection", () => {
 
   // Regression: scoring whole progressions is what lets the generator reject a
   // draw whose bass never moves. A static bass reads as a pedal and was the
-  // mechanism behind progressions that felt like one sustained sonority.
+  // mechanism behind progressions that felt like one sustained sonority. The
+  // bass-line planner now rules it out at the source, so a single draw is as
+  // clean as the scored pick; the scored pick must never be worse.
   it("scores away the static-bass failure mode", () => {
     const scored = sweep({});
     const unscored = sweep({ candidateCount: 1 });
 
-    expect(scored.staticBass).toBeLessThan(unscored.staticBass);
+    expect(scored.staticBass).toBeLessThanOrEqual(unscored.staticBass);
     expect(scored.staticBass / 400).toBeLessThan(0.02);
   });
 
@@ -290,5 +293,293 @@ describe("mood and candidate selection", () => {
       ).chords;
       expect(chords[chords.length - 1].degreeLabel).toBe("I");
     }
+  });
+});
+
+describe("bass-line planning", () => {
+  const sweepBass = (over: Partial<AdvancedProgressionOptions>, seeds = 300) => {
+    let chords = 0;
+    let missingMetadata = 0;
+    let mismatched = 0;
+    let looseSixFours = 0;
+    let unresolvedSevenths = 0;
+    let staticMotions = 0;
+    let motions = 0;
+    let rootArrivals = 0;
+    let arrivals = 0;
+
+    for (let seed = 0; seed < seeds; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, ...over }));
+      const bass = result.chords.map((c) => Math.min(...c.midi));
+      result.chords.forEach((chord, i) => {
+        chords++;
+        if (chord.bass === undefined || chord.inversion === undefined) missingMetadata++;
+        if (chord.bass !== PITCH_CLASSES[pitchClassOf(bass[i])]) mismatched++;
+
+        if (chord.inversion === 2) {
+          const cadential = i === result.chords.length - 2;
+          const onLine =
+            i > 0 && i < result.chords.length - 1 &&
+            Math.abs(bass[i] - bass[i - 1]) <= 2 && Math.abs(bass[i + 1] - bass[i]) <= 2;
+          const pedal = i > 0 && i < result.chords.length - 1 && bass[i - 1] === bass[i] && bass[i] === bass[i + 1];
+          if (!cadential && !onLine && !pedal) looseSixFours++;
+        }
+        if (chord.inversion === 3 && i < result.chords.length - 1) {
+          const drop = bass[i] - bass[i + 1];
+          if (!(drop === 1 || drop === 2)) unresolvedSevenths++;
+        }
+        if (i === 0 || i === result.chords.length - 1) {
+          arrivals++;
+          if (chord.inversion === 0) rootArrivals++;
+        }
+      });
+      for (let i = 1; i < bass.length; i++) {
+        motions++;
+        if (bass[i] === bass[i - 1]) staticMotions++;
+      }
+    }
+
+    return { chords, missingMetadata, mismatched, looseSixFours, unresolvedSevenths, staticMotions, motions, rootArrivals, arrivals };
+  };
+
+  it("labels every chord with the bass that sounds and the inversion it makes", () => {
+    const stats = sweepBass({});
+    expect(stats.missingMetadata).toBe(0);
+    expect(stats.mismatched).toBe(0);
+  });
+
+  // Regression: the bass used to be whatever fell out of the voicing search,
+  // so 16% of chords sat in second inversion and the bass stood still on
+  // 17.5% of chord changes. Now it is planned.
+  it("moves the bass on nearly every chord change", () => {
+    const stats = sweepBass({});
+    expect(stats.staticMotions / stats.motions).toBeLessThan(0.03);
+  });
+
+  it("uses second inversion only as a cadential, passing or pedal 6-4", () => {
+    const stats = sweepBass({ numChords: 6 });
+    expect(stats.looseSixFours / stats.chords).toBeLessThan(0.01);
+  });
+
+  it("resolves a seventh in the bass down by step", () => {
+    const stats = sweepBass({ numChords: 6 });
+    expect(stats.unresolvedSevenths / stats.chords).toBeLessThan(0.01);
+  });
+
+  it("opens and closes in root position", () => {
+    const stats = sweepBass({ numChords: 5 });
+    expect(stats.rootArrivals / stats.arrivals).toBeGreaterThan(0.97);
+  });
+
+  // Regression: the plan was made in pitch classes and the voicer chose the
+  // octave, so a planned step could be realised as a leap of a seventh near
+  // the bottom of the range (C ionian, six chords, seed 55).
+  it("realises the planned bass pitch, so planned steps stay steps", () => {
+    let planned = 0;
+    let pitchMisses = 0;
+    let stepsBecameLeaps = 0;
+    for (const voicingStyle of ["auto", "open", "drop2", "closed"] as const) {
+      for (let seed = 0; seed < 150; seed++) {
+        const result = generateAdvancedProgression(options(2, { seed, numChords: 6, voicingStyle }));
+        const bass = result.chords.map((c) => Math.min(...c.midi));
+        result.chords.forEach((_, i) => {
+          const plan = result.debug?.bassPlan?.[i];
+          if (!plan) return;
+          planned++;
+          if (bass[i] !== plan.pitch) pitchMisses++;
+          if (i > 0 && /step|scale line|6-4|seventh resolves/.test(plan.reason) && Math.abs(bass[i] - bass[i - 1]) > 2) {
+            stepsBecameLeaps++;
+          }
+        });
+      }
+    }
+    expect(planned).toBeGreaterThan(0);
+    expect(stepsBecameLeaps).toBe(0);
+    expect(pitchMisses / planned).toBeLessThan(0.005);
+  });
+
+  // Regression: the parsimonious voicing of a Neo-Riemannian transform
+  // bypassed the planned-bass filter (C ionian, open voicing, seed 252 put C
+  // under a root-position Fm7).
+  it("holds transform voicings to the bass plan", () => {
+    const specific = generateAdvancedProgression(options(2, { seed: 252, voicingStyle: "open" }));
+    specific.chords.forEach((chord, i) => {
+      expect(chord.bass).toBe(specific.debug?.bassPlan?.[i]?.bass);
+    });
+
+    let transformed = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, mood: "energetic", voicingStyle: "open" }));
+      result.chords.forEach((chord, i) => {
+        if (!result.debug?.planned[i]?.transform) return;
+        transformed++;
+        expect(chord.bass).toBe(result.debug?.bassPlan?.[i]?.bass);
+      });
+    }
+    expect(transformed).toBeGreaterThan(0);
+  });
+});
+
+describe("modal interchange", () => {
+  const borrowedIn = (over: Partial<AdvancedProgressionOptions>, seeds = 300) => {
+    const labels = new Map<string, number>();
+    let progressionsWithBorrowed = 0;
+    let overloaded = 0;
+    let brightnessSum = 0;
+    let brightnessCount = 0;
+
+    for (let seed = 0; seed < seeds; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, ...over }));
+      const borrowed = (result.debug?.planned ?? []).filter((c) => c.kind === "borrowed");
+      if (borrowed.length > 0) progressionsWithBorrowed++;
+      if (borrowed.length > 1) overloaded++;
+      borrowed.forEach((c) => {
+        labels.set(c.degreeLabel, (labels.get(c.degreeLabel) ?? 0) + 1);
+        if (c.brightness !== undefined) {
+          brightnessSum += c.brightness;
+          brightnessCount++;
+        }
+      });
+    }
+
+    return {
+      labels,
+      progressionsWithBorrowed,
+      overloaded,
+      meanBrightness: brightnessCount ? brightnessSum / brightnessCount : 0,
+    };
+  };
+
+  it("reaches borrowed harmony at the shipped presets, and never at complexity 1", () => {
+    const rich = borrowedIn({});
+    expect(rich.progressionsWithBorrowed).toBeGreaterThan(30);
+    // The classic major-key borrowings must all be reachable.
+    for (const label of ["iv", "bVI", "bVII", "bII", "bIII"]) {
+      expect(rich.labels.has(label), label).toBe(true);
+    }
+
+    let simple = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const result = generateAdvancedProgression(options(1, { seed }));
+      if (result.debug?.planned.some((c) => c.kind === "borrowed")) simple++;
+    }
+    expect(simple).toBe(0);
+  });
+
+  it("engineers at most one surprise per four-chord phrase", () => {
+    expect(borrowedIn({}).overloaded).toBe(0);
+  });
+
+  it("borrows darker chords for a dark mood and brighter ones for a dreamy mood", () => {
+    const dark = borrowedIn({ mood: "dark", cadence: "resolve" });
+    const dreamy = borrowedIn({ mood: "dreamy", cadence: "resolve" });
+    expect(dark.meanBrightness).toBeLessThan(0);
+    expect(dreamy.meanBrightness).toBeGreaterThan(dark.meanBrightness);
+    // The Neapolitan is the darkest borrowing; lydian II the brightest.
+    expect((dark.labels.get("bII") ?? 0)).toBeGreaterThan(dreamy.labels.get("bII") ?? 0);
+    expect((dreamy.labels.get("II") ?? 0)).toBeGreaterThan(dark.labels.get("II") ?? 0);
+  });
+
+  it("keeps a borrowed chord's notes inside its own symbol", () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const result = generateAdvancedProgression(options(3, { seed, rootKey: "F", mode: "aeolian" } as never));
+      result.chords.forEach((chord, i) => {
+        if (result.debug?.planned[i]?.kind !== "borrowed") return;
+        const allowed = new Set(getChordPitchClasses(chord.symbol));
+        expect(allowed.size).toBeGreaterThan(0);
+        chord.midi.forEach((m) => expect(allowed.has(PITCH_CLASSES[pitchClassOf(m)])).toBe(true));
+      });
+    }
+  });
+
+  it("can close a minor key on a Picardy third when the phrase ends bright, and never when it ends dark", () => {
+    const endings = (mood: "energetic" | "dark") => {
+      let major = 0;
+      for (let seed = 0; seed < 300; seed++) {
+        // A sunrise curve ends bright; the dark mood's own curve ends darker still.
+        const brightnessCurve = mood === "energetic" ? "sunrise" : "auto";
+        const result = generateAdvancedProgression(
+          options(2, { seed, rootKey: "A", mode: "aeolian", mood, cadence: "resolve", brightnessCurve } as never)
+        );
+        const last = result.debug?.planned[result.debug.planned.length - 1];
+        if (last?.source === "picardy") major++;
+      }
+      return major;
+    };
+    expect(endings("energetic")).toBeGreaterThan(0);
+    expect(endings("energetic")).toBeLessThan(300);
+    expect(endings("dark")).toBe(0);
+  });
+
+  it("reaches chromatic mediants through Neo-Riemannian transforms with held common tones", () => {
+    let transformed = 0;
+    let sharedTone = 0;
+    for (let seed = 0; seed < 400; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, mood: "energetic" }));
+      result.chords.forEach((chord, i) => {
+        const planned = result.debug?.planned[i];
+        if (!planned?.transform || i === 0) return;
+        transformed++;
+        const previous = new Set(result.chords[i - 1].midi.map(pitchClassOf));
+        // The hexatonic pole shares nothing by definition; every other
+        // transform holds at least one voice.
+        if (planned.transform === "H" || chord.midi.some((m) => previous.has(pitchClassOf(m)))) sharedTone++;
+      });
+    }
+    expect(transformed).toBeGreaterThan(0);
+    expect(sharedTone).toBe(transformed);
+  });
+});
+
+describe("tension shapes", () => {
+  const openerTension = (shape: AdvancedProgressionOptions["tensionShape"]) => {
+    let tense = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, tensionShape: shape }));
+      const first = result.debug?.planned[0];
+      if (first && first.functionTag !== "tonic") tense++;
+    }
+    return tense / 200;
+  };
+
+  it("collapse opens away from the tonic far more often than the classical phrase", () => {
+    expect(openerTension("collapse")).toBeGreaterThan(0.5);
+    expect(openerTension("phrase")).toBeLessThan(0.2);
+  });
+
+  it("ramp with an open ending leaves the phrase on tension", () => {
+    let unresolved = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, tensionShape: "ramp", cadence: "open" }));
+      const last = result.debug?.planned[result.debug.planned.length - 1];
+      if (last && last.functionTag !== "tonic") unresolved++;
+    }
+    expect(unresolved / 200).toBeGreaterThan(0.6);
+  });
+
+  it("plateau puts its one surge on the penultimate chord", () => {
+    let surged = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const result = generateAdvancedProgression(options(2, { seed, tensionShape: "plateau", numChords: 5 }));
+      const planned = result.debug?.planned ?? [];
+      const penultimate = planned[planned.length - 2];
+      if (penultimate?.functionTag === "dominant" || penultimate?.functionTag === "applied") surged++;
+    }
+    expect(surged / 200).toBeGreaterThan(0.7);
+  });
+
+  it("stays deterministic for every shape", () => {
+    for (const shape of ["arch", "ramp", "question", "plateau", "collapse"] as const) {
+      const a = generateAdvancedProgression(options(3, { seed: 42, tensionShape: shape }));
+      const b = generateAdvancedProgression(options(3, { seed: 42, tensionShape: shape }));
+      expect(a).toEqual(b);
+    }
+  });
+
+  it("reports the curves it planned against", () => {
+    const result = generateAdvancedProgression(options(2, { seed: 1, tensionShape: "arch", numChords: 5 }));
+    expect(result.debug?.tensionCurve).toHaveLength(5);
+    expect(result.debug?.brightnessTargets).toHaveLength(5);
+    expect(result.debug?.bassPlan).toHaveLength(5);
   });
 });

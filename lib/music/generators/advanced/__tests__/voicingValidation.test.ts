@@ -39,6 +39,7 @@ function baseOptions(
     useSuspensions: true,
     useSecondaryDominants: true,
     useTritoneSubstitution: true,
+    useModalInterchange: true,
     useFunctionalSubstitutions: true,
     seed,
   };
