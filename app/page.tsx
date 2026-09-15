@@ -488,8 +488,11 @@ export default function HarmoniaPage() {
 
   /* ─── Handlers ─── */
 
-  const handleGenerate = useCallback(async () => {
-    await ensureAudioReady();
+  const handleGenerate = useCallback(() => {
+    // Start the unlock from this gesture, but never make generation wait on
+    // it: the chords need no audio, and a slow or stuck resume must not turn
+    // a tap on "Chords" into a no-op.
+    void ensureAudioReady();
     if (isPlaying) {
       setIsPlaying(false);
     }
@@ -498,10 +501,19 @@ export default function HarmoniaPage() {
   }, [generateNew, isPlaying, setIsPlaying]);
 
   const handleTogglePlayback = useCallback(async () => {
+    // Stopping never needs the context.
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
     // Resume from this gesture and wait until the context is actually running
-    // before scheduling, so the first press is never a silent no-op.
-    await ensureAudioReady();
-    setIsPlaying(!isPlaying);
+    // before scheduling, so the first press is never a silent no-op. If the
+    // unlock fails or times out, stay stopped: the status badge says why and
+    // the next tap runs a fresh attempt. Starting anyway would schedule
+    // silence and leave the button showing "Stop".
+    const ready = await ensureAudioReady();
+    if (!ready) return;
+    setIsPlaying(true);
   }, [isPlaying, setIsPlaying]);
 
   const handleSaveProgression = useCallback(() => {
@@ -528,8 +540,10 @@ export default function HarmoniaPage() {
   const playChordPreview = useCallback(async (notesWithOctave: string[], duration: string) => {
     // A chord-card / substitution tap is often the first gesture on mobile, so
     // unlock the context here too — otherwise the preview is silently dropped.
-    await ensureAudioReady();
-    if (!synthRef.current) return;
+    // If the unlock did not succeed there is nothing to hear; let the status
+    // badge explain and the next tap retry rather than scheduling silence.
+    const ready = await ensureAudioReady();
+    if (!ready || !synthRef.current) return;
     const ps = usePlaybackSettingsStore.getState();
     const events = buildChordEvents(notesWithOctave, {
       baseVelocity: ps.chordVelocity,
@@ -550,8 +564,8 @@ export default function HarmoniaPage() {
 
   const handlePlayNote = useCallback(
     async (noteWithOctave: string) => {
-      await ensureAudioReady();
-      if (synthRef.current) {
+      const ready = await ensureAudioReady();
+      if (ready && synthRef.current) {
         const ps = usePlaybackSettingsStore.getState();
         const velocity = humanizeVelocity(ps.chordVelocity, ps.humanize);
         synthRef.current.triggerAttackRelease(noteWithOctave, "4n", undefined, velocity);
