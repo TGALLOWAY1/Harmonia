@@ -97,3 +97,50 @@ describe("ensureAudioReady", () => {
     expect(useAudioStatusStore.getState().error).toContain("suspended");
   });
 });
+
+describe("ensureAudioReady — iOS hardening", () => {
+  it("abandons a resume that never settles and lets the next gesture retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ensureAudioReady, useAudioStatusStore, UNLOCK_TIMEOUT_MS } = await freshEngine();
+      // WebKit can leave resume() pending forever when it wants a live gesture.
+      startMock.mockImplementation(() => new Promise<void>(() => {}));
+
+      const first = ensureAudioReady();
+      expect(useAudioStatusStore.getState().status).toBe("initializing");
+      await vi.advanceTimersByTimeAsync(UNLOCK_TIMEOUT_MS + 1);
+
+      expect(await first).toBe(false);
+      // Back to "tap to enable" rather than a permanent "initializing…".
+      expect(useAudioStatusStore.getState().status).toBe("idle");
+
+      // The stuck promise is not shared with the next tap: a fresh start runs.
+      startMock.mockImplementation(async () => {
+        ctx.state = "running";
+      });
+      const ok = await ensureAudioReady();
+      expect(ok).toBe(true);
+      expect(startMock).toHaveBeenCalledTimes(2);
+      expect(useAudioStatusStore.getState().status).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("declares a media playback audio session where the browser supports it", async () => {
+    const session = { type: "auto" };
+    Object.defineProperty(navigator, "audioSession", { value: session, configurable: true });
+    try {
+      const { ensureAudioReady } = await freshEngine();
+      await ensureAudioReady();
+      expect(session.type).toBe("playback");
+    } finally {
+      delete (navigator as unknown as { audioSession?: unknown }).audioSession;
+    }
+  });
+
+  it("is a no-op where navigator.audioSession does not exist", async () => {
+    const { configureAudioSession } = await freshEngine();
+    expect(() => configureAudioSession()).not.toThrow();
+  });
+});

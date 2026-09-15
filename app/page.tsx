@@ -93,6 +93,40 @@ const BRIGHTNESS_CURVES: { value: BrightnessCurve; label: string; title: string 
   { value: "collapse", label: "Fade", title: "Start bright, darken toward the close" },
 ];
 
+/**
+ * One labelled select inside the Character disclosure. Each option table
+ * above is typed to its setting, so the callback receives the right union.
+ */
+function CharacterField<T extends string>({
+  label,
+  title,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  value: T;
+  options: readonly { value: T; label: string; title?: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[9px] font-semibold text-muted uppercase tracking-widest pl-2">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="w-full min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+        title={title}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value} title={o.title}>{o.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 const VOICE_COUNTS: { value: VoiceCount; label: string }[] = [
   { value: 3, label: "Sparse" },
   { value: 4, label: "Standard" },
@@ -202,6 +236,9 @@ export default function HarmoniaPage() {
   const [showFavorites, setShowFavorites] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [audioMenuOpen, setAudioMenuOpen] = useState(false);
+  // Mood, ending, tension shape and brightness curve live behind one
+  // disclosure so the everyday controls stay as compact as they were.
+  const [characterExpanded, setCharacterExpanded] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
   const [justSaved, setJustSaved] = useState(false);
@@ -858,17 +895,6 @@ export default function HarmoniaPage() {
                 </select>
                 <div className="w-px h-4 bg-border-subtle mx-1" />
                 <select
-                  value={chordMood}
-                  onChange={(e) => setSettings({ chordMood: e.target.value as ChordMood })}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Mood — drives tension, register, density and harmonic rhythm"
-                >
-                  {CHORD_MOODS.map((cm) => (
-                    <option key={cm.value} value={cm.value}>{cm.label}</option>
-                  ))}
-                </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
-                <select
                   value={voicingStyle}
                   onChange={(e) => setSettings({ voicingStyle: e.target.value as VoicingStyle })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
@@ -878,49 +904,72 @@ export default function HarmoniaPage() {
                     <option key={vs.value} value={vs.value}>{vs.label}</option>
                   ))}
                 </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
-                <select
-                  value={cadence}
-                  onChange={(e) => setSettings({ cadence: e.target.value as CadenceMode })}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Ending — resolve to the tonic, or keep the progression's own open ending"
-                >
-                  {CADENCE_MODES.map((cm) => (
-                    <option key={cm.value} value={cm.value}>{cm.label}</option>
-                  ))}
-                </select>
               </div>
             </div>
 
-            {/* Shape Group — the tension spine and the brightness curve */}
+            {/* Character Group — mood, ending, tension shape and brightness curve.
+                Collapsed by default so the everyday controls above stay as
+                compact as before; the summary shows the current choices. */}
             <div className="flex flex-col gap-1.5 flex-1 min-w-[260px]">
-              <label className="flex items-center gap-1.5 text-[11px] lg:text-[10px] font-bold text-muted uppercase tracking-widest pl-1">
-                <Sparkles className="w-3 h-3 text-amber-500/70" />
-                Shape
-              </label>
-              <div className="flex items-center bg-background/50 border border-border-subtle rounded-xl shadow-inner p-1">
-                <select
-                  value={tensionShape}
-                  onChange={(e) => setSettings({ tensionShape: e.target.value as TensionShape })}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Tension shape — the curve every chord is chosen against"
+              <button
+                type="button"
+                onClick={() => setCharacterExpanded((v) => !v)}
+                aria-expanded={characterExpanded}
+                aria-controls="character-controls"
+                className="flex items-center justify-between w-full gap-3 pl-1 pr-1 py-0.5 rounded-lg hover:bg-surface-muted/60 transition-colors"
+              >
+                <span className="flex items-center gap-1.5 text-[11px] lg:text-[10px] font-bold text-muted uppercase tracking-widest shrink-0">
+                  <Sparkles className="w-3 h-3 text-amber-500/70" />
+                  Character
+                </span>
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-foreground truncate">
+                    {CHORD_MOODS.find((cm) => cm.value === chordMood)?.label}
+                    {" · "}
+                    {CADENCE_MODES.find((cm) => cm.value === cadence)?.label}
+                    {" · "}
+                    {TENSION_SHAPES.find((ts) => ts.value === tensionShape)?.label}
+                    {" · "}
+                    {BRIGHTNESS_CURVES.find((bc) => bc.value === brightnessCurve)?.label}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-muted transition-transform shrink-0 ${characterExpanded ? "rotate-180" : ""}`} />
+                </span>
+              </button>
+              {characterExpanded && (
+                <div
+                  id="character-controls"
+                  className="grid grid-cols-2 gap-x-2 gap-y-2.5 bg-background/50 border border-border-subtle rounded-xl shadow-inner p-2"
                 >
-                  {TENSION_SHAPES.map((ts) => (
-                    <option key={ts.value} value={ts.value} title={ts.title}>{ts.label}</option>
-                  ))}
-                </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
-                <select
-                  value={brightnessCurve}
-                  onChange={(e) => setSettings({ brightnessCurve: e.target.value as BrightnessCurve })}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
-                  title="Color — how brightness travels; picks which borrowed chords are reached for"
-                >
-                  {BRIGHTNESS_CURVES.map((bc) => (
-                    <option key={bc.value} value={bc.value} title={bc.title}>{bc.label}</option>
-                  ))}
-                </select>
-              </div>
+                  <CharacterField
+                    label="Mood"
+                    title="Mood — drives tension, register, density and harmonic rhythm"
+                    value={chordMood}
+                    options={CHORD_MOODS}
+                    onChange={(v) => setSettings({ chordMood: v })}
+                  />
+                  <CharacterField
+                    label="Ending"
+                    title="Ending — resolve to the tonic, or keep the progression's own open ending"
+                    value={cadence}
+                    options={CADENCE_MODES}
+                    onChange={(v) => setSettings({ cadence: v })}
+                  />
+                  <CharacterField
+                    label="Shape"
+                    title="Tension shape — the curve every chord is chosen against"
+                    value={tensionShape}
+                    options={TENSION_SHAPES}
+                    onChange={(v) => setSettings({ tensionShape: v })}
+                  />
+                  <CharacterField
+                    label="Color"
+                    title="Color — how brightness travels; picks which borrowed chords are reached for"
+                    value={brightnessCurve}
+                    options={BRIGHTNESS_CURVES}
+                    onChange={(v) => setSettings({ brightnessCurve: v })}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Textures Group */}
@@ -932,44 +981,45 @@ export default function HarmoniaPage() {
                 </div>
                 <span className="text-[9px] text-muted/40 uppercase tracking-widest font-medium">Changes apply on Gen</span>
               </label>
-              <div className="flex items-center bg-background/50 border border-border-subtle rounded-xl shadow-inner p-1">
+              {/* Two columns on phones so no label is clipped; one row from sm up. */}
+              <div className="grid grid-cols-2 sm:flex sm:items-center bg-background/50 border border-border-subtle rounded-xl shadow-inner p-1">
                 <select
                   value={voiceCount}
                   onChange={(e) => setSettings({ voiceCount: Number(e.target.value) as 3 | 4 | 5 })}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="w-full sm:flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Voice Count (Density)"
                 >
                   {VOICE_COUNTS.map((vc) => (
                     <option key={vc.value} value={vc.value}>{vc.label}</option>
                   ))}
                 </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <div className="hidden sm:block w-px h-4 bg-border-subtle mx-1" />
                 <select
                   value={melodyStyle}
                   onChange={(e) => setMelodyStyle(e.target.value as any)}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="w-full sm:flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Melodic Rhythm Style"
                 >
                   {MELODY_STYLES.map((ms) => (
                     <option key={ms.value} value={ms.value}>{ms.label}</option>
                   ))}
                 </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <div className="hidden sm:block w-px h-4 bg-border-subtle mx-1" />
                 <select
                   value={melodyHarmony}
                   onChange={(e) => setMelodyHarmony(e.target.value as any)}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="w-full sm:flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Melody Harmony — how tightly the melody follows the chord tones"
                 >
                   {MELODY_HARMONIES.map((mh) => (
                     <option key={mh.value} value={mh.value}>{mh.label}</option>
                   ))}
                 </select>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <div className="hidden sm:block w-px h-4 bg-border-subtle mx-1" />
                 <select
                   value={melodyMood}
                   onChange={(e) => setMelodyMood(e.target.value as MelodyMood)}
-                  className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
+                  className="w-full sm:flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Melody Mood — emotional character: register, contour, rhythm, and tension"
                 >
                   {MELODY_MOODS.map((mm) => (

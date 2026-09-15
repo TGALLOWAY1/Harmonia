@@ -126,7 +126,7 @@ Theory learned silently is theory half-learned. Harmonia plays **every** interac
 <td width="50%" valign="top">
 
 ### 🎼 Chord Progression Generator
-Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates.
+Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates. Mood, ending, tension shape and brightness curve sit behind one collapsed **Character** row in the settings panel, so the everyday controls (key, mode, tempo, length, complexity, voicing) stay uncluttered.
 
 </td>
 <td width="50%" valign="top">
@@ -499,7 +499,8 @@ flowchart LR
     style OUT fill:#0f766e,color:#fff
 ```
 
-- **Gesture unlock** — Every sound-producing interaction routes through `ensureAudioReady()`: it resumes the context from a real user gesture, is **idempotent** (concurrent callers share one unlock), waits until the context is actually `running`, and **never swallows failures**. An `AudioStatusBadge` surfaces the live state so silence is never a mystery.
+- **Gesture unlock** — Every sound-producing interaction routes through `ensureAudioReady()`: it resumes the context from a real user gesture, is **idempotent** (concurrent callers share one unlock), waits until the context is actually `running`, and **never swallows failures**. A resume that never settles is abandoned after a bounded wait so the next tap gets a fresh attempt, and WebKit's `interrupted` state (a phone call, Siri, an app switch) is treated like `suspended`. An `AudioStatusBadge` surfaces the live state so silence is never a mystery.
+- **iOS audio session** — Safari mutes Web-Audio-only pages with the ring/silent switch by default (the "ambient" category). The engine declares the session as media `playback`, the category a music app uses, so progressions sound with the switch in either position.
 - **Two quality modes** — *Lightweight* (pure Tone.js synthesis, zero downloads, instant, offline-friendly) and *High Quality* (sampled instruments). The sampler streams **in the background while the lightweight twin is already playing**, then **hot-swaps in seamlessly** — playback is never blocked by a download.
 - **Graceful degradation** — If samples stall or fail (a 10s timeout, common on flaky mobile networks), playback keeps using the *lightweight twin of the same instrument* — a sampled piano degrades to a synth piano, not to an unrelated sound — and offers a Retry.
 - **Humanization** — A pure, Tone-free, fully unit-tested module computes per-note velocity (±12%) and timing jitter (±12 ms) as **data**, plus block / strum / arpeggio articulations. No real-time randomness, so it's deterministic and testable.
