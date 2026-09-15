@@ -121,7 +121,7 @@ export function subscribeAudioContextState(): void {
       audioDebug("context statechange →", state);
       if (state === "running") {
         setStatus("ready");
-      } else if (state === "suspended" || state === "closed") {
+      } else if (state === "suspended" || state === "closed" || state === "interrupted") {
         // Don't clobber an in-flight initialize or a hard failure.
         const current = useAudioStatusStore.getState().status;
         if (current === "ready") setStatus("idle");
@@ -132,9 +132,55 @@ export function subscribeAudioContextState(): void {
   }
 }
 
+/* ─── iOS audio session ─── */
+
+/**
+ * iOS treats a page that only uses Web Audio as "ambient" sound, which the
+ * ring/silent switch mutes outright — the context reports `running`, every
+ * note is scheduled, and nothing comes out of the speaker. Declaring the
+ * session as media playback (the category a music app uses) opts out of that.
+ * Safari 17+ only; everywhere else the property is absent and this is a no-op.
+ */
+export function configureAudioSession(): void {
+  if (typeof navigator === "undefined") return;
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!session || session.type === "playback") return;
+  try {
+    session.type = "playback";
+    audioDebug("audioSession.type → playback");
+  } catch (err) {
+    audioWarn("could not set audioSession.type:", err);
+  }
+}
+
 /* ─── The unlock ─── */
 
+/**
+ * How long a resume may stay unsettled before the attempt is abandoned. A
+ * `resume()` that WebKit does not accept (it wants a live gesture) can hang
+ * rather than reject; without a bound every later tap would inherit the same
+ * stuck promise and audio could never start.
+ */
+export const UNLOCK_TIMEOUT_MS = 3000;
+
 let pending: Promise<boolean> | null = null;
+let attempt = 0;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve("timeout"), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 /**
  * Resume the AudioContext, returning whether it is running afterwards. Safe to
@@ -146,6 +192,7 @@ let pending: Promise<boolean> | null = null;
  */
 export async function ensureAudioReady(): Promise<boolean> {
   subscribeAudioContextState();
+  configureAudioSession();
 
   if (getAudioContextState() === "running") {
     setStatus("ready");
@@ -156,9 +203,18 @@ export async function ensureAudioReady(): Promise<boolean> {
   setStatus("initializing");
   audioDebug("ensureAudioReady → starting (context:", getAudioContextState() + ")");
 
+  const thisAttempt = ++attempt;
   pending = (async () => {
     try {
-      await Tone.start();
+      const started = await withTimeout(Tone.start(), UNLOCK_TIMEOUT_MS);
+      if (started === "timeout") {
+        // Give the next gesture a fresh attempt instead of this stuck promise.
+        // If the browser does resume later, the statechange listener flips
+        // the status to "ready" on its own.
+        audioWarn(`Tone.start did not settle within ${UNLOCK_TIMEOUT_MS}ms (context: ${getAudioContextState()}); tap again`);
+        setStatus("idle");
+        return false;
+      }
       // Some mobile contexts ignore the first resume; nudge once more.
       if (getAudioContextState() !== "running") {
         try {
@@ -183,7 +239,9 @@ export async function ensureAudioReady(): Promise<boolean> {
       setStatus("failed", message);
       return false;
     } finally {
-      pending = null;
+      // Only the attempt that owns `pending` may clear it; a stale attempt
+      // that settles late must not wipe out a newer, live one.
+      if (thisAttempt === attempt) pending = null;
     }
   })();
 
