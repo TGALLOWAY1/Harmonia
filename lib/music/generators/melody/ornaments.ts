@@ -14,6 +14,7 @@ import {
   isSemitoneClash,
   isStrongBeat,
 } from "./helpers";
+import { midiPc, type HarmonicContext } from "./harmonicContext";
 import type { MoodProfile, OrnamentKind } from "./moods";
 import type { NoteEvent } from "./realizePitches";
 import type { PhrasePlan } from "./phrasePlan";
@@ -29,6 +30,8 @@ export type OrnamentContext = {
   /** Register bounds — ornaments may not escape the melody's range. */
   registerLow: number;
   registerHigh: number;
+  /** When present, clashes are judged by note category (avoid / chromatic). */
+  harmonyContext?: HarmonicContext;
 };
 
 function tensionAt(plan: PhrasePlan, beat: number): number {
@@ -63,11 +66,32 @@ export function applyOrnaments(
   ctx: OrnamentContext,
   rng: () => number,
 ): NoteEvent[] {
-  const { chords, scaleMidi, harmony, profile, registerLow, registerHigh } = ctx;
+  const { chords, scaleMidi, harmony, profile, registerLow, registerHigh, harmonyContext } = ctx;
   const has = (k: OrnamentKind) => profile.nctPalette.includes(k);
   const pcsOf = (idx: number): PitchClass[] => chords[idx]?.pitchClasses ?? [];
   const rate = (beat: number) => profile.nctDensity * (0.4 + 0.6 * tensionAt(plan, beat));
   const inRegister = (midi: number) => midi >= registerLow && midi <= registerHigh;
+  // A clash is an avoid or chromatic tone when the harmonic context is known,
+  // otherwise the older semitone test.
+  const clashes = (midi: number, idx: number): boolean => {
+    const chord = harmonyContext?.chords[idx];
+    if (chord) {
+      const cat = chord.categories[midiPc(midi)];
+      return cat === "avoid" || cat === "chromatic";
+    }
+    return isSemitoneClash(midi, pcsOf(idx));
+  };
+  // Each phrase's highest note stays its highest: no ornament may reach it.
+  const phraseMax = new Map<number, number>();
+  for (const n of notes) {
+    const key = n.phraseIndex ?? 0;
+    phraseMax.set(key, Math.max(phraseMax.get(key) ?? -Infinity, n.midi));
+  }
+  const belowPeak = (midi: number, n: NoteEvent) => midi < (phraseMax.get(n.phraseIndex ?? 0) ?? Infinity);
+  // When the form restates its opening, the hook itself stays plain so the
+  // restatement is heard as one.
+  const hasRestatement = plan.phrases.some((p) => p.restates !== null);
+  const isHook = (n: NoteEvent) => hasRestatement && n.isHead === true;
 
   const out: NoteEvent[] = notes.map((n) => ({ ...n }));
   // Budget keeps ornamentation from overwhelming the motif material.
@@ -89,6 +113,7 @@ export function applyOrnaments(
       has("suspension") &&
       harmony === "expressive" &&
       i + 1 < out.length - 1 && // never displace the final note
+      !b.isPhraseFinal && !b.isPeak && !a.isPeak && !isHook(a) && !isHook(b) &&
       b.durationBeats >= 1 &&
       isChordTone(a.midi, pcsOf(a.chordIndex)) &&
       !isChordTone(a.midi, nextPCs) &&
@@ -113,6 +138,7 @@ export function applyOrnaments(
     if (
       has("anticipation") &&
       a.durationBeats >= 1 &&
+      !a.isPhraseFinal && !isHook(a) &&
       a.midi !== b.midi &&
       Math.abs(a.midi - b.midi) <= profile.maxLeap &&
       isChordTone(b.midi, nextPCs) &&
@@ -135,7 +161,7 @@ export function applyOrnaments(
     const a = out[i];
     const b = out[i + 1];
     if (a.startBeat + a.durationBeats !== b.startBeat) continue;
-    if (a.durationBeats < 1) continue;
+    if (a.durationBeats < 1 || a.isPhraseFinal || isHook(a)) continue;
     const interval = Math.abs(b.midi - a.midi);
     if (interval < 3 || interval > 4) continue;
     if (!has("passing") || rng() >= rate(a.startBeat)) continue;
@@ -143,9 +169,8 @@ export function applyOrnaments(
     const between = scaleToneBetween(a.midi, b.midi, scaleMidi);
     if (between === null || !inRegister(between)) continue;
     const passStart = a.startBeat + a.durationBeats - GRID;
-    const passPCs = pcsOf(a.chordIndex);
     // Keep strong beats clean: a passing tone may not clash on a downbeat.
-    if (isStrongBeat(passStart) && (harmony === "strict" || isSemitoneClash(between, passPCs))) continue;
+    if (isStrongBeat(passStart) && (harmony === "strict" || clashes(between, a.chordIndex))) continue;
 
     a.durationBeats -= GRID;
     out.splice(i + 1, 0, {
@@ -161,14 +186,13 @@ export function applyOrnaments(
   /* ── Neighbor tones: decorate sustained notes (note–neighbor–note) ── */
   for (let i = 0; i < out.length - 1 && budget > 0; i++) {
     const a = out[i];
-    if (a.durationBeats < 2 || a.suspended) continue;
+    if (a.durationBeats < 2 || a.suspended || a.isPhraseFinal || a.isPeak || isHook(a)) continue;
     if (!has("neighbor") || rng() >= rate(a.startBeat)) continue;
 
     const neighborStart = a.startBeat + a.durationBeats - 1;
-    const pcs = pcsOf(a.chordIndex);
     const neighbor = scaleNeighbor(a.midi, scaleMidi, rng() < 0.5);
-    if (neighbor === null || !inRegister(neighbor)) continue;
-    if (isStrongBeat(neighborStart) && (harmony === "strict" || isSemitoneClash(neighbor, pcs))) continue;
+    if (neighbor === null || !inRegister(neighbor) || !belowPeak(neighbor, a)) continue;
+    if (isStrongBeat(neighborStart) && (harmony === "strict" || clashes(neighbor, a.chordIndex))) continue;
 
     const originalDur = a.durationBeats;
     a.durationBeats = originalDur - 1;
@@ -186,13 +210,13 @@ export function applyOrnaments(
     for (let i = 1; i < out.length - 1 && budget > 0; i++) {
       const a = out[i];
       const prevNote = out[i - 1];
-      if (!isStrongBeat(a.startBeat) || a.durationBeats < 1 || a.suspended) continue;
+      if (!isStrongBeat(a.startBeat) || a.durationBeats < 1 || a.suspended || a.isPeak || a.isPhraseFinal || isHook(a)) continue;
       if (!isChordTone(a.midi, pcsOf(a.chordIndex))) continue;
       if (Math.abs(a.midi - prevNote.midi) < 3) continue; // wants a leap into it
       if (rng() >= rate(a.startBeat)) continue;
 
       const app = scaleNeighbor(a.midi, scaleMidi, true);
-      if (app === null || !inRegister(app) || isSemitoneClash(app, pcsOf(a.chordIndex))) continue;
+      if (app === null || !inRegister(app) || !belowPeak(app, a) || clashes(app, a.chordIndex)) continue;
 
       out.splice(i, 0, {
         midi: app,

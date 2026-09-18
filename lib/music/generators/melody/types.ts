@@ -1,5 +1,5 @@
 import type { PitchClass } from "@/lib/theory/midiUtils";
-import type { DurationClass } from "../advanced/types";
+import type { ChordKind, DurationClass, HarmonicFunction } from "../advanced/types";
 
 /** A single note in a generated melody. */
 export type MelodyNote = {
@@ -19,11 +19,26 @@ export type MelodyNote = {
   source: "generated" | "drawn";
 };
 
+/** One phrase of the generated melody's form, for display and analysis. */
+export type MelodyPhrase = {
+  startBeat: number;
+  endBeat: number;
+  /** A = the basic idea, A' its restatement, B the departure, A'' the return. */
+  material: "A" | "A'" | "B" | "A''";
+  /** How the phrase closes: a half cadence, an imperfect close, or the final cadence. */
+  cadence: "half" | "imperfect" | "authentic" | "final";
+  isClimax: boolean;
+  /** Beat of the phrase's highest note. */
+  peakBeat: number;
+};
+
 /** The full generated melody for a progression. */
 export type Melody = {
   notes: MelodyNote[];
   /** Octave in which the melody lives (e.g. 5 for C5-range). */
   octave: number;
+  /** The phrase form the melody was composed in (absent for drawn melodies). */
+  phrases?: MelodyPhrase[];
 };
 
 /** Style of melody generation. */
@@ -54,6 +69,13 @@ export type ContourShape =
  */
 export type MelodyHarmony = "expressive" | "strict";
 
+/**
+ * Phrase form. "auto" chooses by length: one closed phrase under 12 beats, a
+ * period (question / answer) up to about six bars, then statement /
+ * restatement / departure / conclusion cycles.
+ */
+export type MelodyForm = "auto" | "single" | "period" | "cycles";
+
 /** Options for the melody generator. */
 export type MelodyGenerationOptions = {
   /** Scale pitch classes (7 notes) in order. */
@@ -64,14 +86,32 @@ export type MelodyGenerationOptions = {
     pitchClasses: PitchClass[];
     root: PitchClass;
     durationClass?: DurationClass;
+    /**
+     * Optional hints from the chord engine or the store. The engine infers
+     * quality, function and tension from the pitch classes when they are
+     * absent, so callers may pass only the four fields above.
+     */
+    symbol?: string;
+    romanNumeral?: string;
+    kind?: ChordKind;
+    functionTag?: HarmonicFunction;
+    isDominant?: boolean;
+    bass?: PitchClass;
+    /** Realised tension 0–1, when the caller already knows it. */
+    tension?: number;
   }[];
   style: MelodyStyle;
   /** How tightly the melody follows the chord tones (default "expressive"). */
   harmony?: MelodyHarmony;
   /** Emotional character of the melody (default "emotional"). */
   mood?: MelodyMood;
-  /** Tension curve (0-1 per chord) — drives contour and note density. */
+  /**
+   * Tension per chord (0–1), for example the chord engine's own curve. When
+   * absent the engine derives one from the chords' functions.
+   */
   tensionCurve?: number[];
+  /** Phrase form (default "auto"). */
+  form?: MelodyForm;
   /** Octave for the melody (default 5). */
   octave?: number;
   /** Seed for deterministic generation. */

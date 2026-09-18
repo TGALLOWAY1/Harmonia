@@ -99,6 +99,12 @@ interface ProgressionState {
     originalChords: Map<number, Chord>;     // Original chord data for revert, keyed by index
     substitutionTarget: number | null;       // Index of chord being substituted
     substitutionOptions: SubstitutionOption[];
+    /**
+     * Per-chord tension from the chord generator's own curve, kept so the
+     * melody can put its climax where the harmony is actually tense. Cleared
+     * whenever the chords change by a route that does not recompute it.
+     */
+    chordTensionCurve: number[] | null;
     // Melody state
     melody: Melody | null;
     melodyEnabled: boolean;
@@ -224,6 +230,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     substitutionTarget: null,
     substitutionOptions: [],
     // Melody initial state
+    chordTensionCurve: null,
     melody: null,
     melodyEnabled: false,
     melodyStyle: "lyrical",
@@ -309,6 +316,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             originalChords: new Map(),
             substitutionTarget: null,
             substitutionOptions: [],
+            chordTensionCurve: result.debug?.tensionCurve ?? null,
             melody: null,
         });
         get().addToHistory(progression);
@@ -440,6 +448,9 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             originalChords: new Map(),
             substitutionTarget: null,
             substitutionOptions: [],
+            // A saved progression carries no curve; the melody engine reads
+            // the chords' own functions instead.
+            chordTensionCurve: null,
             melody: null,
         });
         if (get().melodyEnabled) {
@@ -758,7 +769,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateMelodyForProgression: () => {
-        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony, melodyMood } = get();
+        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony, melodyMood, chordTensionCurve } = get();
         if (!currentProgression) return;
 
         const scalePitchClasses = getScalePitchClasses(rootKey, mode);
@@ -774,8 +785,16 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
                 pitchClasses,
                 root: (c.root ?? c.notes[0] ?? "C") as PitchClass,
                 durationClass: c.durationClass,
+                symbol: c.symbol,
+                romanNumeral: c.romanNumeral,
+                bass: c.bass,
             };
         });
+
+        // The tension curve only describes the chords it was generated with;
+        // after an edit that changed their number it no longer lines up, and
+        // the melody engine derives its own from the chords' functions.
+        const tensionCurve = chordTensionCurve?.length === chords.length ? chordTensionCurve : undefined;
 
         const melody = generateMelody({
             scalePitchClasses,
@@ -784,6 +803,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             harmony: melodyHarmony,
             mood: melodyMood,
             octave: 5,
+            tensionCurve,
         });
 
         set({ melody, melodyEnabled: true });

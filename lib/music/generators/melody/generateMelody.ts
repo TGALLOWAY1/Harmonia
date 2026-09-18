@@ -3,20 +3,25 @@
  *
  * Composes melodies top-down instead of sampling notes one at a time:
  *
- *   1. Phrase plan   — intro/development/climax/resolution segments mapped
- *                      onto the progression's beats, plus a contour shape
- *                      and climax point (phrasePlan.ts, contour.ts).
- *   2. Motifs        — a rhythmic/melodic cell is generated, varied, and
- *                      tiled into the plan with call-and-response, pickups,
- *                      and a cadence cell ending on a long note (motif.ts).
- *   3. Realization   — motif events become pitches: contour-anchored,
- *                      chord-aware, leap-limited, with motif statements
- *                      memoized so repetition is audible (realizePitches.ts).
- *   4. Ornaments     — passing/neighbor/suspension/anticipation/appoggiatura
- *                      tones inserted with guaranteed resolution (ornaments.ts).
- *   5. Selection     — several candidate melodies are generated from derived
- *                      seeds, scored for catchiness, and the best one is
- *                      returned (scoring.ts).
+ *   1. Harmonic context — what each chord is (quality, function, tension),
+ *      which notes are chord, colour or avoid tones over it, which tones
+ *      want to resolve where, and a guide-tone line through the changes
+ *      (harmonicContext.ts).
+ *   2. Form plan     — the progression cut into two-bar phrases with
+ *      question/answer cadences, one climax phrase, a local peak, a pickup,
+ *      a breath and a density for each (phrasePlan.ts).
+ *   3. Rhythm        — a small vocabulary of metrically weighted one-bar
+ *      cells, tiled and varied per phrase, with onsets at chord changes and
+ *      a lengthened cadence note (rhythm.ts).
+ *   4. Motifs        — a basic idea stated, restated with a new ending,
+ *      fragmented and sequenced, and liquidated into the close (motif.ts).
+ *   5. Realization   — a beam search per phrase over expectation, harmony,
+ *      tendency-tone and climax costs (realizePitches.ts).
+ *   6. Ornaments     — passing/neighbour/suspension/anticipation/appoggiatura
+ *      tones inserted with guaranteed resolution (ornaments.ts).
+ *   7. Selection     — several candidates from derived seeds are scored
+ *      against corpus-calibrated targets; one of the near-best is kept, so
+ *      equal-quality candidates still vary with the seed (scoring.ts).
  *
  * Mood profiles (dark / emotional / dreamy / energetic) parameterize every
  * stage; the user's melody style modulates the mood. Output is deterministic
@@ -24,6 +29,7 @@
  */
 
 import { midiToNoteName, midiToPitchClass } from "@/lib/theory/midiUtils";
+import { buildHarmonicContext } from "./harmonicContext";
 import {
   buildChordMidiSet,
   buildScaleMidiSet,
@@ -39,7 +45,7 @@ import { buildPhrasePlan, type PhrasePlan } from "./phrasePlan";
 import { realizePitches, type NoteEvent } from "./realizePitches";
 import { createRng, deriveSeed } from "./rng";
 import { scoreMelody, type MelodyScore } from "./scoring";
-import type { Melody, MelodyGenerationOptions, MelodyNote } from "./types";
+import type { Melody, MelodyGenerationOptions, MelodyNote, MelodyPhrase } from "./types";
 
 let noteIdCounter = 0;
 function nextNoteId(): string {
@@ -47,6 +53,15 @@ function nextNoteId(): string {
 }
 
 const DEFAULT_CANDIDATES = 8;
+
+/**
+ * How close to the best score a candidate may be and still count as a tie.
+ * A strict argmax lets the same few melodies win over and over; treating
+ * near-equal candidates as tied keeps the quality gain while letting the seed
+ * choose among melodies that are, musically, equally good (the chord engine
+ * does the same).
+ */
+const SCORE_TIE_BAND = 0.04;
 
 export function generateMelody(options: MelodyGenerationOptions): Melody {
   const {
@@ -58,6 +73,8 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     octave = 5,
     seed,
     candidateCount,
+    tensionCurve,
+    form = "auto",
   } = options;
 
   if (chords.length === 0 || scalePitchClasses.length === 0) {
@@ -67,17 +84,18 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
   const baseSeed = seed ?? Date.now();
   const candidates = Math.max(1, candidateCount ?? DEFAULT_CANDIDATES);
   const profile = applyStyleToMood(MOOD_PROFILES[mood], style);
+  const harmonyContext = buildHarmonicContext(chords, scalePitchClasses, { tensionCurve });
+  const scaleMidi = buildScaleMidiSet(scalePitchClasses, octave);
+  const { low, high } = moodRegister(profile, octave);
 
-  let best: { notes: MelodyNote[]; score: MelodyScore } | null = null;
+  const scored: { notes: MelodyNote[]; score: MelodyScore; plan: PhrasePlan }[] = [];
 
   for (let k = 0; k < candidates; k++) {
     const rng = createRng(deriveSeed(baseSeed, k));
 
-    const plan = buildPhrasePlan(chords, profile, rng);
-    // Short cells repeat within segments (hooks); long forms earn 1-bar motifs.
-    const motifLength = plan.totalBeats >= 32 ? 4 : 2;
-    const motifA = generateMotif(profile, Math.min(motifLength, plan.totalBeats), rng, "A");
-    const events = layoutMotifs(plan, motifA, profile, rng);
+    const plan = buildPhrasePlan(chords, profile, rng, { octave, harmony: harmonyContext, form });
+    const motifA = generateMotif(profile, Math.min(4, plan.totalBeats), rng, "A");
+    const events = layoutMotifs(plan, motifA, profile, rng, style);
 
     let noteEvents = realizePitches(events, plan, {
       scalePitchClasses,
@@ -88,8 +106,6 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
       octave,
     });
 
-    const scaleMidi = buildScaleMidiSet(scalePitchClasses, octave);
-    const { low, high } = moodRegister(profile, octave);
     noteEvents = applyOrnaments(noteEvents, plan, {
       chords,
       scaleMidi,
@@ -97,17 +113,36 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
       profile,
       registerLow: low,
       registerHigh: high,
+      harmonyContext,
     }, rng);
 
     const notes = finalize(noteEvents, plan, chords, harmony, profile, octave);
     const score = scoreMelody(notes, plan, chords, profile, octave);
-
-    if (best === null || score.total > best.score.total) {
-      best = { notes, score };
-    }
+    scored.push({ notes, score, plan });
   }
 
-  return { notes: best!.notes, octave };
+  const winner = pickAmongBest(scored, baseSeed);
+  return { notes: winner.notes, octave, phrases: summarizePhrases(winner.plan) };
+}
+
+function pickAmongBest<T extends { score: MelodyScore }>(scored: T[], baseSeed: number): T {
+  if (scored.length === 1) return scored[0];
+  const best = Math.max(...scored.map((s) => s.score.total));
+  const threshold = best - Math.abs(best) * SCORE_TIE_BAND;
+  const contenders = scored.filter((s) => s.score.total >= threshold);
+  const pick = Math.floor(createRng(baseSeed ^ 0x5bf03635)() * contenders.length);
+  return contenders[Math.min(pick, contenders.length - 1)];
+}
+
+function summarizePhrases(plan: PhrasePlan): MelodyPhrase[] {
+  return plan.phrases.map((p) => ({
+    startBeat: p.startBeat,
+    endBeat: p.endBeat,
+    material: p.material,
+    cadence: p.isFinal ? "final" : p.cadence,
+    isClimax: p.isClimax,
+    peakBeat: p.peakBeat,
+  }));
 }
 
 /**
@@ -119,6 +154,7 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
  *     (expressive);
  *   - every non-chord tone resolves by step — anything stranded is pulled
  *     onto the nearest chord tone.
+ * With the beam search these passes rarely fire; they remain the guarantee.
  */
 function finalize(
   noteEvents: NoteEvent[],
