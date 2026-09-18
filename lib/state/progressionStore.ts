@@ -99,6 +99,14 @@ interface ProgressionState {
     originalChords: Map<number, Chord>;     // Original chord data for revert, keyed by index
     substitutionTarget: number | null;       // Index of chord being substituted
     substitutionOptions: SubstitutionOption[];
+    /**
+     * Per-chord tension from the chord generator's own curve, kept so the
+     * melody can put its climax where the harmony is actually tense. Stored
+     * with the chord symbols it was computed for: a substitution or a note
+     * edit that changes a chord's identity invalidates it, and the melody
+     * engine falls back to deriving tension from the chords themselves.
+     */
+    chordTensionCurve: { signature: string; curve: number[] } | null;
     // Melody state
     melody: Melody | null;
     melodyEnabled: boolean;
@@ -199,6 +207,15 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
     }
 }
 
+/**
+ * Identity of a progression's harmony: the chord symbols in order. Note edits
+ * re-derive the symbol through the chord interpreter, so a change that alters
+ * what a chord *is* changes this, while a re-voicing of the same chord does not.
+ */
+function progressionSignature(chords: Chord[]): string {
+    return chords.map((c) => c.symbol).join("|");
+}
+
 export const useProgressionStore = create<ProgressionState>((set, get) => ({
     currentProgression: null,
     history: [],
@@ -224,6 +241,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     substitutionTarget: null,
     substitutionOptions: [],
     // Melody initial state
+    chordTensionCurve: null,
     melody: null,
     melodyEnabled: false,
     melodyStyle: "lyrical",
@@ -309,6 +327,12 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             originalChords: new Map(),
             substitutionTarget: null,
             substitutionOptions: [],
+            // A locked chord replaces a generated one, so the curve no longer
+            // describes every slot; without locks it describes them all.
+            chordTensionCurve:
+                lockedByIndex.size === 0 && result.debug?.tensionCurve
+                    ? { signature: progressionSignature(chords), curve: result.debug.tensionCurve }
+                    : null,
             melody: null,
         });
         get().addToHistory(progression);
@@ -440,6 +464,9 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             originalChords: new Map(),
             substitutionTarget: null,
             substitutionOptions: [],
+            // A saved progression carries no curve; the melody engine reads
+            // the chords' own functions instead.
+            chordTensionCurve: null,
             melody: null,
         });
         if (get().melodyEnabled) {
@@ -758,7 +785,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateMelodyForProgression: () => {
-        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony, melodyMood } = get();
+        const { currentProgression, rootKey, mode, melodyStyle, melodyHarmony, melodyMood, chordTensionCurve } = get();
         if (!currentProgression) return;
 
         const scalePitchClasses = getScalePitchClasses(rootKey, mode);
@@ -774,8 +801,23 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
                 pitchClasses,
                 root: (c.root ?? c.notes[0] ?? "C") as PitchClass,
                 durationClass: c.durationClass,
+                symbol: c.symbol,
+                romanNumeral: c.romanNumeral,
+                bass: c.bass,
             };
         });
+
+        // The curve only describes the chords it was generated for. After a
+        // substitution or an edit that changed a chord's identity it would
+        // place the climax by harmony that is no longer there, so it is used
+        // only while the symbols still match; otherwise the melody engine
+        // derives tension from the chords' own functions.
+        const tensionCurve =
+            chordTensionCurve &&
+            chordTensionCurve.curve.length === chords.length &&
+            chordTensionCurve.signature === progressionSignature(currentProgression.chords)
+                ? chordTensionCurve.curve
+                : undefined;
 
         const melody = generateMelody({
             scalePitchClasses,
@@ -784,6 +826,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             harmony: melodyHarmony,
             mood: melodyMood,
             octave: 5,
+            tensionCurve,
         });
 
         set({ melody, melodyEnabled: true });

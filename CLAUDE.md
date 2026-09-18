@@ -33,6 +33,8 @@ npm run lint      # Run ESLint
 - Scales are not all seven notes — `major_pentatonic` has five. Read `ScaleDefinition.pitchClasses.length` rather than assuming 7 degrees, and route pentatonic through `lib/theory/pentatonic.ts` instead of the stacked-thirds helpers in `chord.ts`
 - Piano roll and chord cards are visually aligned using flex multipliers based on `durationClass`
 - Every generated `Chord` carries `bass` and `inversion`; store actions that change `midiNotes` must keep them in step (use `describeInversion` from `lib/theory/inversionLabel.ts`)
+- The melody engine reads chord *categories*, not raw pitch classes: a note is a chord, colour, avoid or chromatic tone over each chord (`harmonicContext.ts`). Never reintroduce a bare "semitone from a chord tone" clash test — it rejects the major 7th and accepts the b6
+- Melody scoring targets are calibrated against real corpora (Essen, Rolling Stone 200, POP909); when changing generation, re-measure rather than re-tuning thresholds, and record the numbers in `MELODY_ENGINE_ANALYSIS.md`
 - Borrowed harmony (`ChordKind` `"borrowed"`) is opt-in via `useModalInterchange`, which the store's complexity presets enable from "Rich" upward; "Simple" and the pentatonic path stay inside the scale
 
 ## File Structure Highlights
@@ -51,7 +53,10 @@ npm run lint      # Run ESLint
 | `lib/music/generators/advanced/neoRiemannian.ts` | Neo-Riemannian transforms and parsimonious voice leading |
 | `lib/music/generators/advanced/bassLine.ts` | Bass-line planner (inversion per chord as a small DP) |
 | `lib/music/generators/advanced/voicingSearch.ts` | Bounded Viterbi search connecting voicings across the whole progression |
-| `lib/music/generators/melody/` | Phrase-based melody engine (phrase plan, contour, motifs, moods, ornaments, scoring) |
+| `lib/music/generators/melody/` | Melody engine: harmonic context → form plan → rhythm → motifs → beam-search realization → ornaments → corpus-calibrated scoring |
+| `lib/music/generators/melody/harmonicContext.ts` | Per-chord function, tension, note categories (chord/colour/avoid/chromatic), tendency tones, guide-tone line |
+| `lib/music/generators/melody/phrasePlan.ts` | Phrases, cadence types and target degrees, the tension-placed climax phrase, pickups and breaths |
+| `lib/music/generators/melody/meter.ts` | Metric weights on the half-beat grid; Longuet-Higgins & Lee syncopation |
 | `lib/theory/pentatonic.ts` | Scale-safe chord vocabulary + templates for major pentatonic (no stacked thirds) |
 | `lib/audio/instrumentCatalog.ts` | Tone-free instrument metadata (ids, labels, quality tiers) |
 | `lib/audio/synthPresets.ts` | Instrument registry: lightweight synth + high-quality sampler realizations per instrument |

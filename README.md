@@ -69,7 +69,7 @@ Harmonia is a deep dive into the hard parts of **computational music theory** an
 | **Algorithmic progression generation** | Random diatonic chords sound aimless; real progressions have *direction*. | A phrase-structure model assigns each chord a role (opening → pre-dominant → dominant → cadence) along a per-length **tension curve**, then selects degrees to match. | TypeScript, seeded LCG RNG |
 | **Voice-leading optimization** | Connecting chords smoothly is a combinatorial search; bad voice leading produces parallel fifths and ugly leaps. | A weighted **cost function** scores candidate voicings across 7 factors (smoothness, bass motion, common tones, parallel perfects, voice crossing, span, contrary motion) and minimizes it. | Custom search + heuristics |
 | **Chord-symbol ↔ pitch-class engine** | The notes you *see* must always match the chord *label* across 12 roots × 6 scales × 25+ qualities. | A single source of truth (`getChordPitchClasses`) derives allowed pitch classes directly from the symbol; any voicing that drifts is logged and rebuilt safely. | Deterministic parser |
-| **Phrase-based melody generation** | Note-by-note melodies wander; catchy melodies have motifs, contour, and call-and-response. | A top-down pipeline: phrase plan → contour → motif → state/vary/answer/densify → resolve, then **8 candidates scored on 8 catchiness dimensions** and the best kept. | Mulberry32 PRNG, Pearson correlation |
+| **Phrase-based melody generation** | Note-by-note melodies wander; memorable melodies have form — a hook that returns, phrases that ask and answer, one climax. | Harmonic context per chord → a form plan of phrases with cadence degrees and a tension-placed climax → metrically weighted rhythm cells → a **beam search** per phrase over motif fidelity, melodic expectation and harmony → **8 candidates scored on 13 dimensions calibrated against 300k intervals of folk and pop melody**. | Mulberry32 PRNG, beam search, corpus statistics |
 | **Real-time, glitch-free audio** | Mobile browsers start the audio context *suspended*; sample loads stall on flaky networks. | `ensureAudioReady()` unlocks from a real gesture (idempotent, never swallows errors); samplers **hot-swap** over a lightweight synth twin so playback never blocks or changes timbre family. | Tone.js, Web Audio API |
 | **"Hand-played" humanization** | Quantized chords sound robotic. | A pure, dependency-free module applies per-note velocity (±12%) and timing jitter (±12 ms), with block / strum / arpeggio articulations — computed as data, not real-time. | Pure TS (testable) |
 | **Theory-aware editing** | Letting users edit notes can break the chord identity. | A reverse chord interpreter re-derives the chord label from raw MIDI after every edit and tracks **provenance** (generated / substituted / manual). | Template matching |
@@ -81,7 +81,7 @@ Harmonia is a deep dive into the hard parts of **computational music theory** an
 <br/>
 
 > - 🎼 **Deterministic, seedable music generation** — same seed → same progression & melody, making the engine unit-testable (rare for generative audio).
-> - 🧮 **Real algorithms, not lookup tables** — tension curves, weighted voice-leading cost minimization, 8-candidate melody scoring with Pearson contour correlation.
+> - 🧮 **Real algorithms, not lookup tables** — tension curves, weighted voice-leading cost minimization, a per-phrase melodic beam search, and melody scoring calibrated against the Essen Folksong Collection and the Rolling Stone 200.
 > - 🔊 **Production-grade Web Audio** — gesture-unlock, lazy sampler streaming with seamless hot-swap, graceful degradation to synth on network failure, persisted quality modes.
 > - 🎹 **Single source of truth for harmony** — `getChordPitchClasses` guarantees the notes you see and hear always match the chord label across all keys/modes/qualities.
 > - 🧱 **Clean, layered architecture** — Tone-free theory core, Tone-free instrument catalog, pure humanization module, Zustand state — audio concerns never leak into music theory.
@@ -132,7 +132,7 @@ Generate coherent progressions in any key across **6 scales** (Major, Minor, Dor
 <td width="50%" valign="top">
 
 ### 🎶 Phrase-Based Melody Generator
-Top-down melody composition: phrase plan → contour → motif → variation → resolution. **8 candidates scored on 8 catchiness dimensions**; the best is kept. Four moods (Dark, Emotional, Dreamy, Energetic) × three styles.
+Melodies are composed as **form**, not as a line: the progression is cut into question-and-answer phrases, each with its own cadence degree, and the opening idea returns whole where the harmony returns. One highest note lands in the phrase the harmony makes tense, approached from below and left by step. Notes are chosen by a **beam search per phrase** that weighs the motif against melodic expectation, chord/colour/avoid categories, guide tones and tendency resolution. **8 candidates scored on 13 corpus-calibrated dimensions**; one of the near-best is kept. Four moods (Dark, Emotional, Dreamy, Energetic) × three styles.
 
 </td>
 </tr>
@@ -306,7 +306,7 @@ sequenceDiagram
 | **6. Bass line** | A small dynamic programme decides the bass note of every chord *before* voicing: root position at the opening, the cadence and the dominant that prepares it; first inversion where it buys a stepwise line; second inversion only as a cadential, passing or pedal 6-4; a seventh in the bass resolves down by step. Every chord carries its `bass` and `inversion`. |
 | **7. Voice leading** | Candidates that honour the planned bass are connected by a bounded Viterbi (beam) search over the *whole* progression, not chord by chord. Each candidate is charged for its register (which rises with tension), its sensory roughness (Plomp-Levelt/Sethares), and the voice leading from the previous chord; a chord reached by a Neo-Riemannian transform adds its own parsimonious voicing. |
 | **8. Scoring** | Steps 1-7 run eight times from derived seeds. Each finished progression is scored on cadence strength, bass motion, register arc, voice leading, variety, tension match (against the same formula the planner used) and mood fit including brightness, and the best is kept. |
-| **9. Melody** | Optional: a phrase-aware melody is generated from 8 scored candidates, hugging the actual chord tones. |
+| **9. Melody** | Optional: a melody is composed as phrases with question-and-answer cadences and one tension-placed climax, realized by a per-phrase beam search, and chosen from 8 corpus-scored candidates. It reads the chord engine's own tension curve, so melody and harmony peak together. |
 | **10. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
 | **11. Visualization** | Chord cards (with slash labels for inverted chords) and the piano roll render in sync, aligned by duration class. |
 | **12. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
@@ -401,24 +401,51 @@ The voicing that minimizes total cost (relative to the previous chord) is select
 
 ```mermaid
 flowchart LR
-    PP["Phrase plan<br/>intro→dev→climax→resolution"] --> CT["Contour<br/>(6 shapes)"]
-    CT --> MO["Motif<br/>state · vary · answer · densify"]
-    MO --> RP["Pitch realization<br/>(chord-aware, memoized)"]
-    RP --> OR["Ornaments<br/>passing/neighbor/susp/antic/appog"]
-    OR --> SC["Score 8 candidates<br/>→ keep best"]
-    style SC fill:#0f766e,color:#fff
+    HC["Harmonic context<br/>function · tension · categories"] --> FP["Form plan<br/>phrases · cadences · climax"]
+    FP --> RH["Rhythm<br/>metric cells · breaths"]
+    RH --> MO["Motifs<br/>state · restate · fragment"]
+    MO --> BS["Beam search<br/>expectation + harmony"]
+    BS --> OR["Ornaments<br/>passing/neighbor/susp/antic/appog"]
+    OR --> SC["Score 8 candidates<br/>→ keep one of the best"]
+    style FP fill:#7c3aed,color:#fff
+    style BS fill:#0f766e,color:#fff
 ```
 
-Melodies are composed **top-down**, not note-by-note:
+Melodies are composed **top-down**, as form:
 
-1. **Phrase plan** — the progression is partitioned into intro → development → climax → resolution, snapped to chord boundaries, with a climax beat fixed.
-2. **Contour** — one of six shapes (rising, falling, arch, inverted-arch, wave, stair-step) becomes a pitch "gravity" target per beat, warped so peaks land on the climax.
-3. **Motif** — a short rhythmic/melodic cell is generated, then **stated, varied** (transpose / invert / rhythm-shift), **answered** call-and-response, and **densified** at the climax — before resolving on a long cadence note.
-4. **Pitch realization** — motif events become concrete MIDI, hugging the actual chord tones (derived from `getChordPitchClasses`, so the melody can reach chromatic chord tones like the F♯ of a `D7` secondary dominant). Repeated motifs are memoized as semitone offsets for audible repetition.
-5. **Ornaments** — passing tones, neighbor tones, suspensions, anticipations, and appoggiaturas are added at tension-scaled rates and **always resolve by step**.
-6. **Score & select** — **8 candidate melodies** (each from a derived sub-seed) are scored on **8 dimensions** — motif repetition (Pearson correlation, transposition-invariant), contour adherence, chord-tone alignment on strong beats, voice-leading smoothness, phrase-ending quality, rhythmic interest, range sanity, and penalties for large leaps / over-density / unresolved tones — and the highest scorer wins.
+1. **Harmonic context** — every chord is read for its quality, scale degree, harmonic function and tension (the chord engine's own formula), then every one of the twelve pitch classes is classified over it as a **chord tone, colour tone, avoid tone or chromatic tone**. The avoid tone is the scale tone a semitone above a chord tone — the 4th over a major triad, the tonic over V7 — which is why the melody may sit on a 6th or a 9th but never leans on an avoid note. Tendency tones (the leading tone rising, a chordal 7th falling, 4̂→3̂, ♭6̂→5̂) and a **guide-tone line** through the changes are derived here too.
+2. **Form plan** — the progression is cut into phrases on chord boundaries: one closed phrase for short forms, a **period** (question then answer) up to about six bars, then statement / restatement / departure / conclusion. A phrase **restates the opening idea where the chords return**, and each phrase gets a cadence type with a target degree — a half cadence on 2̂, 7̂ or 5̂, an imperfect close on 3̂ or 5̂, the final phrase on 1̂ approached by step. **One phrase is the climax**, chosen where the harmony is tense rather than by position, and only it may reach the top of the register.
+3. **Rhythm** — a small vocabulary of one-bar cells, drawn by **metric weight** (downbeat > beat three > beats two and four > off-beats) and reused across phrases the way real songs do. Chord changes get an onset, sometimes anticipated by a half-beat; density tapers across each phrase; the cadence note is lengthened and a breath is carved before the next phrase's pickup.
+4. **Motifs** — a basic idea is stated, restated with a new ending ("same head, different tail"), fragmented and sequenced in the departure, and liquidated into a stepwise close.
+5. **Pitch realization** — a **beam search over each phrase**, not a greedy walk. Each candidate is charged for motif fidelity, melodic expectation (proximity, post-leap reversal, step inertia, regression to the mean), harmony by category and metric weight, the guide-tone line at chord changes, and tendency resolution — which, as classical practice requires, outranks the motif when a dissonance is owed a resolution. The phrase's peak and its cadence pitch are decided in advance so the line can aim for them.
+6. **Ornaments** — passing tones, neighbor tones, suspensions, anticipations and appoggiaturas, mood-gated and tension-scaled, **always inserted with their resolution**, and never on the returning hook.
+7. **Score & select** — **8 candidates** are scored on **13 dimensions** whose targets come from real melodies (interval mix, post-leap reversal, peak uniqueness and placement, cadence degrees, tendency resolution, breathing, rhythmic variety, range), and one of the near-best is kept so equal-quality candidates still vary with the seed.
 
-**Moods** (`dark`, `emotional`, `dreamy`, `energetic`) parameterize register, span, rhythmic density, syncopation, rests, leap size, ornament palette, and tension; **styles** (`lyrical`, `rhythmic`, `arpeggiated`) modulate the chosen mood. Determinism comes from a **mulberry32 PRNG** with derived independent sub-seeds.
+**Moods** (`dark`, `emotional`, `dreamy`, `energetic`) parameterize register, span, rhythmic density, syncopation, rests, leap size, ornament palette and tension; **styles** (`lyrical`, `rhythmic`, `arpeggiated`) modulate the chosen mood. Determinism comes from a **mulberry32 PRNG** with derived independent sub-seeds.
+
+<details>
+<summary><b>Calibrated against real melodies — measured before and after</b></summary>
+
+<br/>
+
+The engine's targets are taken from the **Essen Folksong Collection** (6,059 songs, 293,595 intervals), the **CoCoPops Rolling Stone 200** pop/rock vocal melodies with chords (194 songs, 59,607 notes), **POP909**, **Nottingham** and **OpenEWLD**. Measured over 26,256 generated melodies before and after:
+
+| Measure | Before | After | Real melodies |
+|---|---|---|---|
+| Times the highest note is reached | 3.5–3.8 | **1.0** | unique in 52–65% of phrases |
+| Highest note arrives in bar 1 | 23–24% | **0%** | 24% |
+| Longest run of one repeated pitch | 4.5 notes | **2.1** | mean run 1.3–1.4 |
+| Melodies containing a 4-note drone | 48–62% | **0%** | — |
+| Climax on a high-tension chord | 44% | **85%** | — |
+| A breath at mid-phrase | 22–41% | **96–100%** | 41–81% of boundaries |
+| Leading tones / 7ths resolving | 25% | **56%** | 37–44% (pop) |
+| Leap followed by a reversal | 65–71% | **78–81%** | 74–90% |
+| Sustained avoid tones per melody | 0.18 | **0.03** | — |
+| Melodic range | 15.7–16.2 st | **13.2–13.8** | 12–19 per song |
+
+The full analysis, including the trade-offs this cost, is in [`MELODY_ENGINE_ANALYSIS.md`](MELODY_ENGINE_ANALYSIS.md).
+
+</details>
 
 ---
 
@@ -475,6 +502,9 @@ flowchart TD
 - **Harmonic rhythm profiles (4):** even, anchored, accelerating, pedal-opening
 - **Inversions:** planned per chord (root, 1st, 2nd only as a 6-4 idiom, 3rd resolving down) and labelled as slash chords
 - **Note roles (7):** chord tone, extension, alteration, passing, melody, approach, bass
+- **Melodic note categories (4):** chord tone, colour tone, avoid tone, chromatic — derived per chord
+- **Melodic cadences (3):** half (2̂/7̂/5̂), imperfect (3̂/5̂), authentic (1̂ approached by step)
+- **Melodic forms (4):** single phrase, period, ternary, statement/restatement/departure/conclusion
 
 </details>
 
@@ -563,8 +593,11 @@ Harmonia/
 │   │   │   ├── voicingSearch.ts    #   Bounded Viterbi over the whole progression
 │   │   │   └── generateAdvancedProgression.ts
 │   │   └── melody/                # 🎶 Phrase-based melody engine
-│   │       ├── phrasePlan.ts · contour.ts · motif.ts
-│   │       ├── moods.ts · ornaments.ts · realizePitches.ts
+│   │       ├── harmonicContext.ts  #   Chord function, note categories, tendency tones
+│   │       ├── phrasePlan.ts       #   Phrases, cadence degrees, the climax phrase
+│   │       ├── meter.ts · rhythm.ts #   Metric weights · cells, breaths, density
+│   │       ├── motif.ts · contour.ts · moods.ts · ornaments.ts
+│   │       ├── realizePitches.ts   #   Per-phrase beam search
 │   │       ├── scoring.ts · rng.ts · generateMelody.ts
 │   │
 │   ├── audio/                     # 🔊 Playback engine
@@ -616,7 +649,7 @@ Harmonia/
 | **Substitution categories** | 6 |
 | **Voicing styles × densities** | 6 × 3 |
 | **Melody moods × styles** | 4 × 3 |
-| **Melody candidates scored per request** | 8 (on 8 dimensions) |
+| **Melody candidates scored per request** | 8 (on 13 corpus-calibrated dimensions) |
 | **Instruments (synth / sampled)** | 5 |
 | **Test coverage %** | _TODO — run `npm run test:coverage` and publish_ |
 | **Avg. generation latency** | _TODO — add a micro-benchmark; generation is synchronous & seedable_ |
@@ -741,6 +774,7 @@ Generative audio is notoriously hard to test. By driving generation with seeded 
 | **✅ Current** | Progression generator, phrase-based melody, interactive piano roll, theory-guided substitutions, multi-instrument playback with hot-swap, MIDI export, favorites, voicing feedback, Harmonic Sketchpad |
 | **🔜 Next** | **Melody-first harmonization** — draw a melody in a scale-snapped roll, then auto-harmonize with smooth functional motion (prototyped, reverted pending better chord-fit scoring — see roadmap notes). MIDI **import**. Expanded screenshot/GIF gallery. CI + coverage badges. |
 | **🧪 v2 — Learning Path** | Flashcards, spaced repetition (SRS), circle-of-fifths exercises, milestone curriculum. Schema, card templates, and SRS engine already scaffolded under `_deferred/` and `prisma/`. |
+| **🎶 Melody next** | Approach and enclosure patterns into chord changes, escape tones and cambiata, a "one surprise per phrase" budget, and a sixteenth-note grid for pop styles (47% of POP909 note durations are sixteenths). |
 | **🔭 Research ideas** | AI-assisted composition, style transfer, genre-specific generators, counterpoint generation, adaptive harmonization, voice-leading optimization (search → learned), notation editor, DAW integration, collaboration, live-performance mode |
 
 ---
