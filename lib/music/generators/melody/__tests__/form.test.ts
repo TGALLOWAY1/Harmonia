@@ -61,6 +61,24 @@ describe("form planning", () => {
     expect(period.phrases.length).toBe(2);
   });
 
+  it("gives an explicit cycles request its four parts, even where the default would pick a period", () => {
+    // Four bars: the length heuristic alone would make this a two-phrase
+    // period, so asking for cycles has to override it.
+    const short = chords(4);
+    const auto = buildPhrasePlan(short, MOOD_PROFILES.emotional, createRng(1), { octave: 5 });
+    expect(auto.phrases.length).toBe(2);
+    expect(auto.form).toBe("period");
+
+    const cycles = buildPhrasePlan(short, MOOD_PROFILES.emotional, createRng(1), { octave: 5, form: "cycles" });
+    expect(cycles.phrases.length).toBe(4);
+    expect(cycles.form).toBe("srdc");
+    expect(cycles.phrases[cycles.phrases.length - 1].isFinal).toBe(true);
+    expect(cycles.phrases.filter((p) => p.isClimax)).toHaveLength(1);
+    for (let i = 1; i < cycles.phrases.length; i++) {
+      expect(cycles.phrases[i].startBeat).toBe(cycles.phrases[i - 1].endBeat);
+    }
+  });
+
   it("restates the opening idea, and returns it to its own register when the chords return", () => {
     const p = plan(8, 4);
     const restating = p.phrases.filter((x) => x.restates !== null);

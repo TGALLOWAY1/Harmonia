@@ -135,8 +135,12 @@ function phraseCount(totalBeats: number, chordCount: number, form: MelodyForm): 
   if (chordCount <= 1 || totalBeats < 12) return 1;
   if (form === "single") return 1;
   if (form === "period") return 2;
-  const n = Math.max(2, Math.round(totalBeats / 8));
-  return Math.min(n, chordCount);
+  const auto = Math.max(2, Math.round(totalBeats / 8));
+  // "cycles" asks for the four-part statement / restatement / departure /
+  // conclusion shape, so it never collapses into a period the way the
+  // length-driven default would on a short progression.
+  const wanted = form === "cycles" ? Math.max(4, auto) : auto;
+  return Math.min(wanted, chordCount);
 }
 
 /** Lift of phrase i (0–1) under a contour shape — where its register sits. */
