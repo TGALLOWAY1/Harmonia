@@ -4,6 +4,9 @@ import path from "path";
 export default defineConfig({
   test: {
     include: ["**/*.{test,spec}.ts", "**/*.{test,spec}.tsx"],
+    // Agent worktrees are checked out under .claude/worktrees; their copies
+    // of the suite must not run (or fail) as part of this checkout's run.
+    exclude: ["**/node_modules/**", "**/.claude/**", "**/.next/**", "**/dist/**"],
     environment: "node",
     globals: true,
     // Several generator suites sweep thousands of seeds across every key and

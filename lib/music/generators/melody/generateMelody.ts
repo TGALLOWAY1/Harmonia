@@ -29,11 +29,11 @@
  */
 
 import { midiToNoteName, midiToPitchClass } from "@/lib/theory/midiUtils";
-import { buildHarmonicContext } from "./harmonicContext";
+import { planApproaches } from "./approach";
+import { buildHarmonicContext, midiPc, type HarmonicContext } from "./harmonicContext";
 import {
   buildChordMidiSet,
   buildScaleMidiSet,
-  closestTone,
   isChordTone,
   isSemitoneClash,
   isStrongBeat,
@@ -97,6 +97,11 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
     const motifA = generateMotif(profile, Math.min(4, plan.totalBeats), rng, "A");
     const events = layoutMotifs(plan, motifA, profile, rng, style);
 
+    // Which chord changes this candidate walks into, and how. Planned after
+    // the rhythm, because an approach needs an onset in the beat before the
+    // change; spent inside the beam search, which is free to overrule it.
+    const approaches = planApproaches(events, plan.chordStartBeats, profile, harmony, rng, harmonyContext);
+
     let noteEvents = realizePitches(events, plan, {
       scalePitchClasses,
       chords,
@@ -104,6 +109,7 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
       harmony,
       profile,
       octave,
+      approaches,
     });
 
     noteEvents = applyOrnaments(noteEvents, plan, {
@@ -116,7 +122,7 @@ export function generateMelody(options: MelodyGenerationOptions): Melody {
       harmonyContext,
     }, rng);
 
-    const notes = finalize(noteEvents, plan, chords, harmony, profile, octave);
+    const notes = finalize(noteEvents, plan, chords, harmony, profile, octave, harmonyContext);
     const score = scoreMelody(notes, plan, chords, profile, octave);
     scored.push({ notes, score, plan });
   }
@@ -153,7 +159,8 @@ function summarizePhrases(plan: PhrasePlan): MelodyPhrase[] {
  *   - strong beats sound chord tones (strict) / never semitone-clash
  *     (expressive);
  *   - every non-chord tone resolves by step — anything stranded is pulled
- *     onto the nearest chord tone.
+ *     onto the nearest chord tone — and a chromatic tone, which exists only
+ *     as an approach, resolves by a semitone on the very next onset.
  * With the beam search these passes rarely fire; they remain the guarantee.
  */
 function finalize(
@@ -163,12 +170,35 @@ function finalize(
   harmony: "expressive" | "strict",
   profile: MoodProfile,
   octave: number,
+  harmonyContext: HarmonicContext,
 ): MelodyNote[] {
   const { low, high } = moodRegister(profile, octave);
   const chordMidiSets = chords.map((c) => buildChordMidiSet(c.pitchClasses, octave));
   const inRangeChordTones = (ci: number) => {
     const inRange = chordMidiSets[ci].filter((m) => m >= low && m <= high);
     return inRange.length > 0 ? inRange : chordMidiSets[ci];
+  };
+  /**
+   * Where a note has to become a chord tone, the nearest one is the obvious
+   * choice and often the wrong one: moving a semitone away from its
+   * neighbours turns two steps into two fourths. The repair stays near the
+   * note it replaces and, among the tones that do, takes the one that keeps
+   * the line either side of it closest together.
+   */
+  const neighbourPull = (m: number, other: number | undefined) =>
+    other === undefined ? 0 : 0.9 * Math.max(0, Math.abs(m - other) - 2);
+  const repair = (midi: number, chordIndex: number, from: number | undefined, to: number | undefined, keepShape = false): number => {
+    const tones = inRangeChordTones(chordIndex);
+    let best = tones[0];
+    let bestCost = Infinity;
+    for (const m of tones) {
+      const cost = Math.abs(m - midi) + (keepShape ? 0 : neighbourPull(m, from) + neighbourPull(m, to));
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = m;
+      }
+    }
+    return best;
   };
 
   // Shorten notes that are held into a chord they clash with.
@@ -186,31 +216,35 @@ function finalize(
   }
 
   // Re-assert strong-beat harmony after ornamentation.
-  for (const n of noteEvents) {
+  for (let i = 0; i < noteEvents.length; i++) {
+    const n = noteEvents[i];
     if (!isStrongBeat(n.startBeat)) continue;
     const pcs = chords[n.chordIndex].pitchClasses;
     const needsSnap = harmony === "strict"
       ? !isChordTone(n.midi, pcs)
       : isSemitoneClash(n.midi, pcs);
     if (needsSnap) {
-      n.midi = closestTone(n.midi, inRangeChordTones(n.chordIndex));
+      n.midi = repair(n.midi, n.chordIndex, noteEvents[i - 1]?.midi, noteEvents[i + 1]?.midi, n.isHead === true);
     }
   }
 
   // Non-chord tones must resolve by step; otherwise become chord tones.
-  // Walk right-to-left so a snap never invalidates an already-verified
-  // resolution earlier in the line.
+  // A tone outside the chord's own scale is an approach or nothing: it has to
+  // resolve by a semitone, not merely by a step. Walk right-to-left so a snap
+  // never invalidates an already-verified resolution earlier in the line.
   for (let i = noteEvents.length - 1; i >= 0; i--) {
     const n = noteEvents[i];
     const pcs = chords[n.chordIndex].pitchClasses;
     if (n.suspended || isChordTone(n.midi, pcs)) continue;
+    const chromatic = harmonyContext.chords[n.chordIndex]?.categories[midiPc(n.midi)] === "chromatic";
     const next = noteEvents[i + 1];
+    const motion = next !== undefined ? Math.abs(next.midi - n.midi) : Infinity;
     const resolvesByStep =
       next !== undefined &&
-      Math.abs(next.midi - n.midi) <= 2 &&
+      (chromatic ? motion === 1 : motion <= 2) &&
       next.startBeat - (n.startBeat + n.durationBeats) <= 1;
     if (!resolvesByStep) {
-      n.midi = closestTone(n.midi, inRangeChordTones(n.chordIndex));
+      n.midi = repair(n.midi, n.chordIndex, noteEvents[i - 1]?.midi, next?.midi, n.isHead === true);
     }
   }
 

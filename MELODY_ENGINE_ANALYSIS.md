@@ -1,9 +1,10 @@
 # Melody Engine Analysis
 
-This document records two rounds of work on the melody generator: the original
-phrase-based refactor that replaced a note-by-note walker, and the later
-rebuild around musical form, metre and harmonic context. Sections 1–7 describe
-the first round; section 8 onward describes the second.
+This document records three rounds of work on the melody generator: the
+original phrase-based refactor that replaced a note-by-note walker, the
+rebuild around musical form, metre and harmonic context, and the approach
+figures and interval budget that followed. Sections 1–7 describe the first
+round, section 8 the second, section 9 the third.
 
 Regenerate the first round's raw data anytime with:
 
@@ -234,3 +235,266 @@ below, phrase endings on planned degrees, inner phrases avoiding the tonic,
 breathing at boundaries, the hook returning whole, the corpus interval mix,
 post-leap reversal, no drones, tendency resolution, the raised leading tone in
 minor, and behaviour over real chromatic progressions).
+
+---
+
+## 9. Third round: approach patterns and a surprise budget
+
+Two of the four items §8.5 left open: **approach and enclosure patterns before
+chord changes**, and **a surprise budget of one rare interval per phrase**.
+They are the same problem seen from two sides — §8.5 reported a line that
+"leaps into and away from its peak", with a mean interval of 2.7 against the
+corpora's 2.15 and 17–21 % of intervals a fourth or wider against 12 %, while
+arriving at each new chord from wherever the motif happened to leave it.
+
+### 9.1 What was measured
+
+Three statistics, added to `scripts/analyzeMelodies.ts` and defined once, in
+`lib/music/generators/melody/approach.ts`, so the generator and the analysis
+cannot drift apart.
+
+- **Approach rate at chord changes.** The denominator is the changes a melody
+  *could* approach: a note ends exactly on the change, inside the beat before
+  it (the last one or two half-beat slots), and the new chord begins with an
+  onset of its own — about half of all changes. Each is then classified:
+  *diatonic* (a step of one or two semitones into a chord tone of the new
+  chord), *chromatic* (a semitone from a note the previous chord calls
+  chromatic), or *enclosure* (the two notes before the change straddling the
+  target, each within a step, in either order).
+- **Surprises per phrase**, and the share of phrases holding more than one. A
+  surprise is an interval of a sixth or more, or a chromatic tone that never
+  resolves by semitone. Intervals across a rest or a phrase boundary are not
+  counted: where the line has stopped and started again, the distance between
+  the two notes is register, not a leap.
+- **The interval distribution**: mean interval, unisons, steps, thirds, and
+  the shares at a fourth or wider and a sixth or wider, against Essen.
+
+Sample: the script's own — four progressions (C major I–vi–IV–V at four and
+eight bars, C–D7–G–C, and an eight-chord F major long form with half-bar
+chords) × four moods × 13 seeds, lyrical, eight candidates per melody; 208
+melodies, plus the same sample in all three styles for the style table.
+
+### 9.2 What the research says
+
+- **Approach tones.** The engine already speaks Impro-Visor's vocabulary
+  (§8.2): every pitch over a chord is a chord, colour, scale or avoid tone.
+  The approach-note idiom is the other half of that vocabulary — a note whose
+  whole justification is the note after it. The chromatic approach is the
+  clearest case: a tone outside the chord's own scale is admissible precisely
+  because it resolves by semitone on the next onset, which is also what
+  distinguishes it from a wrong note. The enclosure is the same idea from both
+  sides at once.
+- **Tendency tones outrank it.** *Open Music Theory* is explicit that a
+  functional dissonance resolving at a change of function "takes precedence
+  over other principles". Where a dominant's leading tone or seventh already
+  resolves into the next chord, the harmony has brought its own approach and
+  the melody does not invent a second one.
+- **Interval budgets.** Essen: 22 % unisons, 49 % steps, 17 % thirds, 12 % of
+  intervals a fourth or wider, mean 2.15 semitones; only about 2.5 % reach a
+  sixth. A phrase of eight or nine notes therefore carries at most one wide
+  interval, and a sixth is a once-a-song event rather than a once-a-phrase one.
+- **The peak is approached by leap but left by step** (§8.2: approached by
+  leap in 56–63 % of phrases, left by step in 66–73 %). The corpora's approach
+  leaps are thirds and fourths; nothing in them justifies reaching the high
+  note from a sixth below and falling off it by a seventh.
+- **The hook returns whole** (POP909: 65 % of consecutive same-type phrases
+  share their first four notes). Whatever an approach figure is worth, it is
+  not worth bending a restatement out of recognition.
+
+### 9.3 The design
+
+**Approach patterns live in two places, planned then spent.**
+
+`approach.ts` plans them, *after* the rhythm is laid out and before pitches
+are realized. That is the only stage where the question "can this change be
+approached at all?" has an answer: it is a question about onsets, not about
+pitches. For each eligible change the planner draws, from the mood's rate,
+whether it gets a figure and which one — deterministically, from the
+candidate's own RNG stream, so a seed still reproduces its melody exactly. It
+refuses to plan into a phrase's peak or its cadence note (both are pinned, and
+neither is an approach target), and where the previous chord is a dominant
+whose leading tone or seventh already resolves into this one it plans only the
+plain step, leaving the tendency tone in possession of the slot.
+
+`realizePitches.ts` spends the plan inside the beam-search objective, as three
+terms:
+
+- a bonus at the arrival for the figure actually being played — a step in
+  (2.5), the semitone from below (3.5) or from above (2.0), both neighbours in
+  either order (4.0);
+- a *preparation* a note earlier, to the approach tone itself. The reward
+  lands on the arrival, which is one note too late for a chromatic tone: it
+  costs about five points on category alone and would be pruned from the beam
+  before the arrival could pay it back. A planned chromatic approach tone is
+  therefore charged as the motion it is rather than as a foreign note — its
+  category cost is refunded and a 4.5-point edge added — but only while it
+  stays short (a beat at most) and off the strong positions the harmony tests
+  read. The preparation is never paid to a hook that is coming back;
+- a penalty, planned or not, whenever a chromatic tone moves by anything other
+  than a semitone (6.0), with the final safety pass in `generateMelody.ts`
+  enforcing the same rule by construction: a chromatic tone that does not
+  resolve by a semitone on the very next onset is pulled onto a chord tone.
+
+Making it a bonus rather than a constraint is the point: an approach is a
+preference the harmony, the motif and the cadence can all outvote.
+
+**Rates by mood and style** (`moods.ts`, so the four moods stay audibly
+distinct and the style modulates the mood as everywhere else):
+
+| Mood | Rate | Chromatic share | Enclosure share |
+|---|---|---|---|
+| dark | 0.50 | 0.45 | 0.15 |
+| emotional | 0.50 | 0.40 | 0.20 |
+| dreamy | 0.40 | 0.12 | 0.12 |
+| energetic | 0.45 | 0.25 | 0.20 |
+
+Style multiplies the rate: lyrical ×0.85 (a sung line is carried by its words,
+not by the changes), rhythmic ×1.2, arpeggiated ×1.2. Dark and emotional
+favour the chromatic approach, dreamy the diatonic one, as the brief asked.
+
+**The surprise budget lives in the beam search.** Each phrase starts with one
+surprise and one wide leap. A surprise is an interval of a sixth or more or a
+chromatic tone that fails to resolve; a wide leap is a fourth or a fifth,
+which is not a surprise but is rationed on the same principle one tier down
+because Essen puts only 12 % of intervals there. The first of each is free;
+the second costs 5 points (2.5 for a wide leap) and every one after that costs
+more. Nothing is charged across a rest or a phrase boundary.
+
+**The climax spends its phrase's budget.** The peak is pinned to a chord tone
+under the phrase's ceiling, so the leap into it is not negotiable — and being
+charged to the path, not to the note, it is the *previous* note the search
+moves. Three changes give the line somewhere to stand: the note before the
+peak may not sit more than a fifth below it, its target is nudged up toward
+the peak the phrase will actually reach (the peak and the degree walk are
+chosen independently, and the gap between them was what the line used to cross
+in one jump), and the descent from the peak is charged by the semitone beyond
+a step. Where a phrase spends a surprise at all it is now the climax's own
+leap in 60 % of cases or more, which is what the budget is for.
+
+Two smaller changes came out of the measurements rather than the brief. The
+final safety pass, which pulls a stranded non-chord tone onto a chord tone,
+used to take the *nearest* one; on this sample it fired on 5.6 % of all notes
+and, blind to the line, turned thirds into fifths — it accounted for nearly
+three points of the ≥ 4th share on its own. It now prefers a tone that keeps
+both neighbours close, except inside a hook, where it stays with the nearest
+so that a restatement is repaired the same way its model was. And a head note
+that is *replaying* an earlier head now holds its target harder than one
+stating it (fidelity 2.8 against 1.8), which is what keeps the hook intact
+while the approach figures work on the line around it.
+
+### 9.4 Before/after results
+
+Same sample and the same measurement code on both sides; "before" is the
+engine as §8 left it.
+
+**Approach figures at chord changes** (share of approachable changes):
+
+| Engine | Approachable | Any approach | Diatonic | Chromatic | Enclosure |
+|---|---|---|---|---|---|
+| legacy | 147 | 33.3 % | 27.2 % | 0.0 % | 6.1 % |
+| before (all moods) | 480 | 36.7 % | 32.1 % | **0.0 %** | 4.6 % |
+| after (all moods) | 452 | **48.2 %** | **40.7 %** | **2.2 %** | **5.3 %** |
+| after — dark | 91 | 29.7 % | 27.5 % | 1.1 % | 1.1 % |
+| after — emotional | 130 | 52.3 % | 36.2 % | 4.6 % | 11.5 % |
+| after — dreamy | 101 | 37.6 % | 34.7 % | 0.0 % | 3.0 % |
+| after — energetic | 130 | 65.4 % | 59.2 % | 2.3 % | 3.8 % |
+
+By style (emotional, all four progressions): lyrical 38.8 % → **52.3 %**,
+rhythmic 46.3 % → **60.2 %**, arpeggiated 36.4 % → **46.6 %**.
+
+**Surprises and the interval distribution:**
+
+| Measure | Before | After | Corpus (Essen) |
+|---|---|---|---|
+| Surprises per phrase | 0.41 | **0.25** | — |
+| Phrases over budget (> 1) | 11.5 % | **0.9 %** | — |
+| Mean interval (semitones) | 2.91 | **2.73** | 2.15 |
+| Unisons | 12.7 % | **13.2 %** | 22 % |
+| Steps | 47.6 % | **49.4 %** | 49 % |
+| Thirds | 18.5 % | 18.9 % | 17 % |
+| A fourth or wider | 21.2 % | **18.6 %** | 12 % |
+| A sixth or wider | 7.4 % | **5.1 %** | 2.5 % |
+
+Per mood, surprises per phrase and the share of phrases over budget:
+dark 0.02 → **0.00** (0.0 % → 0.0 %), emotional 0.57 → **0.33** (17.1 % →
+**1.7 %**), dreamy 0.45 → **0.28** (17.1 % → **0.0 %**), energetic 0.61 →
+**0.38** (12.0 % → **1.7 %**). Mean interval by mood: dark 2.63 → 2.55,
+emotional 3.01 → 2.71, dreamy 3.17 → 2.79, energetic 2.87 → 2.82.
+
+**The dimensions §8 already tracked**, unchanged in kind and slightly better
+in every case — the interval work did not cost repetition or harmony:
+
+| Engine | Score | Motif coverage | Mean interval | Dir-change | Strong-beat CT % | Final note | Final on CT | Leaps > 7 |
+|---|---|---|---|---|---|---|---|---|
+| legacy | 52.7 | 0.06 | 2.72 | 0.55 | 93 | 1.3 | 58 % | 0.00 |
+| before — dark | 91.9 | 0.36 | 2.62 | 0.44 | 81 | 2.0 | 100 % | 0.04 |
+| after — dark | 93.7 | 0.37 | 2.55 | 0.40 | 80 | 2.0 | 100 % | 0.00 |
+| before — emotional | 95.3 | 0.41 | 3.12 | 0.54 | 88 | 2.0 | 100 % | 1.56 |
+| after — emotional | 99.7 | 0.45 | 2.75 | 0.48 | 87 | 2.0 | 100 % | 0.98 |
+| before — dreamy | 92.5 | 0.37 | 3.24 | 0.50 | 88 | 2.0 | 100 % | 1.10 |
+| after — dreamy | 93.2 | 0.37 | 2.83 | 0.44 | 85 | 2.0 | 100 % | 0.75 |
+| before — energetic | 106.8 | 0.47 | 2.96 | 0.51 | 92 | 2.0 | 100 % | 1.94 |
+| after — energetic | 108.4 | 0.51 | 2.90 | 0.50 | 96 | 2.0 | 100 % | 1.50 |
+
+Over the chord engine's own progressions, leading tones and chordal sevenths
+still resolve mid-phrase at 64 %, against 65 % before — the rule that puts a
+tendency ahead of an approach is what holds it there. An earlier draft that
+pinned the notes either side of the peak instead of nudging them cost ten
+points of that figure, which is how the pin became a nudge.
+
+**Generation time**, median of three runs over the same 208 melodies: 5.19 ms
+→ 5.86 ms per melody, **1.14×**. The planner is a single pass over the placed
+events; the rest is extra terms in a search that was already running.
+
+### 9.5 Trade-offs and what is still open
+
+- **The mean interval is 2.73, not 2.15.** Roughly half the remaining gap is
+  unisons: Essen repeats a pitch 22 % of the time and the engine does it 13 %,
+  deliberately — repeated-pitch drones were the first round's worst fault
+  (§8.1) and the anti-drone rules that removed them also removed the corpora's
+  cheapest source of small intervals. The rest is the pinned peak, below.
+- **The peak is left by a third, not a step** (measured: a step in about 20 %
+  of melodies, against 66–73 % in the corpora). This is structural: the peak
+  is pinned to a chord tone, and the tone a step below a chord tone is usually
+  not one, so leaving by step means leaving onto a non-chord tone that then
+  owes its own resolution. Shrinking the descent from a sixth to a third is as
+  far as the pin allows; the rest would need the peak unpinned, which is what
+  §8.4 bought the single high point with.
+- **The chromatic approach is rarer than its rate suggests** — 2.2 % of
+  approachable changes against a planned 6 %. Two filters account for it: the
+  tone has to be short and off the beat, which the sparser moods rarely offer
+  (dark ends up at 1.1 %, dreamy at 0), and the slot before a change often
+  falls inside the restated head, where the hook holds its shape. Both are the
+  right refusals, but they mean the figure is a colour the engine reaches for
+  rather than a habit.
+- **The escape tone and the cambiata are still unimplemented**, and now
+  deliberately so. Both are non-chord tones *left by leap* — that is their
+  definition — and the engine's standing guarantee, asserted by two tests and
+  enforced by the final safety pass, is that every non-chord tone resolves by
+  step. Adding them means loosening that guarantee for a flagged exception;
+  the trade did not look worth it against the two items measured here, and it
+  should be taken as a deliberate decision rather than an omission.
+- Still open from §8.5: a sixteenth-note grid for pop styles.
+
+### 9.6 Tests
+
+`lib/music/generators/melody/__tests__/approach.test.ts` — 12 tests, four of
+which fail against the engine as §8 left it:
+
+- the approach rate over the analysis script's own sample, inside a stated
+  band (above 40 %, below 85 %), with all three devices in use and the plain
+  step the commonest;
+- every chromatic tone resolving by a semitone on the very next onset, with no
+  rest between them and no more than a beat of it — and the count being
+  non-zero, so the guarantee is not vacuous;
+- strict harmony admitting no chromatic tone at all;
+- the planner's determinism, and its refusal to approach a peak or a cadence;
+- the classification itself, on hand-written figures: a step in, the semitone
+  below, both enclosure orders, a leap in, and a note held across the change;
+- at most one surprise per phrase (0.9 % of phrases exceed it), where a phrase
+  spends the one it has (the climax, in more than 60 % of the phrases that
+  spend one), and the interval mix against the corpora.
+
+No existing threshold was loosened. The 78 tests §8.6 describes still pass
+unchanged, including the interval-mix, post-leap-reversal, tendency-resolution
+and hook-return guarantees that the work here had to be shaped around.

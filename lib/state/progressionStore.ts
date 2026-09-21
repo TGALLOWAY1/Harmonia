@@ -2,7 +2,14 @@ import { create } from "zustand";
 import type { Progression, Chord } from "../theory/progressionTypes";
 import type { Mode } from "../theory/harmonyEngine";
 import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
-import { progressionToMidi, melodyToMidi } from "../progressionMidiExport";
+import {
+    progressionToMidi,
+    melodyToMidi,
+    compositionToMidi,
+    gmProgramForInstrument,
+    type ProgressionChord,
+} from "../progressionMidiExport";
+import { useAudioSettingsStore, resolveMelodyInstrument } from "./audioSettingsStore";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { ChordMood } from "../music/generators/advanced/chordMoods";
 import type {
@@ -124,6 +131,7 @@ interface ProgressionState {
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
     exportMelodyMidi: () => void;
+    exportCompositionMidi: () => void;
     loadProgression: (progression: Progression) => void;
 
     // Creative iteration actions
@@ -214,6 +222,34 @@ function complexityToOptions(complexity: ComplexityLevel): ComplexityOptions {
  */
 function progressionSignature(chords: Chord[]): string {
     return chords.map((c) => c.symbol).join("|");
+}
+
+/**
+ * Chords shaped for MIDI export, carrying each chord's realised tension when
+ * the stored curve still matches the current chords' identities (the same
+ * guard `generateMelodyForProgression` uses) so the dynamics model's tension
+ * swell reflects the real harmony rather than a stale curve.
+ */
+function chordsForMidiExport(
+    currentProgression: Progression,
+    chordTensionCurve: { signature: string; curve: number[] } | null,
+): ProgressionChord[] {
+    const chords = currentProgression.chords;
+    const tensionCurve =
+        chordTensionCurve &&
+        chordTensionCurve.curve.length === chords.length &&
+        chordTensionCurve.signature === progressionSignature(chords)
+            ? chordTensionCurve.curve
+            : undefined;
+
+    return chords.map((c, i) => ({
+        symbol: c.symbol,
+        notesWithOctave: c.notesWithOctave && c.notesWithOctave.length > 0
+            ? c.notesWithOctave
+            : c.notes.map((n) => `${n}3`),
+        durationClass: c.durationClass,
+        tension: tensionCurve?.[i],
+    }));
 }
 
 export const useProgressionStore = create<ProgressionState>((set, get) => ({
@@ -423,16 +459,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     exportMidi: () => {
-        const { currentProgression, bpm, rootKey, mode } = get();
+        const { currentProgression, bpm, rootKey, mode, chordTensionCurve } = get();
         if (!currentProgression) return;
 
-        const midiChords = currentProgression.chords.map(c => ({
-            symbol: c.symbol,
-            notesWithOctave: c.notesWithOctave && c.notesWithOctave.length > 0
-                ? c.notesWithOctave
-                : c.notes.map(n => `${n}3`),
-            durationClass: c.durationClass,
-        }));
+        const midiChords = chordsForMidiExport(currentProgression, chordTensionCurve);
 
         const blob = progressionToMidi(midiChords, bpm);
         const url = URL.createObjectURL(blob);
@@ -447,11 +477,31 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         const { melody, bpm, rootKey, mode } = get();
         if (!melody || melody.notes.length === 0) return;
 
-        const blob = melodyToMidi(melody.notes, bpm);
+        const { instrumentId, melodyInstrumentId } = useAudioSettingsStore.getState();
+        const melodyProgram = gmProgramForInstrument(resolveMelodyInstrument(instrumentId, melodyInstrumentId));
+
+        const blob = melodyToMidi(melody.notes, bpm, { phrases: melody.phrases, melodyProgram });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = `harmonia-melody-${rootKey}-${mode}-${Date.now()}.mid`;
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+
+    exportCompositionMidi: () => {
+        const { currentProgression, melody, bpm, rootKey, mode, chordTensionCurve } = get();
+        if (!currentProgression || !melody || melody.notes.length === 0) return;
+
+        const midiChords = chordsForMidiExport(currentProgression, chordTensionCurve);
+        const { instrumentId, melodyInstrumentId } = useAudioSettingsStore.getState();
+        const melodyProgram = gmProgramForInstrument(resolveMelodyInstrument(instrumentId, melodyInstrumentId));
+
+        const blob = compositionToMidi(midiChords, melody, bpm, { melodyProgram });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `harmonia-composition-${rootKey}-${mode}-${Date.now()}.mid`;
         a.click();
         URL.revokeObjectURL(url);
     },

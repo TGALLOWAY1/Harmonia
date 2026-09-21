@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildChordEvents, humanizeVelocity } from "../humanization";
+import { beatsToSeconds, buildChordEvents, humanizeVelocity, noteDurationWithinEvent } from "../humanization";
 
 const NOTES_3 = ["C4", "E4", "G4"];
 
@@ -58,14 +58,28 @@ describe("buildChordEvents — arpeggio", () => {
   });
 
   it("clamps the step so fast tempos stay audible", () => {
-    // 5 notes, 0.2s window*0.6=0.12, raw 0.03 -> clamped to MIN 0.06
+    // 5 notes, 0.4s window*0.6=0.24, raw 0.06 -> at the MIN clamp, and the
+    // chord (0.4s / 5 voices = 0.08s per onset) has room for it
+    const events = buildChordEvents(["C4", "E4", "G4", "B4", "D5"], {
+      baseVelocity: 0.7,
+      humanize: 0,
+      style: "arpeggio",
+      spreadSeconds: 0.4,
+    });
+    expect(events[1].timeOffset).toBeCloseTo(0.06, 6);
+  });
+
+  it("keeps every onset inside a chord too short for the slowest roll", () => {
+    // 5 notes over a 0.2s chord: a 60ms roll would start the last voice at
+    // 0.24s, after the chord ended — capped to 0.2 / 5 = 0.04 per onset
     const events = buildChordEvents(["C4", "E4", "G4", "B4", "D5"], {
       baseVelocity: 0.7,
       humanize: 0,
       style: "arpeggio",
       spreadSeconds: 0.2,
     });
-    expect(events[1].timeOffset).toBeCloseTo(0.06, 6);
+    expect(events[1].timeOffset).toBeCloseTo(0.04, 6);
+    expect(events[4].timeOffset).toBeLessThan(0.2);
   });
 
   it("never starts notes in the past and rolls upward in order", () => {
@@ -101,5 +115,80 @@ describe("humanization bounds", () => {
       const [ev] = buildChordEvents(["C4"], { baseVelocity: 0.7, humanize: 1, style: "block" });
       expect(Math.abs(ev.timeOffset)).toBeLessThanOrEqual(0.012 + 1e-9);
     }
+  });
+});
+
+describe("buildChordEvents — weights", () => {
+  it("leaves velocity unchanged with no weights (regression-safe)", () => {
+    const events = buildChordEvents(NOTES_3, { baseVelocity: 0.7, humanize: 0, style: "block" });
+    for (const ev of events) expect(ev.velocity).toBe(0.7);
+  });
+
+  it("applies a per-note multiplier before the (zero) random variation", () => {
+    const events = buildChordEvents(NOTES_3, {
+      baseVelocity: 0.5,
+      humanize: 0,
+      style: "block",
+      weights: [0.8, 1, 1.2],
+    });
+    expect(events[0].velocity).toBeCloseTo(0.4, 6);
+    expect(events[1].velocity).toBeCloseTo(0.5, 6);
+    expect(events[2].velocity).toBeCloseTo(0.6, 6);
+  });
+
+  it("treats a missing entry in a short weights array as neutral (1)", () => {
+    const events = buildChordEvents(NOTES_3, {
+      baseVelocity: 0.5,
+      humanize: 0,
+      style: "block",
+      weights: [2], // only the first note is weighted
+    });
+    expect(events[0].velocity).toBeCloseTo(1, 6); // clamped ceiling would also read 1 here
+    expect(events[1].velocity).toBeCloseTo(0.5, 6);
+    expect(events[2].velocity).toBeCloseTo(0.5, 6);
+  });
+
+  it("still clamps a weighted velocity to [0.15, 1]", () => {
+    const [loud] = buildChordEvents(["C4"], { baseVelocity: 0.9, humanize: 0, weights: [3] });
+    expect(loud.velocity).toBe(1);
+    const [quiet] = buildChordEvents(["C4"], { baseVelocity: 0.9, humanize: 0, weights: [0.01] });
+    expect(quiet.velocity).toBe(0.15);
+  });
+});
+
+describe("beatsToSeconds", () => {
+  it("converts whole beats at 120 BPM (0.5s per beat)", () => {
+    expect(beatsToSeconds(4, 120)).toBeCloseTo(2, 6);
+    expect(beatsToSeconds(1, 120)).toBeCloseTo(0.5, 6);
+  });
+
+  it("is exact for the fractional beat counts the melody engine emits", () => {
+    // These would previously fall through beatsToDuration's switch to a
+    // whole-note default; beatsToSeconds has no such gap.
+    for (const beats of [1.5, 2.5, 3, 3.5]) {
+      expect(beatsToSeconds(beats, 120)).toBeCloseTo((beats * 60) / 120, 9);
+    }
+  });
+
+  it("scales with tempo", () => {
+    expect(beatsToSeconds(1, 60)).toBeCloseTo(1, 6);
+    expect(beatsToSeconds(1, 240)).toBeCloseTo(0.25, 6);
+  });
+});
+
+describe("noteDurationWithinEvent", () => {
+  it("keeps the full length for on-time and early notes", () => {
+    expect(noteDurationWithinEvent(2, 0)).toBe(2);
+    expect(noteDurationWithinEvent(2, -0.01)).toBe(2);
+  });
+
+  it("shortens a late (strummed/arpeggiated) note so it ends with the event", () => {
+    expect(noteDurationWithinEvent(2, 0.5)).toBeCloseTo(1.5);
+    expect(noteDurationWithinEvent(1, 0.6)).toBeCloseTo(0.4);
+  });
+
+  it("never returns less than the minimum audible length", () => {
+    expect(noteDurationWithinEvent(0.1, 0.09)).toBe(0.05);
+    expect(noteDurationWithinEvent(0.1, 5)).toBe(0.05);
   });
 });

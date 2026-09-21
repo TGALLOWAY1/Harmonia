@@ -13,7 +13,10 @@ export type SoundPresetId =
   | "electric-piano"
   | "soft-keys"
   | "filtered-saw"
-  | "organ";
+  | "organ"
+  | "warm-strings"
+  | "vibraphone"
+  | "pluck";
 
 /**
  * Playback quality mode.
@@ -23,21 +26,33 @@ export type SoundPresetId =
  */
 export type AudioQuality = "lightweight" | "high";
 
+/** Menu grouping. Purely presentational — not persisted. */
+export type InstrumentCategory = "keys" | "synth" | "strings" | "mallet" | "plucked";
+
 export interface InstrumentCatalogEntry {
   id: SoundPresetId;
   label: string;
-  category: "keys" | "synth";
+  category: InstrumentCategory;
   /** True when a sampled (high-quality) realization exists for this sound. */
   hasHighQuality: boolean;
+  /**
+   * True when playing harder changes the *timbre*, not just the level — the
+   * instrument has a velocity-driven bright layer or transient. The audition
+   * harness asserts loudness and brightness both rise with velocity for these.
+   */
+  velocitySensitive: boolean;
 }
 
 /** Ordered list of selectable instruments (drives UI menus). */
 export const INSTRUMENT_CATALOG: ReadonlyArray<InstrumentCatalogEntry> = [
-  { id: "piano", label: "Lush Piano", category: "keys", hasHighQuality: true },
-  { id: "electric-piano", label: "Electric Piano", category: "keys", hasHighQuality: true },
-  { id: "soft-keys", label: "Soft Keys", category: "keys", hasHighQuality: false },
-  { id: "filtered-saw", label: "Filtered Saw", category: "synth", hasHighQuality: false },
-  { id: "organ", label: "Organ", category: "synth", hasHighQuality: false },
+  { id: "piano", label: "Lush Piano", category: "keys", hasHighQuality: true, velocitySensitive: true },
+  { id: "electric-piano", label: "Electric Piano", category: "keys", hasHighQuality: true, velocitySensitive: true },
+  { id: "soft-keys", label: "Soft Keys", category: "keys", hasHighQuality: false, velocitySensitive: true },
+  { id: "filtered-saw", label: "Filtered Saw", category: "synth", hasHighQuality: false, velocitySensitive: true },
+  { id: "organ", label: "Organ", category: "synth", hasHighQuality: false, velocitySensitive: true },
+  { id: "warm-strings", label: "Warm Strings", category: "strings", hasHighQuality: false, velocitySensitive: true },
+  { id: "vibraphone", label: "Vibraphone", category: "mallet", hasHighQuality: false, velocitySensitive: true },
+  { id: "pluck", label: "Pluck", category: "plucked", hasHighQuality: false, velocitySensitive: true },
 ];
 
 /** Back-compat alias used by existing menus. */
@@ -59,4 +74,34 @@ export function getCatalogEntry(id: SoundPresetId): InstrumentCatalogEntry {
 /** True when the preset has a sampled realization (relevant in "high" mode). */
 export function presetHasHighQuality(id: SoundPresetId): boolean {
   return getCatalogEntry(id).hasHighQuality;
+}
+
+/* ─── Melody voice ─── */
+
+/**
+ * The melody lane either follows the chord instrument (the historical
+ * behaviour, and the default) or plays a lead voice of its own.
+ */
+export const FOLLOW_CHORDS = "follow" as const;
+export type MelodyInstrumentId = SoundPresetId | typeof FOLLOW_CHORDS;
+
+/** Map any (possibly stale/persisted) value to a valid melody selection. */
+export function resolveMelodyInstrumentId(id: unknown): MelodyInstrumentId {
+  if (id === FOLLOW_CHORDS) return FOLLOW_CHORDS;
+  return CATALOG_BY_ID.has(id as SoundPresetId) ? (id as SoundPresetId) : FOLLOW_CHORDS;
+}
+
+/**
+ * Which instrument the melody lane should actually play.
+ *
+ * Tone-free on purpose: the UI can call
+ * `useInstrument(resolveMelodyInstrument(instrumentId, melodyInstrumentId), { role: "melody" })`
+ * without knowing anything about the audio engine.
+ */
+export function resolveMelodyInstrument(
+  instrumentId: unknown,
+  melodyInstrumentId: unknown,
+): SoundPresetId {
+  const melody = resolveMelodyInstrumentId(melodyInstrumentId);
+  return melody === FOLLOW_CHORDS ? resolvePresetId(instrumentId) : melody;
 }

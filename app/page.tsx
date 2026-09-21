@@ -10,8 +10,17 @@ import {
   usePlaybackSettingsStore,
   CHORD_VELOCITY_MIN,
   CHORD_VELOCITY_MAX,
+  MELODY_LEVEL_MIN,
+  MELODY_LEVEL_MAX,
 } from "@/lib/state/playbackSettingsStore";
-import { buildChordEvents, humanizeVelocity } from "@/lib/audio/humanization";
+import { beatsToSeconds, buildChordEvents, humanizeVelocity, noteDurationWithinEvent } from "@/lib/audio/humanization";
+import {
+  applyDynamics,
+  chordVoiceWeights,
+  melodyDynamics,
+  metricAccent,
+  progressionDynamics,
+} from "@/lib/audio/dynamics";
 import { InteractivePianoRoll } from "@/components/creative/InteractivePianoRoll";
 import { ChordCard } from "@/components/progression/ChordCard";
 import { SubstitutionPanel } from "@/components/creative/SubstitutionPanel";
@@ -21,9 +30,14 @@ import { useFavoritesStore } from "@/lib/favorites/favoritesStore";
 import {
   SOUND_PRESETS,
   presetHasHighQuality,
+  resolveMelodyInstrument,
+  FOLLOW_CHORDS,
   type AudioQuality,
   type SoundPresetId,
+  type InstrumentCategory,
+  type MelodyInstrumentId,
 } from "@/lib/audio/instrumentCatalog";
+import { SPACE_LIST } from "@/lib/audio/audioSpace";
 import type { Synth, MelodySynth } from "@/lib/audio/synthPresets";
 import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
@@ -151,6 +165,36 @@ const MELODY_MOODS: { value: MelodyMood; label: string }[] = [
   { value: "energetic", label: "Energetic" },
 ];
 
+const INSTRUMENT_CATEGORIES: { value: InstrumentCategory; label: string }[] = [
+  { value: "keys", label: "Keys" },
+  { value: "synth", label: "Synths" },
+  { value: "strings", label: "Strings" },
+  { value: "mallet", label: "Mallets" },
+  { value: "plucked", label: "Plucked" },
+];
+
+/**
+ * Grouped `<optgroup>`s over the instrument catalog, shared by the chord and
+ * melody voice pickers so the two menus always agree.
+ */
+function InstrumentOptions() {
+  return (
+    <>
+      {INSTRUMENT_CATEGORIES.map((category) => {
+        const entries = SOUND_PRESETS.filter((p) => p.category === category.value);
+        if (entries.length === 0) return null;
+        return (
+          <optgroup key={category.value} label={category.label}>
+            {entries.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
+
 /* ─── Component ─── */
 
 export default function HarmoniaPage() {
@@ -176,6 +220,7 @@ export default function HarmoniaPage() {
     setIsPlaying,
     exportMidi,
     exportMelodyMidi,
+    exportCompositionMidi,
     loadProgression,
     // Creative iteration
     chordSourceTypes,
@@ -207,6 +252,8 @@ export default function HarmoniaPage() {
     setMelodyHarmony,
     setMelodyMood,
     generateMelodyForProgression,
+    // Per-chord tension curve from the generator, used to shape chord dynamics
+    chordTensionCurve,
   } = useProgressionStore();
 
   const { favorites, addFavorite, removeFavorite } = useFavoritesStore();
@@ -216,17 +263,25 @@ export default function HarmoniaPage() {
     humanize,
     sustainMode,
     playbackStyle,
+    melodyLevel,
     setChordVelocity,
     setHumanize,
     setSustainMode,
     setPlaybackStyle,
+    setMelodyLevel,
   } = usePlaybackSettingsStore();
 
   const {
     instrumentId: soundPreset,
     quality: audioQuality,
+    melodyInstrumentId,
+    masterVolume,
+    space,
     setInstrument: setSoundPreset,
     setQuality: setAudioQuality,
+    setMelodyInstrument,
+    setMasterVolume,
+    setSpace,
   } = useAudioSettingsStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
@@ -267,9 +322,9 @@ export default function HarmoniaPage() {
     retry: retrySynthLoad,
   } = useInstrument(soundPreset, { quality: audioQuality, sustainMode, synthRef });
 
-  /* ─── Melody synth lifecycle (same instrument & quality, melody voice) ─── */
+  /* ─── Melody synth lifecycle (its own voice, or follows the chords) ─── */
 
-  useInstrument(soundPreset, {
+  useInstrument(resolveMelodyInstrument(soundPreset, melodyInstrumentId), {
     quality: audioQuality,
     role: "melody",
     enabled: melodyEnabled,
@@ -304,17 +359,6 @@ export default function HarmoniaPage() {
     }
   }, []);
 
-  /** Convert beats to Tone.js duration notation. */
-  const beatsToDuration = useCallback((beats: number): string => {
-    switch (beats) {
-      case 4: return "1n";
-      case 2: return "2n";
-      case 1: return "4n";
-      case 0.5: return "8n";
-      default: return "1n";
-    }
-  }, []);
-
   const scheduleIdsRef = useRef<number[]>([]);
 
   useEffect(() => {
@@ -343,13 +387,29 @@ export default function HarmoniaPage() {
     const releaseBuffer = 1; // 1 beat buffer for note release tails
     const totalMeasures = Math.ceil((totalBeats + releaseBuffer) / 4); // in Tone.js "measures" at 4/4
 
+    // Per-chord dynamics (first/last-chord shaping + a tension swell), computed
+    // once for the whole progression. The tension curve is only trusted while
+    // it still describes these exact chords — the same guard the melody
+    // engine uses — otherwise a stale curve would shape dynamics around
+    // harmony that's no longer here.
+    const progressionSig = chords.map((c) => c.symbol).join("|");
+    const trustedTensionCurve =
+      chordTensionCurve &&
+      chordTensionCurve.curve.length === chords.length &&
+      chordTensionCurve.signature === progressionSig
+        ? chordTensionCurve.curve
+        : undefined;
+    const chordDynamics = progressionDynamics(
+      chords.map((c, i) => ({ durationClass: c.durationClass, tension: trustedTensionCurve?.[i] })),
+    );
+
     // Schedule each chord at its correct beat offset using musical time (bars:quarters:sixteenths)
     let beatOffset = 0;
     for (let i = 0; i < chords.length; i++) {
       const chord = chords[i];
       const beats = durationToBeats(chord.durationClass);
-      const duration = beatsToDuration(beats);
       const chordIdx = i;
+      const accent = metricAccent(((beatOffset % 4) + 4) % 4);
 
       // Convert beat offset to bars:quarters:sixteenths
       const bars = Math.floor(beatOffset / 4);
@@ -381,20 +441,36 @@ export default function HarmoniaPage() {
               : chord.notesWithOctave && chord.notesWithOctave.length > 0
                 ? chord.notesWithOctave
                 : chord.notes.map((n) => `${n}3`);
+          // Voice weights align to `notes`' order, not pitch order — derive
+          // MIDI numbers from the same source `notes` came from so the two
+          // stay in step even when `chord.midiNotes` was unavailable.
+          const noteMidiNumbers =
+            chord.midiNotes && chord.midiNotes.length > 0
+              ? chord.midiNotes
+              : notes.map((n) => Tone.Frequency(n).toMidi());
+          const voiceWeights = chordVoiceWeights(noteMidiNumbers);
           // Read live settings so velocity/humanize/style changes apply mid-loop.
           const ps = usePlaybackSettingsStore.getState();
-          // Tempo-aware spread so an arpeggio fits the chord at any BPM.
+          // Tempo-aware spread so an arpeggio fits the chord at any BPM, and an
+          // exact note duration in seconds so any beat count (including the
+          // melody's 1.5/2.5/3/3.5-beat notes elsewhere in this effect) rings
+          // for precisely as long as planned rather than snapping to 1n/2n/4n/8n.
           const liveBpm = Tone.getTransport().bpm.value || 120;
+          const durationSeconds = beatsToSeconds(beats, liveBpm);
+          const baseVelocity = applyDynamics(ps.chordVelocity, chordDynamics[chordIdx] ?? 1, accent);
           const events = buildChordEvents(notes, {
-            baseVelocity: ps.chordVelocity,
+            baseVelocity,
             humanize: ps.humanize,
             style: ps.playbackStyle,
             spreadSeconds: beats * (60 / liveBpm),
+            weights: voiceWeights,
           });
           for (const ev of events) {
+            // A strummed or arpeggiated voice starts late but still ends
+            // with the chord, so the whole articulation stays inside it.
             synthRef.current.triggerAttackRelease(
               ev.note,
-              duration,
+              noteDurationWithinEvent(durationSeconds, ev.timeOffset),
               time + ev.timeOffset,
               ev.velocity,
             );
@@ -413,22 +489,28 @@ export default function HarmoniaPage() {
 
     // Schedule melody notes
     if (melody && melodySynthRef.current) {
-      for (const mn of melody.notes) {
+      // Phrase-aware dynamics (arc, climax, cadence taper, pickups) computed
+      // once for the whole melody; degrades to metric accent + chord-tone
+      // weighting when a drawn melody carries no phrase plan.
+      const melodyDyn = melodyDynamics(melody);
+      melody.notes.forEach((mn, noteIdx) => {
         const mBars = Math.floor(mn.startBeat / 4);
         const mQuarters = Math.floor(mn.startBeat % 4);
         const mSixteenths = (mn.startBeat % 1) * 4;
         const mTimeStr = `${mBars}:${mQuarters}:${mSixteenths}`;
-        const mDuration = beatsToDuration(mn.durationBeats);
 
         const mid = Tone.getTransport().schedule((time) => {
           if (useProgressionStore.getState().melodyEnabled) {
             const ps = usePlaybackSettingsStore.getState();
-            const velocity = humanizeVelocity(ps.chordVelocity, ps.humanize);
-            melodySynthRef.current?.triggerAttackRelease(mn.noteWithOctave, mDuration, time, velocity);
+            const liveBpm = Tone.getTransport().bpm.value || 120;
+            const durationSeconds = beatsToSeconds(mn.durationBeats, liveBpm);
+            const baseVelocity = applyDynamics(ps.chordVelocity, ps.melodyLevel, melodyDyn[noteIdx] ?? 1);
+            const velocity = humanizeVelocity(baseVelocity, ps.humanize);
+            melodySynthRef.current?.triggerAttackRelease(mn.noteWithOctave, durationSeconds, time, velocity);
           }
         }, mTimeStr);
         ids.push(mid);
-      }
+      });
     }
 
     scheduleIdsRef.current = ids;
@@ -452,7 +534,7 @@ export default function HarmoniaPage() {
       Tone.getTransport().loop = false;
       Tone.getDraw().cancel(0);
     };
-  }, [isPlaying, currentProgression, durationToBeats, beatsToDuration, melody]);
+  }, [isPlaying, currentProgression, durationToBeats, melody, chordTensionCurve]);
 
   /* ─── Playhead animation ─── */
 
@@ -545,20 +627,26 @@ export default function HarmoniaPage() {
     const ready = await ensureAudioReady();
     if (!ready || !synthRef.current) return;
     const ps = usePlaybackSettingsStore.getState();
+    const voiceWeights = chordVoiceWeights(notesWithOctave.map((n) => Tone.Frequency(n).toMidi()));
     const events = buildChordEvents(notesWithOctave, {
       baseVelocity: ps.chordVelocity,
       humanize: ps.humanize,
       style: "block",
+      weights: voiceWeights,
     });
-    // Same safeguard as the sequence scheduler: cut whatever is still ringing
-    // before attacking so rapid taps (chord cards, substitution previews)
-    // replace the previous preview instead of stacking on top of it. Releasing
-    // and attacking at one precise `now` is deterministic, unlike the old
-    // releaseAll() + setTimeout(10ms) guess that each call site used to repeat.
+    // Same safeguard as the sequence scheduler: cut whatever is already
+    // sounding before attacking so taps (chord cards, substitution previews)
+    // replace the previous preview instead of stacking on top of it. An attack
+    // still pending inside the context's lookahead (~100 ms) is not a live
+    // voice yet, so two taps closer than that can still overlap briefly.
+    // Releasing and attacking at one precise `now` is deterministic, unlike
+    // the old releaseAll() + setTimeout(10ms) guess each call site repeated.
     const now = Tone.now();
     synthRef.current.releaseAll(now);
     for (const ev of events) {
-      synthRef.current.triggerAttackRelease(ev.note, duration, now + ev.timeOffset, ev.velocity);
+      // Jitter can make timeOffset negative; clamp so an immediate preview
+      // never schedules a note earlier than `now`.
+      synthRef.current.triggerAttackRelease(ev.note, duration, now + Math.max(0, ev.timeOffset), ev.velocity);
     }
   }, []);
 
@@ -584,7 +672,7 @@ export default function HarmoniaPage() {
         setIsPlaying(false);
       }
       // playChordPreview cuts the previous preview before attacking, so taps
-      // replace rather than overlap.
+      // more than a lookahead apart replace rather than overlap.
       void playChordPreview(notesWithOctave, "2n");
       // Set this chord as the new loop start position and select it
       playbackIndexRef.current = chordIndex;
@@ -700,6 +788,16 @@ export default function HarmoniaPage() {
                   Melody
                 </button>
               )}
+              {currentProgression && melodyEnabled && melody && (
+                <button
+                  onClick={exportCompositionMidi}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
+                  title="Export Chords + Melody MIDI"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Chords + Melody
+                </button>
+              )}
             </div>
 
             <Link
@@ -775,6 +873,18 @@ export default function HarmoniaPage() {
                     >
                       <Download className="w-4 h-4" />
                       Export Melody MIDI
+                    </button>
+                  )}
+                  {currentProgression && melodyEnabled && melody && (
+                    <button
+                      onClick={() => {
+                        exportCompositionMidi();
+                        setHeaderMenuOpen(false);
+                      }}
+                      className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-muted hover:text-foreground hover:bg-surface-muted transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export Chords + Melody MIDI
                     </button>
                   )}
                   <Link
@@ -1235,6 +1345,25 @@ export default function HarmoniaPage() {
                     <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
                       Sound
                     </span>
+
+                    {/* Master volume */}
+                    <div className="px-3 pb-1.5 pt-0.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs font-medium text-foreground">
+                        <span>Master volume</span>
+                        <span className="text-muted tabular-nums">{Math.round(masterVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={masterVolume}
+                        onChange={(e) => setMasterVolume(Number(e.target.value))}
+                        className="w-full accent-accent cursor-pointer"
+                        aria-label="Master volume"
+                      />
+                    </div>
+
                     <div className="px-3 pb-1.5 pt-0.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
@@ -1257,16 +1386,26 @@ export default function HarmoniaPage() {
                             className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
                             title="Instrument preset"
                           >
-                            <optgroup label="Keys">
-                              {SOUND_PRESETS.filter((p) => p.category === "keys").map((preset) => (
-                                <option key={preset.id} value={preset.id}>{preset.label}</option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="Synths">
-                              {SOUND_PRESETS.filter((p) => p.category === "synth").map((preset) => (
-                                <option key={preset.id} value={preset.id}>{preset.label}</option>
-                              ))}
-                            </optgroup>
+                            <InstrumentOptions />
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Melody voice — a lead voice of its own, or follow the chords */}
+                    <div className="px-3 pb-1.5 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Melody voice</span>
+                        <div className="relative">
+                          <select
+                            value={melodyInstrumentId}
+                            onChange={(e) => setMelodyInstrument(e.target.value as MelodyInstrumentId)}
+                            className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
+                            title="Melody voice — the instrument the melody lane plays"
+                          >
+                            <option value={FOLLOW_CHORDS}>Follow chords</option>
+                            <InstrumentOptions />
                           </select>
                           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
                         </div>
@@ -1305,6 +1444,27 @@ export default function HarmoniaPage() {
                             : "This instrument is synth-based; it sounds the same in both modes."
                           : "Instant synth sound. No downloads — ideal for slow connections."}
                       </p>
+                    </div>
+
+                    {/* Space */}
+                    <div className="px-3 pb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-foreground">Space</span>
+                      <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
+                        {SPACE_LIST.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setSpace(s.id)}
+                            title={s.description}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                              space === s.id
+                                ? "bg-accent text-white shadow-sm"
+                                : "text-muted hover:text-foreground"
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="my-1 h-px bg-border-subtle" />
@@ -1360,6 +1520,28 @@ export default function HarmoniaPage() {
                       <div className="flex justify-between text-[9px] uppercase tracking-wide text-muted/60">
                         <span>Soft</span>
                         <span>Loud</span>
+                      </div>
+                    </div>
+
+                    {/* Melody Level */}
+                    <div className="px-3 py-1.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs font-medium text-foreground">
+                        <span>Melody level</span>
+                        <span className="text-muted tabular-nums">{Math.round(melodyLevel * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={MELODY_LEVEL_MIN}
+                        max={MELODY_LEVEL_MAX}
+                        step={0.01}
+                        value={melodyLevel}
+                        onChange={(e) => setMelodyLevel(Number(e.target.value))}
+                        className="w-full accent-accent cursor-pointer"
+                        aria-label="Melody level"
+                      />
+                      <div className="flex justify-between text-[9px] uppercase tracking-wide text-muted/60">
+                        <span>Under chords</span>
+                        <span>Above chords</span>
                       </div>
                     </div>
 

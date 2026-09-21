@@ -1,3 +1,5 @@
+import { tendencyPenalty, type ChordIdentity } from "./tendencyTones";
+
 export type VoiceLeadingSelection = {
   voicing: number[];
   cost: number;
@@ -243,6 +245,12 @@ export type VoicingPreference = {
    * confident than the cost differences justify. Omit for pure argmin.
    */
   rng?: () => number;
+  /**
+   * Chord identity either side of this step, so an unresolved tendency tone
+   * (a leading tone that does not rise, a seventh that does not fall) costs
+   * something. Omit to score on geometry alone.
+   */
+  tendency?: { weight: number; from?: ChordIdentity; to?: ChordIdentity };
 };
 
 /**
@@ -313,9 +321,16 @@ export function pickBestVoiceLedCandidate(
     return resolveTies(entries, preference?.rng);
   }
 
+  const tendency = preference?.tendency;
   const entries = candidates.map((candidate) => ({
     voicing: candidate,
-    cost: calculateVoiceLeadingCost(previous, candidate) + rootPositionBonus(candidate, preference),
+    cost:
+      calculateVoiceLeadingCost(previous, candidate) +
+      rootPositionBonus(candidate, preference) +
+      (tendency
+        ? tendency.weight *
+          tendencyPenalty(previous, candidate, { from: tendency.from, to: tendency.to })
+        : 0),
   }));
 
   return resolveTies(entries, preference?.rng);

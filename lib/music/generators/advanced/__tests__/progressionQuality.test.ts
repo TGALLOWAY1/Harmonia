@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { generateAdvancedProgression } from "@/lib/music/generators/advanced/generateAdvancedProgression";
+import {
+  chordIdentities,
+  evaluateTendencies,
+  tritoneResolution,
+} from "@/lib/music/generators/advanced/tendencyTones";
 import { generateVoicingCandidates } from "@/lib/music/generators/advanced/voicing";
 import { getChordPitchClasses } from "@/lib/theory/chordSymbol";
 import { PITCH_CLASSES } from "@/lib/theory/midiUtils";
@@ -581,5 +586,184 @@ describe("tension shapes", () => {
     expect(result.debug?.tensionCurve).toHaveLength(5);
     expect(result.debug?.brightnessTargets).toHaveLength(5);
     expect(result.debug?.bassPlan).toHaveLength(5);
+  });
+});
+
+describe("tendency-tone resolution", () => {
+  /**
+   * What the upper voices did with the resolutions they owed.
+   *
+   * A leading tone counts as *voiceable* only when the chord it resolves to
+   * puts the note it wants somewhere other than its own bass: four distinct
+   * pitch classes over a planned root-position bass leave the root in the bass
+   * and nowhere else, and no upper voice can rise into it. A seventh the next
+   * chord contains counts as discharged when it is simply held — it was never
+   * a dissonance against that chord.
+   */
+  const sweepTendency = (
+    complexity: 1 | 2 | 3 | 4,
+    over: Partial<AdvancedProgressionOptions> = {},
+    seeds = 250
+  ) => {
+    let leadingTones = 0;
+    let leadingTonesVoiceable = 0;
+    let leadingTonesRose = 0;
+    let sevenths = 0;
+    let seventhsDischarged = 0;
+    let suspensions = 0;
+    let suspensionsResolved = 0;
+    let tritones = 0;
+    let tritonesContrary = 0;
+    let transitions = 0;
+    let motion = 0;
+    let bigLeaps = 0;
+
+    for (let seed = 0; seed < seeds; seed++) {
+      const result = generateAdvancedProgression(options(complexity, { seed, ...over }));
+      const identities = chordIdentities(result.debug?.planned ?? []);
+
+      for (let i = 1; i < result.chords.length; i++) {
+        const previous = result.chords[i - 1].midi;
+        const next = result.chords[i].midi;
+        const context = { from: identities[i - 1], to: identities[i] };
+
+        transitions++;
+        const a = [...previous].sort((x, y) => x - y);
+        const b = [...next].sort((x, y) => x - y);
+        let largest = 0;
+        for (let v = 0; v < Math.min(a.length, b.length); v++) {
+          const delta = Math.abs(a[v] - b[v]);
+          motion += delta;
+          if (delta > largest) largest = delta;
+        }
+        if (largest > 7) bigLeaps++;
+
+        const upperOfNext = new Set(b.slice(1).map(pitchClassOf));
+        let voiceable = false;
+        for (const outcome of evaluateTendencies(previous, next, context)) {
+          if (outcome.tone.kind === "leadingTone") {
+            if (!outcome.possible || outcome.absorbed) continue;
+            leadingTones++;
+            if (upperOfNext.has((outcome.tone.pc + 1) % 12)) {
+              leadingTonesVoiceable++;
+              voiceable = true;
+              if (outcome.resolved) leadingTonesRose++;
+            }
+          } else if (outcome.tone.kind === "seventh") {
+            sevenths++;
+            if (outcome.resolved || outcome.held) seventhsDischarged++;
+          } else {
+            suspensions++;
+            if (outcome.resolved) suspensionsResolved++;
+          }
+        }
+
+        const tritone = tritoneResolution(previous, next, context);
+        if (tritone && !tritone.absorbed && voiceable) {
+          tritones++;
+          if (tritone.contrary) tritonesContrary++;
+        }
+      }
+    }
+
+    const ratio = (numerator: number, denominator: number) =>
+      denominator === 0 ? 1 : numerator / denominator;
+
+    return {
+      leadingTones,
+      leadingTonesVoiceable,
+      leadingToneRise: ratio(leadingTonesRose, leadingTonesVoiceable),
+      seventhRelease: ratio(seventhsDischarged, sevenths),
+      sevenths,
+      suspensionRelease: ratio(suspensionsResolved, suspensions),
+      tritoneContrary: ratio(tritonesContrary, tritones),
+      tritones,
+      meanMotion: motion / Math.max(1, transitions),
+      bigLeapRate: bigLeaps / Math.max(1, transitions),
+    };
+  };
+
+  // Regression: the transition cost used to see two bare MIDI arrays, so a
+  // leading tone went wherever smoothness sent it. Measured over 400 seeds on
+  // the pre-fix code, the rise happened on 60.0% of the voiceable cases at
+  // complexity 3 and on 29.7% of them in D dorian.
+  it.each([
+    ["C", "ionian", 2],
+    ["C", "ionian", 3],
+    ["C", "ionian", 4],
+    ["A", "aeolian", 2],
+    ["D", "dorian", 2],
+    ["G", "mixolydian", 2],
+  ] as const)(
+    "rises the leading tone whenever a voicing can carry it (%s %s cx%i)",
+    (rootKey, mode, complexity) => {
+      const stats = sweepTendency(complexity, { rootKey, mode } as never);
+      expect(stats.leadingTones).toBeGreaterThan(0);
+      // The rise is measured over the voiceable cases, so guard that
+      // denominator too: ratio() reports 1 over zero and would pass vacuously.
+      expect(stats.leadingTonesVoiceable).toBeGreaterThan(0);
+      expect(stats.leadingToneRise).toBeGreaterThan(0.97);
+    }
+  );
+
+  // Regression: 59.8% at the defaults before the change, 65.2% at complexity 3.
+  it.each([2, 3, 4] as const)("resolves or holds the chordal seventh at complexity %i", (complexity) => {
+    const stats = sweepTendency(complexity);
+    expect(stats.sevenths).toBeGreaterThan(100);
+    expect(stats.seventhRelease).toBeGreaterThan(0.7);
+  });
+
+  it("resolves the dominant tritone in contrary motion where both halves can move", () => {
+    const dorian = sweepTendency(2, { rootKey: "D", mode: "dorian" } as never);
+    const mixolydian = sweepTendency(2, { rootKey: "G", mode: "mixolydian" } as never);
+    expect(dorian.tritones + mixolydian.tritones).toBeGreaterThan(10);
+    // Each ratio below has its own denominator; neither may be empty.
+    expect(dorian.tritones).toBeGreaterThan(0);
+    expect(mixolydian.tritones).toBeGreaterThan(0);
+    expect(dorian.tritoneContrary).toBeGreaterThan(0.9);
+    expect(mixolydian.tritoneContrary).toBeGreaterThan(0.9);
+  });
+
+  // Regression: 72.9% at complexity 3 before the change.
+  it("falls a suspension to its resolution", () => {
+    const stats = sweepTendency(3);
+    expect(stats.suspensionRelease).toBeGreaterThan(0.75);
+  });
+
+  // The resolutions must not be bought with wild leaps: total voice motion per
+  // chord change went *down* (8.52 to 7.96 semitones at the defaults) and the
+  // share of changes carrying a leap wider than a fifth did not grow.
+  it("does not buy resolution with bigger leaps", () => {
+    const stats = sweepTendency(2);
+    expect(stats.meanMotion).toBeLessThan(8.6);
+    expect(stats.bigLeapRate).toBeLessThan(0.015);
+  });
+
+  it("stays deterministic per seed with the term switched on", () => {
+    for (const seed of [0, 13, 99]) {
+      expect(generateAdvancedProgression(options(3, { seed }))).toEqual(
+        generateAdvancedProgression(options(3, { seed }))
+      );
+    }
+  });
+
+  it("can be switched off, and then resolves no better than geometry alone", () => {
+    const off = sweepTendency(2, { tendencyWeight: 0 }, 150);
+    const on = sweepTendency(2, {}, 150);
+    expect(off.seventhRelease).toBeLessThan(on.seventhRelease);
+  });
+
+  // The pentatonic path has no leading tone and no functional dominant, and
+  // its sevenths are scale tones of sus chords. It comes out untouched.
+  it("leaves major pentatonic exactly as it was", () => {
+    for (let seed = 0; seed < 120; seed++) {
+      const withTerm = generateAdvancedProgression(
+        options(2, { seed, rootKey: "C", mode: "major_pentatonic" } as never)
+      );
+      const without = generateAdvancedProgression(
+        options(2, { seed, rootKey: "C", mode: "major_pentatonic", tendencyWeight: 0 } as never)
+      );
+      expect(withTerm.chords).toEqual(without.chords);
+    }
   });
 });

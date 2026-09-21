@@ -17,13 +17,39 @@
  * Deterministic for a given input, so seeded reproducibility survives.
  */
 
+import type { ChordIdentity } from "./tendencyTones";
+
+/**
+ * What the two chords either side of a transition *are*. Bare MIDI arrays
+ * cannot say that a voice is the leading tone of a dominant seventh or the
+ * chordal seventh that owes a step down, so the search carries each chord's
+ * identity alongside its candidates and hands it to the transition cost.
+ */
+export type VoicingTransitionContext = {
+  /** The chord being left — it owns the resolutions that are owed. */
+  from?: ChordIdentity;
+  /** The chord being arrived at — it says which resolutions exist. */
+  to?: ChordIdentity;
+};
+
 export type VoicingSearchParams = {
   /** Candidate voicings per chord, ascending MIDI. */
   candidates: number[][][];
   /** Cost of a candidate on its own: register, planned bass, roughness, ... */
   emission: (index: number, voicing: number[]) => number;
   /** Cost of moving from one voicing to the next. */
-  transition: (previous: number[], next: number[], index: number) => number;
+  transition: (
+    previous: number[],
+    next: number[],
+    index: number,
+    context: VoicingTransitionContext
+  ) => number;
+  /**
+   * Chord identity per index — root, function, dominant flag, pitch classes,
+   * the chordal seventh, the chord it is expected to resolve to. Passed
+   * straight through to `transition`; the search itself never reads it.
+   */
+  identities?: (ChordIdentity | undefined)[];
   /**
    * Extra candidates that depend on the previous voicing — the parsimonious
    * voice leading of a Neo-Riemannian transform, say. Each is charged its
@@ -51,7 +77,7 @@ const DEFAULT_BEAM = 6;
 const DEFAULT_MAX_CANDIDATES = 24;
 
 export function searchVoicings(params: VoicingSearchParams): VoicingSearchResult {
-  const { candidates, emission, transition, dependentCandidates } = params;
+  const { candidates, emission, transition, dependentCandidates, identities } = params;
   const beamWidth = Math.max(1, params.beamWidth ?? DEFAULT_BEAM);
   const maxCandidates = Math.max(1, params.maxCandidates ?? DEFAULT_MAX_CANDIDATES);
   const n = candidates.length;
@@ -73,9 +99,13 @@ export function searchVoicings(params: VoicingSearchParams): VoicingSearchResult
   for (let index = 1; index < n; index++) {
     const pruned = prune(index);
     const next = new Map<string, Path>();
+    const context: VoicingTransitionContext = {
+      from: identities?.[index - 1],
+      to: identities?.[index],
+    };
 
     const consider = (voicing: number[], emit: number, previous: Path, bonus: number) => {
-      const step = transition(previous.voicing, voicing, index) - bonus;
+      const step = transition(previous.voicing, voicing, index, context) - bonus;
       const total = previous.total + step + emit;
       if (!Number.isFinite(total)) return;
       const key = voicing.join(",");

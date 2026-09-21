@@ -173,6 +173,14 @@ export type AdvancedProgressionOptions = {
   useModalInterchange?: boolean;
   /** Voicing search. "beam" connects whole progressions; "greedy" is chord by chord. */
   voicingSearch?: VoicingSearch;
+  /**
+   * How hard the voicer works to resolve tendency tones in the upper voices —
+   * the leading tone up, the chordal seventh down, the dominant tritone in
+   * contrary motion, a suspension down by step. A soft cost, not a rule, so a
+   * much better voicing can still outbid it. 0 switches it off; the default is
+   * `TENDENCY_WEIGHT` in `generateAdvancedProgression`.
+   */
+  tendencyWeight?: number;
   /** How many candidates to draw and score. Defaults to 8. */
   candidateCount?: number;
   seed?: number;

@@ -37,6 +37,14 @@ export interface HumanizeOptions {
    * fits musically inside the chord regardless of tempo. Ignored by block/strum.
    */
   spreadSeconds?: number;
+  /**
+   * Optional per-note velocity multipliers, aligned to `notes` (e.g. from
+   * `chordVoiceWeights` in `dynamics.ts`). Applied to each note's base
+   * velocity *before* the random variation below, so a weighted note still
+   * gets its own independent jitter. Omitting it leaves every note's base
+   * velocity unchanged, so existing callers are unaffected.
+   */
+  weights?: number[];
 }
 
 /* ─── Tuning constants ─── */
@@ -49,7 +57,11 @@ const MAX_TIMING_JITTER = 0.012;
 const STRUM_STEP = 0.018;
 /** Arpeggio spreads notes across this fraction of the chord's duration. */
 const ARP_WINDOW_FRACTION = 0.6;
-/** Clamp arpeggio per-note step so it never drags or blurs into a strum. */
+/**
+ * Clamp arpeggio per-note step so it never drags or blurs into a strum — except
+ * that a chord too short to hold the slowest roll gets a faster one rather
+ * than voices that start after the chord has ended.
+ */
 const ARP_MIN_STEP = 0.06; // 60 ms
 const ARP_MAX_STEP = 0.16; // 160 ms
 /** Velocity floor/ceiling so notes are always audible and never clip. */
@@ -84,7 +96,7 @@ export function humanizeVelocity(baseVelocity: number, humanize: number): number
  */
 export function buildChordEvents(
   notes: string[],
-  { baseVelocity, humanize, style = "block", spreadSeconds = 0 }: HumanizeOptions,
+  { baseVelocity, humanize, style = "block", spreadSeconds = 0, weights }: HumanizeOptions,
 ): NoteEvent[] {
   const isMulti = notes.length > 1;
   const useStrum = style === "strum" && isMulti;
@@ -100,19 +112,49 @@ export function buildChordEvents(
     const window = spreadSeconds * ARP_WINDOW_FRACTION;
     const raw = window / (notes.length - 1);
     step = clamp(raw, ARP_MIN_STEP, ARP_MAX_STEP);
+    // Keep every onset inside the chord: an eighth at a fast tempo is shorter
+    // than a 60 ms roll over four voices.
+    if (spreadSeconds > 0) step = Math.min(step, spreadSeconds / notes.length);
   }
 
   return notes.map((note, index) => {
     const jitter = bipolarRandom() * MAX_TIMING_JITTER * humanize;
     const spreadOffset = step * index;
+    const weightedVelocity = baseVelocity * (weights?.[index] ?? 1);
 
     return {
       note,
-      velocity: humanizeVelocity(baseVelocity, humanize),
+      velocity: humanizeVelocity(weightedVelocity, humanize),
       // Spread offsets are always >= 0; jitter is symmetric around the beat.
       // The scheduler fires ahead of the event time, so small negative
       // offsets stay safely in the future.
       timeOffset: spreadOffset + jitter,
     };
   });
+}
+
+/**
+ * Convert a beat count to seconds at a given tempo. Unlike a fixed-notation
+ * lookup (`"4n"`, `"8n"`, …), this is exact for any beat count — including
+ * the 1.5/2.5/3/3.5-beat notes the melody engine emits — and stays in sync
+ * with the live tempo when called at trigger time with the transport's
+ * current BPM. Shared by chord, melody and Sketchpad scheduling so a note's
+ * ring time always matches its planned duration.
+ */
+export function beatsToSeconds(beats: number, bpm: number): number {
+  return (beats * 60) / bpm;
+}
+
+/** Shortest note the scheduler will ask for, so a late voice still speaks. */
+const MIN_NOTE_SECONDS = 0.05;
+
+/**
+ * Duration for one note of a chord event so that the note still ends with
+ * the event: a strummed or arpeggiated voice starts `timeOffset` late, so it
+ * plays that much shorter. Early (negative-jitter) notes keep the full
+ * length. Without this, the last voices of an arpeggio would ring past the
+ * next chord and, in a loop, past the loop boundary into the next pass.
+ */
+export function noteDurationWithinEvent(eventSeconds: number, timeOffset: number): number {
+  return Math.max(MIN_NOTE_SECONDS, eventSeconds - Math.max(0, timeOffset));
 }

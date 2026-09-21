@@ -21,10 +21,25 @@
  *   - the guide-tone line at chord changes, tendency tones (the leading tone
  *     rises, sevenths fall), the phrase's single peak (pinned to the highest
  *     chord tone under its ceiling, every other note of the phrase kept
- *     below it) and its cadence pitch (pinned to the planned degree).
+ *     below it) and its cadence pitch (pinned to the planned degree);
+ *   - the approach figures planned into chord changes (approach.ts) — a step,
+ *     a semitone or an enclosure into a tone of the chord that is coming —
+ *     and, against them, a phrase's budget of one surprise: one interval of a
+ *     sixth or more, or one chromatic tone that fails to resolve. A second
+ *     costs, a third costs more, and fourths and fifths are rationed on the
+ *     same principle one tier down.
  */
 
 import { type PitchClass } from "@/lib/theory/midiUtils";
+import {
+  straddles,
+  SURPRISE_BUDGET,
+  SURPRISE_INTERVAL,
+  WIDE_BUDGET,
+  WIDE_INTERVAL,
+  type ApproachKind,
+  type ApproachPlan,
+} from "./approach";
 import {
   buildScaleMidiSet,
   chordIndexAtBeat,
@@ -68,6 +83,8 @@ export type RealizationContext = {
   harmony: MelodyHarmony;
   profile: MoodProfile;
   octave: number;
+  /** Chord changes this candidate means to walk into, and how (approach.ts). */
+  approaches?: ApproachPlan;
 };
 
 type Path = {
@@ -81,10 +98,48 @@ type Path = {
   prevWasPeak: boolean;
   /** The previous note closed a phrase, so its tendency is already discharged. */
   prevWasPhraseFinal: boolean;
+  /** Surprises spent in this phrase: sixths and wider, unresolved chromatics. */
+  surprises: number;
+  /** Fourths and fifths spent in this phrase. */
+  wideLeaps: number;
   memo: Map<string, number>;
 };
 
 const BEAM_WIDTH = 8;
+
+/**
+ * What a phrase pays for going over its budget. The first surprise is free —
+ * a phrase is meant to have one — and every one after it costs more, which in
+ * a search where a whole transition rarely costs more than five points makes
+ * the second a decision rather than a habit. The same shape one tier down
+ * rations fourths and fifths: Essen puts 12 % of all intervals at a fourth or
+ * wider and the engine was running at 21 %.
+ */
+const SURPRISE_PENALTY = 5;
+const WIDE_PENALTY = 2.5;
+
+/** What a well-formed approach into a chord change is worth. */
+const APPROACH = {
+  /** A step into a tone of the new chord. */
+  diatonic: 2.5,
+  /** The semitone below it — worth more, because the tone itself costs more. */
+  chromaticBelow: 3.5,
+  /** The semitone above: the same idiom, rarer. */
+  chromaticAbove: 2,
+  /** Both neighbours, in either order. */
+  enclosure: 4,
+  /**
+   * Paid a note early, to the chromatic tone itself, so the beam keeps the
+   * path that can play the figure at all: a chromatic note would otherwise be
+   * pruned before the arrival could reward it. It comes on top of a refund of
+   * the note's whole category cost — an approach tone is charged as the
+   * motion it is, not as a foreign note, because it is gone by the next
+   * onset. A tone held longer than a beat keeps its surcharge and stays out.
+   */
+  chromaticPreparation: 4.5,
+  /** The same idea for a diatonic approach, whose tone is already cheap. */
+  preparation: 1.2,
+} as const;
 
 /**
  * Cost by interval size, shaped like the interval distribution of real
@@ -179,7 +234,8 @@ export function realizePitches(
   const notes: NoteEvent[] = [];
   let carry: Path = {
     pitches: [], cost: 0, p1: null, p2: null, prevCategory: null,
-    prevChord: -1, prevWasPeak: false, prevWasPhraseFinal: false, memo: new Map(),
+    prevChord: -1, prevWasPeak: false, prevWasPhraseFinal: false,
+    surprises: 0, wideLeaps: 0, memo: new Map(),
   };
   const lastChordIndex = hc.chords.length - 1;
 
@@ -195,7 +251,8 @@ export function realizePitches(
     }
     const ceiling = Math.max(anchor, Math.min(ceilings[phrase.index], peakPitch));
 
-    let beam: Path[] = [{ ...carry, pitches: [], cost: 0, memo: new Map(carry.memo) }];
+    // Each phrase gets its own budget: one surprise, one wide leap.
+    let beam: Path[] = [{ ...carry, pitches: [], cost: 0, surprises: 0, wideLeaps: 0, memo: new Map(carry.memo) }];
 
     for (let ei = 0; ei < phraseEvents.length; ei++) {
       const e = phraseEvents[ei];
@@ -205,15 +262,39 @@ export function realizePitches(
       const memoKey = `${e.patternKey}#${e.indexInInstance}`;
       const gravity = planTargetAt(plan, e.startBeat);
       const nextBeam: Path[] = [];
+      // The approach figure this note arrives with, and the one the note after
+      // it arrives with — the latter is what makes room in the beam for an
+      // approach tone that only pays off once it has resolved.
+      const approach = ctx.approaches?.get(e);
+      const after = phraseEvents[ei + 1];
+      const nextApproach = after ? ctx.approaches?.get(after) : undefined;
+      const nextChord = nextApproach && after ? hc.chords[chordAt(after.startBeat)] : null;
+      const previous = ei > 0 ? phraseEvents[ei - 1] : undefined;
+      const afterBreak =
+        previous === undefined || previous.startBeat + previous.durationBeats < e.startBeat - 1e-9;
+      const beforeBreak =
+        after === undefined || after.startBeat > e.startBeat + e.durationBeats + 1e-9;
 
       for (const path of beam) {
         // Target pitch: memoized head pitch (re-anchored), else the planned degree.
         let target: number;
         const local = path.memo.get(memoKey);
         const remembered = globalMemo.get(memoKey);
+        // This note is the hook coming back, not the hook being invented.
+        const replayed = local !== undefined || remembered !== undefined;
         if (local !== undefined) target = local;
         else if (remembered) target = remembered.midi + (anchor - remembered.anchor);
-        else target = stepByDegrees(anchor, e.degreeOffset, scaleMidi);
+        else {
+          target = stepByDegrees(anchor, e.degreeOffset, scaleMidi);
+          // The note before the peak aims within reach of the peak the phrase
+          // will actually reach, not of where the degree walk imagined it:
+          // the two are chosen independently — the peak is pinned to a chord
+          // tone under the phrase's ceiling — and the gap between them is
+          // what the line used to cross in one jump. A nudge of three
+          // semitones, not a pin, so a tone that owes a resolution still
+          // resolves.
+          if (after?.isPeak) target = Math.max(target, Math.min(target + 3, peakPitch - 4));
+        }
 
         const nextEvent = phraseEvents[ei + 1];
         const stepsToFinal = phraseEvents.length - 1 - ei;
@@ -231,6 +312,7 @@ export function realizePitches(
           maxLeap: profile.maxLeap,
           harmonyMode: harmony,
           scaleMidi,
+          isChromaticApproach: nextApproach === "chromatic",
         });
 
         for (const m of candidates) {
@@ -246,9 +328,16 @@ export function realizePitches(
             // a half cadence rests there, and the next phrase starts afresh.
             prevChordCtx: path.prevChord >= 0 && !path.prevWasPhraseFinal ? hc.chords[path.prevChord] : null,
             chordChanged: path.prevChord !== chordIdx,
+            approach,
+            nextApproach,
+            nextChord,
+            afterBreak,
+            beforeBreak,
+            replayed,
           });
           const memo = new Map(path.memo);
           if (e.patternKey.startsWith("head:") && !path.memo.has(memoKey)) memo.set(memoKey, m);
+          const spent = budgetOf(m, path, afterBreak);
           nextBeam.push({
             pitches: [...path.pitches, m],
             cost: path.cost + cost,
@@ -258,6 +347,8 @@ export function realizePitches(
             prevChord: chordIdx,
             prevWasPeak: e.isPeak,
             prevWasPhraseFinal: e.isPhraseFinal,
+            surprises: path.surprises + (spent.surprise ? 1 : 0),
+            wideLeaps: path.wideLeaps + (spent.wide ? 1 : 0),
             memo,
           });
         }
@@ -318,6 +409,8 @@ type CandidateOptions = {
   maxLeap: number;
   harmonyMode: MelodyHarmony;
   scaleMidi: number[];
+  /** This note is the chromatic approach tone of a planned figure. */
+  isChromaticApproach: boolean;
 };
 
 function candidatePitches(
@@ -328,7 +421,16 @@ function candidatePitches(
   o: CandidateOptions,
 ): number[] {
   const prev = path.p1;
-  const allowChromatic = o.harmonyMode === "expressive" && e.durationBeats <= 0.5 && e.weight <= 1 && !e.isPhraseFinal && !e.isPeak;
+  // A chromatic tone is admissible where it can only be heard as motion: off
+  // the beat and short. A planned approach into a chord change buys it a
+  // little more room — up to a beat, on a weak beat — because the approach
+  // note of the idiom is often exactly that long, and it still never falls on
+  // a position the harmony tests count as strong.
+  const allowChromatic =
+    o.harmonyMode === "expressive" && !e.isPhraseFinal && !e.isPeak &&
+    (o.isChromaticApproach
+      ? e.durationBeats <= 1 && e.weight <= 2
+      : e.durationBeats <= 0.5 && e.weight <= 1);
   const strictStrong = o.harmonyMode === "strict" && e.weight >= 3;
 
   // The peak is pinned to the phrase's highest chord tone — or, when the
@@ -358,7 +460,11 @@ function candidatePitches(
     const cat = chord.categories[midiPc(m)];
     if (cat === "chromatic" && !allowChromatic) return false;
     if (strictStrong && cat !== "chord") return false;
-    if (o.nextIsPeak && m < o.peakPitch - o.maxLeap) return false;
+    // The note before the peak stands within a fifth of it. The corpora have
+    // the peak approached by leap in 56–63 % of phrases, but their leaps are
+    // thirds and fourths: letting the line stand a mood's whole maxLeap below
+    // its high note is what made every phrase lurch a sixth or more into it.
+    if (o.nextIsPeak && m < o.peakPitch - Math.min(o.maxLeap, 7)) return false;
     // Two of a pitch is a repeated note; three is a hook; four is a drone.
     if (droning && m === prev) return false;
     return true;
@@ -418,7 +524,37 @@ type CostOptions = {
   isCadenceZone: boolean;
   prevChordCtx: ChordContext | null;
   chordChanged: boolean;
+  /** The figure this note is meant to arrive with. */
+  approach: ApproachKind | undefined;
+  /** The figure the *next* note arrives with: this note is its approach tone. */
+  nextApproach: ApproachKind | undefined;
+  /** The chord that next note lands on, when one is planned. */
+  nextChord: ChordContext | null;
+  /** A rest or a phrase boundary sits between this note and the one before. */
+  afterBreak: boolean;
+  /** The line stops after this note: nothing follows to resolve it. */
+  beforeBreak: boolean;
+  /** This note replays a head heard earlier, rather than stating it. */
+  replayed: boolean;
 };
+
+/**
+ * What this note spends of its phrase's budget: a surprise (an interval of a
+ * sixth or more, or a chromatic tone left without its semitone resolution) or
+ * a wide leap (a fourth or a fifth).
+ *
+ * Nothing is charged across a breath or a phrase boundary. The ear hears an
+ * interval between two notes that belong to one line; where the line has
+ * stopped and started again, the distance between them is register, not a
+ * leap, and a phrase should not spend its one surprise on it.
+ */
+function budgetOf(m: number, path: Path, afterBreak: boolean): { surprise: boolean; wide: boolean } {
+  if (path.p1 === null || afterBreak) return { surprise: false, wide: false };
+  const interval = Math.abs(m - path.p1);
+  const unresolvedChromatic = path.prevCategory === "chromatic" && interval !== 1;
+  if (interval >= SURPRISE_INTERVAL || unresolvedChromatic) return { surprise: true, wide: false };
+  return { surprise: false, wide: interval >= WIDE_INTERVAL };
+}
 
 function transitionCost(
   m: number,
@@ -460,7 +596,10 @@ function transitionCost(
   // hook itself holds its shape hardest so a restatement is recognisable. A
   // note that owes a resolution bends to it instead.
   if (!e.isPeak && !e.isPhraseFinal) {
-    const fidelity = e.patternKey.startsWith("head:") ? 1.8 : 1.2;
+    // The hook holds its shape hardest, and hardest of all when it is coming
+    // back: a restatement is only heard as one if the intervals return with
+    // it (POP909: 65 % of consecutive same-type phrases share their opening).
+    const fidelity = e.patternKey.startsWith("head:") ? (o.replayed ? 2.8 : 1.8) : 1.2;
     cost += (pull ? fidelity * 0.35 : fidelity) * Math.abs(m - target);
   }
   // Register gravity toward the phrase's arch.
@@ -482,7 +621,7 @@ function transitionCost(
     if (Math.abs(I) >= 5) {
       if (Math.sign(R) === Math.sign(I) && Math.abs(R) >= 3) cost += 2.5;
       else if (Math.sign(R) === -Math.sign(I) && Math.abs(R) <= 2) cost -= 0.8;
-      else if (Math.sign(R) === Math.sign(I) && Math.abs(R) <= 2) cost += 0.3;
+      else if (Math.sign(R) === Math.sign(I) && Math.abs(R) <= 2) cost += 1.0;
     } else if (Math.abs(I) >= 3 && Math.sign(R) === Math.sign(I) && Math.abs(R) >= 3) {
       cost += 0.6;
     }
@@ -491,10 +630,38 @@ function transitionCost(
     // Regression to the mean: drifting further from the phrase centre costs.
     if (Math.abs(m - o.anchor) > Math.abs(p1 - o.anchor)) cost += 0.25 * Math.max(0, Math.abs(m - o.anchor) - 6);
 
-    // A non-chord tone must be left by step.
+    // A non-chord tone must be left by step, and a chromatic one owes a
+    // semitone: it is an approach or it is nothing, so anything else — a whole
+    // step, a repeat, a leap away — is charged for leaving it unresolved.
     if (path.prevCategory && path.prevCategory !== "chord") {
       if (Math.abs(R) > 2) cost += path.prevCategory === "color" ? 3 : 5;
       if (R === 0) cost += 3;
+      if (path.prevCategory === "chromatic" && Math.abs(R) !== 1) cost += 6;
+    }
+
+    // The phrase's budget: one surprise, one wide leap, then a growing price.
+    const spent = budgetOf(m, path, o.afterBreak);
+    if (spent.surprise && path.surprises >= SURPRISE_BUDGET) {
+      cost += SURPRISE_PENALTY * (path.surprises - SURPRISE_BUDGET + 1);
+    }
+    if (spent.wide && path.wideLeaps >= WIDE_BUDGET) {
+      cost += WIDE_PENALTY * (path.wideLeaps - WIDE_BUDGET + 1);
+    }
+
+    // Approach figures into a chord change (approach.ts): a step into a tone
+    // of the chord that is arriving, the semitone below it, or both its
+    // neighbours in either order. Only ever a bonus — where the harmony or
+    // the motif wants something else, it wins.
+    if (o.approach && category === "chord") {
+      let bonus = 0;
+      const stepIn = Math.abs(R) === 1 || Math.abs(R) === 2;
+      if (stepIn) bonus = APPROACH.diatonic;
+      if (o.approach === "chromatic" && path.prevCategory === "chromatic" && Math.abs(R) === 1) {
+        bonus = R > 0 ? APPROACH.chromaticBelow : APPROACH.chromaticAbove;
+      } else if (o.approach === "enclosure" && p2 !== null && straddles(p2, p1, m)) {
+        bonus = Math.max(bonus, APPROACH.enclosure);
+      }
+      cost -= bonus;
     }
 
     // Tendency tones (leading tone up, sevenths down, fa→mi, le→sol).
@@ -503,13 +670,21 @@ function transitionCost(
       cost += (pull.resolves ? -3.5 : 3.5) * pull.strength * scale;
     }
 
-    // The peak is approached from below, ideally by leap, and left by step.
+    // The peak is approached from below, ideally by leap — a third or a
+    // fourth, the size the corpora's peak approaches actually are — ...
     if (e.isPeak) {
       if (R >= 3) cost -= 1.0;
       else if (R <= 0) cost += 2.0;
+      cost += 0.7 * Math.max(0, R - 3);
     }
+    // ...and left by step: both corpora put a step under the note after the
+    // peak two thirds of the time (Essen 66 %, Rolling Stone 73 %), where the
+    // engine used to fall away from its high note by a sixth or more. The
+    // charge grows with the drop, so the line comes down off its peak instead
+    // of falling off it.
     if (path.prevWasPeak) {
-      if (R < 0 && Math.abs(R) <= 2) cost -= 0.8;
+      if (R < 0 && Math.abs(R) <= 2) cost -= 1.5;
+      else if (R < 0) cost += 0.6 * (Math.abs(R) - 2);
       else if (R > 0) cost += 1.0;
     }
     // The cadence note is approached by step, preferably from above, and sits
@@ -520,6 +695,23 @@ function transitionCost(
       if (Math.abs(R) <= 2 && R !== 0) cost -= 1.5;
       if (R < 0) cost -= 0.5;
       if (R === 0) cost += 0.5;
+    }
+  }
+
+  // This note is the approach tone of the figure the *next* note arrives with.
+  // The reward lands on the arrival, which is a note too late for a chromatic
+  // tone — it would be pruned from the beam first — so the preparation is
+  // paid here, to any note a semitone from a tone of the chord to come.
+  // Never to a hook that is coming back: a restatement is only heard as one
+  // if the idea returns at the pitches it had, and an approach is a device of
+  // the line, not of the idea.
+  if (o.nextChord && o.nextApproach && !o.replayed) {
+    const leadsToChordTone =
+      o.nextChord.categories[midiPc(m + 1)] === "chord" || o.nextChord.categories[midiPc(m - 1)] === "chord";
+    if (leadsToChordTone) {
+      cost -= o.nextApproach === "chromatic" && category === "chromatic"
+        ? APPROACH.chromaticPreparation + 2 * w + 3
+        : APPROACH.preparation;
     }
   }
 
@@ -534,11 +726,21 @@ function transitionCost(
     case "avoid":
       cost += 1.5 * w + (d >= 1 ? 3 : 0) + (w >= 3 && d >= 1 ? 6 : 0);
       break;
-    case "chromatic":
-      cost += 2 * w + 3 + (d > 0.5 ? 6 : 0);
+    case "chromatic": {
+      // A chromatic tone may not be held: it is motion, not harmony. The
+      // approach note of a planned figure is allowed a beat of it, which is
+      // the length the idiom actually uses.
+      const hold = o.nextApproach === "chromatic" ? 1 : 0.5;
+      cost += 2 * w + 3 + (d > hold ? 6 : 0);
       break;
+    }
   }
   if (o.harmonyMode === "strict" && category !== "chord" && w >= 2 && d >= 1) cost += 6;
+
+  // A note the line rests after has to stand on its own: nothing comes to
+  // resolve it. Left to the safety pass, such a note is pulled onto the
+  // nearest chord tone afterwards, which opens a leap the search never saw.
+  if (o.beforeBreak && category !== "chord") cost += category === "color" ? 2.5 : 5;
 
   // Chord changes: the guide-tone line and the chord's characteristic tones.
   if (o.firstOfChord) {
