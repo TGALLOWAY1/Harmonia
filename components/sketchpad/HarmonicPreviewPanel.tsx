@@ -23,7 +23,8 @@ import type {
   PlaybackMode,
 } from "@/lib/sketchpad/types";
 import type { Mode } from "@/lib/theory/harmonyEngine";
-import { SOUND_PRESETS, type SoundPresetId } from "@/lib/audio/instrumentCatalog";
+import { SOUND_PRESETS, type SoundPresetId, type InstrumentCategory } from "@/lib/audio/instrumentCatalog";
+import { SPACE_LIST, type SpaceId } from "@/lib/audio/audioSpace";
 import { AudioStatusBadge } from "@/components/audio/AudioStatusBadge";
 import clsx from "clsx";
 
@@ -35,6 +36,33 @@ const MODES: { value: Mode; label: string }[] = [
   { value: "phrygian", label: "Phrygian" },
   { value: "major_pentatonic", label: "Major Pentatonic" },
 ];
+
+const INSTRUMENT_CATEGORIES: { value: InstrumentCategory; label: string }[] = [
+  { value: "keys", label: "Keys" },
+  { value: "synth", label: "Synths" },
+  { value: "strings", label: "Strings" },
+  { value: "mallet", label: "Mallets" },
+  { value: "plucked", label: "Plucked" },
+];
+
+/** Grouped `<optgroup>`s over the instrument catalog, matching the main page's picker. */
+function InstrumentOptions() {
+  return (
+    <>
+      {INSTRUMENT_CATEGORIES.map((category) => {
+        const entries = SOUND_PRESETS.filter((p) => p.category === category.value);
+        if (entries.length === 0) return null;
+        return (
+          <optgroup key={category.value} label={category.label}>
+            {entries.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
 
 function computeAutoRange(events: HarmonicEvent[]): { low: number; high: number } {
   let min = Infinity;
@@ -66,6 +94,10 @@ export function HarmonicPreviewPanel({
   onPlayNote,
   soundPreset,
   onSoundPresetChange,
+  masterVolume,
+  onMasterVolumeChange,
+  space,
+  onSpaceChange,
   isSynthLoading,
   synthLoadError,
   onDismissSynthError,
@@ -84,6 +116,10 @@ export function HarmonicPreviewPanel({
   onPlayNote: (noteWithOctave: string) => void;
   soundPreset: SoundPresetId;
   onSoundPresetChange: (preset: SoundPresetId) => void;
+  masterVolume: number;
+  onMasterVolumeChange: (volume: number) => void;
+  space: SpaceId;
+  onSpaceChange: (space: SpaceId) => void;
   isSynthLoading: boolean;
   synthLoadError: string | null;
   onDismissSynthError: () => void;
@@ -132,11 +168,42 @@ export function HarmonicPreviewPanel({
               onChange={(e) => onSoundPresetChange(e.target.value as SoundPresetId)}
               className="bg-surface-muted border border-border-subtle rounded px-2 py-0.5 text-xs outline-none appearance-none cursor-pointer"
             >
-              {SOUND_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
+              <InstrumentOptions />
             </select>
           </span>
+        </div>
+
+        {/* Master volume + space — compact, same settings as the main page */}
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={masterVolume}
+            onChange={(e) => onMasterVolumeChange(Number(e.target.value))}
+            className="flex-1 accent-accent cursor-pointer"
+            aria-label="Master volume"
+            title={`Master volume: ${Math.round(masterVolume * 100)}%`}
+          />
+          <span className="text-[10px] text-muted tabular-nums w-8 text-right shrink-0">
+            {Math.round(masterVolume * 100)}%
+          </span>
+          <div className="flex items-center rounded-md bg-surface-muted border border-border-subtle p-0.5 shrink-0">
+            {SPACE_LIST.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => onSpaceChange(s.id)}
+                title={s.description}
+                className={clsx(
+                  "px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+                  space === s.id ? "bg-accent text-white" : "text-muted hover:text-foreground"
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {synthLoadError && (

@@ -30,7 +30,11 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   const {
     instrumentId: soundPreset,
     quality: audioQuality,
+    masterVolume,
+    space,
     setInstrument: setSoundPreset,
+    setMasterVolume,
+    setSpace,
   } = useAudioSettingsStore();
   const synthRef = useRef<Synth | null>(null);
   const {
@@ -361,6 +365,10 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
         onPlayNote={playNote}
         soundPreset={soundPreset}
         onSoundPresetChange={setSoundPreset}
+        masterVolume={masterVolume}
+        onMasterVolumeChange={setMasterVolume}
+        space={space}
+        onSpaceChange={setSpace}
         isSynthLoading={isSynthLoading}
         synthLoadError={synthLoadError}
         onDismissSynthError={dismissSynthError}

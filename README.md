@@ -126,7 +126,7 @@ Theory learned silently is theory half-learned. Harmonia plays **every** interac
 <td width="50%" valign="top">
 
 ### 🎼 Chord Progression Generator
-Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates. Mood, ending, tension shape and brightness curve sit behind one collapsed **Character** row in the settings panel, so the everyday controls (key, mode, tempo, length, complexity, voicing) stay uncluttered.
+Generate coherent progressions in any key across **6 scales** (Major, Minor, Dorian, Mixolydian, Phrygian, **Major Pentatonic**) and **4 complexity levels** (Simple → Rich → Extended → Altered). Variable-duration chords, locking, and seeded reproducibility. Every progression resolves by default, or choose an **open ending** for half, deceptive and loop-friendly cadences. Four **moods** shape tension, register, density and harmonic rhythm, and each generation is the best of eight scored candidates. The voicing search resolves **tendency tones** — leading tones rise, chordal sevenths fall, suspensions resolve by step — as a soft cost weighed against smooth voice leading. Mood, ending, tension shape and brightness curve sit behind one collapsed **Character** row in the settings panel, so the everyday controls (key, mode, tempo, length, complexity, voicing) stay uncluttered.
 
 </td>
 <td width="50%" valign="top">
@@ -154,13 +154,13 @@ Click any chord for theory-approved alternatives grouped by category — diatoni
 <td width="50%" valign="top">
 
 ### 🔊 Multi-Instrument Playback Engine
-Five instruments via Tone.js — Lush Piano, Electric Piano, Soft Keys, Filtered Saw, Organ — with **Lightweight** (instant synth) and **High Quality** (streamed samples) modes that hot-swap seamlessly.
+**Eight instruments** via Tone.js — Lush Piano, Electric Piano, Soft Keys, Filtered Saw, Organ, Warm Strings, Vibraphone, Pluck — each a velocity-sensitive **layered synth** (a body layer, a bright layer and a gated transient) so playing harder changes timbre, not just level. A master volume fader, a Dry/Room/Hall **space** control, and an independent **melody voice** (or follow the chords) sit alongside **Lightweight** (instant synth) and **High Quality** (streamed samples) modes that hot-swap seamlessly.
 
 </td>
 <td width="50%" valign="top">
 
 ### 🎚️ Humanized, Configurable Feel
-Per-note velocity & timing variation (±12 ms) for a hand-played feel. Tune Velocity, Humanize, Sustain, and Soft Strum vs Block Chord. All settings persist across sessions.
+A deterministic **dynamics model** shapes velocity by voice (top voice strongest, bass anchored), metric position and a progression-level tension swell, plus phrase-aware melody dynamics (crescendo to the climax, cadence taper) driven by its own **Melody level** control. Per-note timing variation (±12 ms) layers a hand-played feel on top. Tune Velocity, Melody level, Humanize, Sustain, and Soft Strum vs Block Chord — all settings persist across sessions.
 
 </td>
 </tr>
@@ -174,7 +174,7 @@ A song-level planner: multi-section structure (Intro/Verse/Chorus/Bridge/Drop/Ou
 <td width="50%" valign="top">
 
 ### 💾 MIDI Export & Saved Progressions
-Export chords or melody as a standard MIDI file (`@tonejs/midi`) with musical velocity curves. Save favorites to a persistent list; reload or delete anytime.
+Export chords, melody, or a combined **Chords + Melody** two-track MIDI file (`@tonejs/midi`) — same dynamics-model velocity curves, correct **GM program numbers** per instrument, and the melody track carries its own resolved voice when a separate one is chosen. Save favorites to a persistent list; reload or delete anytime.
 
 </td>
 </tr>
@@ -344,6 +344,7 @@ flowchart LR
 - **Chromatic-density validation** — A **2-of-3 rule** ensures that in any 4-chord window at least two chords remain diatonic; the least-important chromatic chord is dropped when violated.
 - **Voicing** — Candidate voicings are generated across styles (closed, open, drop-2, drop-3, spread), octaves, and inversions. Tone selection always keeps root/3rd/7th; the 5th is dropped first when space is tight.
 - **Voice leading** — Candidates honouring the planned bass are connected by a bounded **Viterbi (beam) search** over the whole progression, charging each candidate for register (rising with tension), **sensory roughness** (Plomp-Levelt, Sethares parameterisation, so low close voicings are heard as mud rather than caught by a rule) and the weighted voice-leading cost below.
+- **Tendency-tone resolution** — The same voicing search (`advanced/tendencyTones.ts`) derives a chord identity per slot — root, function, dominant flag, the chordal seventh, and the chord it's expected to resolve to — and pays a soft transition cost when an upper voice leaves a tendency tone unresolved: the leading tone rises, the chordal seventh falls (or is held when the next chord contains it), the dominant tritone resolves in contrary motion, and suspensions fall by step; the bass stays the bass-line planner's responsibility. Optional `tendencyWeight` (default 2.0, `0` disables it); pentatonic is unaffected. Measured over 400 seeds: every voiceable leading tone now rises, seventh resolution rose from 60% to 77% at the defaults, suspensions from 73% to 91% at complexity 3, and mean voice motion per chord change *fell* (8.52 → 7.98 semitones) with generation time unchanged — see [`CHORD_PROGRESSION_ASSESSMENT.md`](CHORD_PROGRESSION_ASSESSMENT.md) §1a and `scripts/measureTendencyTones.ts`.
 - **Major pentatonic** — Takes a dedicated planning path (`lib/theory/pentatonic.ts`), because the five-note scale breaks the assumptions every other stage makes. See below.
 
 <details>
@@ -512,30 +513,44 @@ flowchart TD
 
 ## 🔊 Audio Engine
 
-> Source: `lib/audio/` — engine, synth presets, instrument catalog, humanization, and the `useInstrument` hook.
+> Source: `lib/audio/` — engine, layered instruments, synth presets, instrument catalog, the deterministic dynamics model, humanization, master volume/space, and the `useInstrument` hook.
 
-Harmonia's audio layer is built around three hard realities of browser audio: **contexts start suspended**, **samples are heavy**, and **quantized playback sounds robotic**.
+Harmonia's audio layer is built around three hard realities of browser audio: **contexts start suspended**, **samples are heavy**, and **quantized, one-level playback sounds robotic**.
 
 ```mermaid
 flowchart LR
     G["👆 User gesture"] --> EA["ensureAudioReady()<br/>idempotent unlock"]
     EA --> CTX["AudioContext: running"]
     CTX --> SCHED["Tone.js scheduler"]
-    HUM["humanization.ts<br/>velocity + timing (data)"] --> SCHED
-    REG["synthPresets.ts<br/>lightweight ⇄ high"] --> SCHED
-    SCHED --> FX["FX chain<br/>compressor · reverb · limiter"]
-    FX --> OUT["🔈 destination"]
+    DYN["dynamics.ts<br/>deterministic velocity model"] --> SCHED
+    HUM["humanization.ts<br/>±jitter (data)"] --> SCHED
+    REG["layeredInstrument.ts<br/>body · bright · transient"] --> SCHED
+    SCHED --> BUS["voice bus → compressor"]
+    BUS --> VOL["master volume"]
+    BUS -.reverb send.-> VOL
+    VOL --> LIM["limiter (−3 dB)"]
+    LIM --> OUT["🔈 destination"]
     style EA fill:#b45309,color:#fff
     style OUT fill:#0f766e,color:#fff
 ```
 
 - **Gesture unlock** — Every sound-producing interaction routes through `ensureAudioReady()`: it resumes the context from a real user gesture, is **idempotent** (concurrent callers share one unlock), waits until the context is actually `running`, and **never swallows failures**. A resume that never settles is abandoned after a bounded wait so the next tap gets a fresh attempt, and WebKit's `interrupted` state (a phone call, Siri, an app switch) is treated like `suspended`. An `AudioStatusBadge` surfaces the live state so silence is never a mystery.
 - **iOS audio session** — Safari mutes Web-Audio-only pages with the ring/silent switch by default (the "ambient" category). The engine declares the session as media `playback`, the category a music app uses, so progressions sound with the switch in either position.
+- **Layered instruments** — Every lightweight instrument is a `LayeredInstrument` (`layeredInstrument.ts`): one `triggerAttackRelease` fans out to a **body** layer (present at every dynamic), a **velocity-driven bright layer** (an expansive curve that blooms only when played hard) and a **gated transient** (hammer / tine click / key click / mallet / nail) — so velocity changes *timbre*, not just level. **Eight instruments** total — Lush Piano, Electric Piano, Soft Keys, Filtered Saw, Organ, Warm Strings, Vibraphone, Pluck — of which Piano and Electric Piano also have sampled High Quality realizations; melody realizations of each sit above the chord ones.
+- **Signal chain** — Layers → per-instrument insert effects (chorus, tremolo, stereo widener) → a shared **voice bus** per instrument family → **compressor** → **master volume** → **limiter (−3 dB)** → destination, with a post-compressor **reverb send** per bus so the space control affects everything proportionally. Measured with the audition harness: instrument loudness spread at velocity 0.7 fell from ~14 dB to under 3 dB, and brightness rises with velocity on every instrument (piano: +123% spectral centroid across the velocity range).
 - **Two quality modes** — *Lightweight* (pure Tone.js synthesis, zero downloads, instant, offline-friendly) and *High Quality* (sampled instruments). The sampler streams **in the background while the lightweight twin is already playing**, then **hot-swaps in seamlessly** — playback is never blocked by a download.
 - **Graceful degradation** — If samples stall or fail (a 10s timeout, common on flaky mobile networks), playback keeps using the *lightweight twin of the same instrument* — a sampled piano degrades to a synth piano, not to an unrelated sound — and offers a Retry.
-- **Humanization** — A pure, Tone-free, fully unit-tested module computes per-note velocity (±12%) and timing jitter (±12 ms) as **data**, plus block / strum / arpeggio articulations. No real-time randomness, so it's deterministic and testable.
+- **Master volume & space** — `audioSettingsStore` persists `masterVolume` (0–1) and `space` (`dry` / `room` / `hall`, controlling reverb decay, pre-delay and send level — see `lib/audio/audioSpace.ts`, Tone-free so the UI can import it directly), along with which instrument plays the **melody voice** (a specific instrument, or "follow chords"). A store subscription (`applyAudioSettings` in `synthPresets.ts`) ramps the live signal chain on every change — no instrument re-creation, no UI plumbing beyond calling the setters.
+- **Dynamics model** — `dynamics.ts` is a pure, deterministic velocity model shared by the chord loop, previews, the Sketchpad and MIDI export, so a progression sounds — and exports — the same way everywhere:
+  - **Voice weights** — the top voice reads strongest, the bass is anchored, inner voices sit back.
+  - **Metric accent** — position within the bar shapes velocity (downbeat > beat 3 > beats 2 & 4 > off-beats).
+  - **Progression-level shaping** — a first-chord lift, a last-chord settle, and a tension swell when a tension curve is available.
+  - **Phrase-aware melody dynamics** — a crescendo into each phrase's peak, a louder climax phrase, a cadence taper, softer pickups, and a chord-tone-vs-non-chord-tone weighting.
+  - It also fixed three bugs along the way: melody notes of 1.5/2.5/3/3.5 beats used to snap to a whole note (now exact); preview jitter could schedule a note in the past; strummed/arpeggiated voices now always end with their chord event.
+- **Humanization** — Layered on top of the dynamics model, a pure, Tone-free, fully unit-tested module adds small per-note velocity (±12%) and timing jitter (±12 ms) as **data**, plus block / strum / arpeggio articulations. This is the *only* source of randomness in playback — velocity shaping itself stays deterministic in `dynamics.ts`.
 - **Timing & latency** — Scheduling rides Tone.js's transport over the Web Audio clock; because humanization is pre-computed and the context is guaranteed `running` before any note fires, playback stays responsive and click-free (samplers ring out for 3 s before disposal on swap).
-- **Instrument registry** — Instruments are described in two layers: a **Tone-free catalog** (`instrumentCatalog.ts`, ids/labels/categories for UI) and a **registry** (`synthPresets.ts`) mapping each to a `lightweight` synth and an optional `high` sampler. Adding an instrument is one catalog entry + one registry entry — playback code never changes.
+- **Instrument registry** — Instruments are described in layers: a **Tone-free catalog** (`instrumentCatalog.ts`, ids/labels/categories for UI), the **layered fan-out** (`layeredInstrument.ts`) and a **registry** (`synthPresets.ts`) mapping each to a lightweight `LayeredInstrument` and an optional `high` sampler. Adding an instrument is one catalog entry + one registry entry — playback code never changes.
+- **Audition harness** — `npx tsx scripts/auditionInstruments.ts [--check] [--wav <dir>] [--json <file>] [--space dry|room|hall] [--volume 0..1] [--only <ids>]` offline-renders every instrument × role × velocity in headless Chromium and measures peak, RMS, spectral centroid, attack and tail length. `--check` fails the run on silence, `NaN`, clipping, a tail past 6 s, or loudness/brightness that doesn't rise with velocity on an instrument marked velocity-sensitive — sound changes are verified against it before they land.
 
 > The acoustic piano uses the [Salamander Grand Piano](https://github.com/sfzinstruments/SalamanderGrandPiano) sample set by Alexander Holm (CC-BY 3.0), served via the Tone.js audio CDN.
 
@@ -591,6 +606,7 @@ Harmonia/
 │   │   │   ├── extensions.ts · substitutions.ts
 │   │   │   ├── voicing.ts · voiceLeading.ts · roughness.ts
 │   │   │   ├── voicingSearch.ts    #   Bounded Viterbi over the whole progression
+│   │   │   ├── tendencyTones.ts    #   Chord identity + tendency-tone resolution cost
 │   │   │   └── generateAdvancedProgression.ts
 │   │   └── melody/                # 🎶 Phrase-based melody engine
 │   │       ├── harmonicContext.ts  #   Chord function, note categories, tendency tones
@@ -603,7 +619,10 @@ Harmonia/
 │   ├── audio/                     # 🔊 Playback engine
 │   │   ├── audioEngine.ts          #   ensureAudioReady() — gesture unlock
 │   │   ├── synthPresets.ts         #   Instrument registry (synth + sampler)
+│   │   ├── layeredInstrument.ts    #   Body/bright/transient velocity-layer fan-out
 │   │   ├── instrumentCatalog.ts    #   Tone-free instrument metadata
+│   │   ├── dynamics.ts             #   Deterministic velocity model (voices, accent, phrase arc)
+│   │   ├── audioSpace.ts           #   Master volume + reverb space presets (Tone-free)
 │   │   ├── humanization.ts         #   Pure velocity/timing variation
 │   │   └── useInstrument.ts         #   Lazy load + hot-swap + fallback
 │   │
@@ -619,6 +638,10 @@ Harmonia/
 │   ├── creative/                  #   Interactive roll · substitution panel · melody lane · MPE toolbar + expression overlay
 │   ├── sketchpad/                 #   Workspace · structure · section editor
 │   ├── feedback/ · audio/         #   Feedback chart · audio status badge
+│
+├── scripts/                       # 🔬 Offline measurement & audit harnesses
+│   ├── auditionInstruments.ts      #   Headless-Chromium instrument audition (--check)
+│   └── measureTendencyTones.ts     #   Before/after tendency-tone resolution rates
 │
 ├── prisma/                        # 💤 SQLite/Postgres schema (deferred learning-path backend)
 ├── _deferred/                     # 💤 Archived v2 features (flashcards, SRS, API routes)
@@ -640,8 +663,8 @@ Harmonia/
 | **Music theory modules** (`lib/theory/`) | 13 |
 | **Composition engines** | 2 (advanced progression + phrase-based melody) |
 | **Zustand state stores** | 6 |
-| **Audio engine modules** (`lib/audio/`) | 6 |
-| **Test suites** (active, Vitest) | 22 |
+| **Audio engine modules** (`lib/audio/`) | 9 |
+| **Test suites** (active, Vitest) | 46 (1,038 tests; 3 pre-existing `_deferred/` suites fail to import) |
 | **Test LOC** | ~2,100 |
 | **Supported scales / modes** | 6 |
 | **Supported chord qualities** | 25+ |
@@ -650,7 +673,7 @@ Harmonia/
 | **Voicing styles × densities** | 6 × 3 |
 | **Melody moods × styles** | 4 × 3 |
 | **Melody candidates scored per request** | 8 (on 13 corpus-calibrated dimensions) |
-| **Instruments (synth / sampled)** | 5 |
+| **Instruments (synth / sampled)** | 8 (2 sampled) |
 | **Test coverage %** | _TODO — run `npm run test:coverage` and publish_ |
 | **Avg. generation latency** | _TODO — add a micro-benchmark; generation is synchronous & seedable_ |
 
@@ -771,8 +794,8 @@ Generative audio is notoriously hard to test. By driving generation with seeded 
 
 | Stage | Items |
 |---|---|
-| **✅ Current** | Progression generator, phrase-based melody, interactive piano roll, theory-guided substitutions, multi-instrument playback with hot-swap, MIDI export, favorites, voicing feedback, Harmonic Sketchpad |
-| **🔜 Next** | **Melody-first harmonization** — draw a melody in a scale-snapped roll, then auto-harmonize with smooth functional motion (prototyped, reverted pending better chord-fit scoring — see roadmap notes). MIDI **import**. Expanded screenshot/GIF gallery. CI + coverage badges. |
+| **✅ Current** | Progression generator with tendency-tone voice leading, phrase-based melody, interactive piano roll, theory-guided substitutions, velocity-layered multi-instrument playback with hot-swap, a deterministic dynamics/humanization model, MIDI export (chords, melody, or combined), favorites, voicing feedback, Harmonic Sketchpad |
+| **🔜 Next** | **Melody-first harmonization** — draw a melody in a scale-snapped roll, then auto-harmonize with smooth functional motion (prototyped, reverted pending better chord-fit scoring — see roadmap notes). MIDI **import**. **Self-hosted / better sample sets** for the High Quality tier — mirror the samples instead of depending on a third-party CDN, and improve Electric Piano's. **Per-instrument CPU budget** on low-end mobile — the layered instruments add voices per note; profile and cap polyphony on constrained devices. Expanded screenshot/GIF gallery. CI + coverage badges. |
 | **🧪 v2 — Learning Path** | Flashcards, spaced repetition (SRS), circle-of-fifths exercises, milestone curriculum. Schema, card templates, and SRS engine already scaffolded under `_deferred/` and `prisma/`. |
 | **🎶 Melody next** | Approach and enclosure patterns into chord changes, escape tones and cambiata, a "one surprise per phrase" budget, and a sixteenth-note grid for pop styles (47% of POP909 note durations are sixteenths). |
 | **🔭 Research ideas** | AI-assisted composition, style transfer, genre-specific generators, counterpoint generation, adaptive harmonization, voice-leading optimization (search → learned), notation editor, DAW integration, collaboration, live-performance mode |

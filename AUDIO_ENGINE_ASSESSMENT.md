@@ -9,6 +9,21 @@ Assessment of the current playback stack and a proposal for a two-tier (Lightwei
 > EP sample set) and Phase 5 (Tone.js code-splitting) remain follow-ups; samples
 > still stream from the Tone.js CDN, and sample assets could not be mirrored from
 > this environment (network policy blocks `tonejs.github.io`).
+>
+> **2026-09-21 update:** the lightweight tier was rebuilt as `LayeredInstrument`s
+> (`lib/audio/layeredInstrument.ts`) — a body layer, a velocity-driven bright layer
+> and a gated transient (hammer / tine click / key click / mallet / nail) per
+> instrument, so velocity now changes timbre rather than only level — and three
+> voices (Warm Strings, Vibraphone, Pluck) joined the catalog, bringing it to
+> eight. `audioSettingsStore` gained persisted `masterVolume`, a `space` control
+> (dry/room/hall reverb) and a `melodyInstrumentId` for an independent melody
+> voice, all applied live by a store subscription in `synthPresets.ts`. The new
+> offline audition harness (`npx tsx scripts/auditionInstruments.ts --check`)
+> renders every instrument × role × velocity in headless Chromium and fails on
+> silence, clipping, a runaway tail, or loudness/brightness not rising with
+> velocity — measured instrument loudness spread at velocity 0.7 fell from ~14 dB
+> to under 3 dB. Phase 4 (self-hosted samples + a better EP sample set) is still
+> open.
 
 ---
 

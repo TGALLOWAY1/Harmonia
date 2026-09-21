@@ -6,11 +6,13 @@ import {
   gmProgramForInstrument,
   melodyToMidi,
   progressionToMidi,
+  GM_PROGRAM_BY_INSTRUMENT,
   type ProgressionChord,
 } from "../progressionMidiExport";
 import type { Melody, MelodyNote } from "../music/generators/melody/types";
 import { useAudioSettingsStore } from "../state/audioSettingsStore";
 import { usePlaybackSettingsStore } from "../state/playbackSettingsStore";
+import { INSTRUMENT_CATALOG } from "../audio/instrumentCatalog";
 
 async function parseBlob(blob: Blob): Promise<Midi> {
   const buffer = await blob.arrayBuffer();
@@ -74,12 +76,25 @@ describe("progressionMidiExport", () => {
       expect(gmProgramForInstrument("soft-keys")).toBe(5);
       expect(gmProgramForInstrument("filtered-saw")).toBe(90);
       expect(gmProgramForInstrument("organ")).toBe(16);
+      expect(gmProgramForInstrument("warm-strings")).toBe(48);
+      expect(gmProgramForInstrument("vibraphone")).toBe(11);
+      expect(gmProgramForInstrument("pluck")).toBe(46);
     });
 
     it("falls back to 0 for an unknown or missing id", () => {
       expect(gmProgramForInstrument(undefined)).toBe(0);
       // @ts-expect-error - exercising the runtime fallback for a future/unknown id
       expect(gmProgramForInstrument("some-future-instrument")).toBe(0);
+    });
+
+    it("covers every instrument in the catalog with its own explicit entry", () => {
+      // A missing entry would silently fall back to 0 (Acoustic Grand) rather
+      // than fail loudly, so assert the map key exists rather than just
+      // comparing the resolved number.
+      for (const entry of INSTRUMENT_CATALOG) {
+        expect(Object.prototype.hasOwnProperty.call(GM_PROGRAM_BY_INSTRUMENT, entry.id)).toBe(true);
+        expect(typeof GM_PROGRAM_BY_INSTRUMENT[entry.id]).toBe("number");
+      }
     });
   });
 
@@ -152,6 +167,18 @@ describe("progressionMidiExport", () => {
         expect(n.velocity).toBeLessThanOrEqual(1);
       }
     });
+
+    it("uses an explicit melodyProgram over instrumentProgram", async () => {
+      const blob = melodyToMidi(MELODY.notes, BPM, { instrumentProgram: 0, melodyProgram: 11 });
+      const midi = await parseBlob(blob);
+      expect(midi.tracks[0].instrument.number).toBe(11);
+    });
+
+    it("defaults the melody's own program to the chord program when melodyProgram is omitted", async () => {
+      const blob = melodyToMidi(MELODY.notes, BPM, { instrumentProgram: 5 });
+      const midi = await parseBlob(blob);
+      expect(midi.tracks[0].instrument.number).toBe(5);
+    });
   });
 
   describe("compositionToMidi", () => {
@@ -177,6 +204,13 @@ describe("progressionMidiExport", () => {
       const midi = await parseBlob(blob);
       expect(midi.tracks[0].instrument.number).toBe(5);
       expect(midi.tracks[1].instrument.number).toBe(5);
+    });
+
+    it("gives the melody track its own resolved program when a separate melody voice is chosen", async () => {
+      const blob = compositionToMidi(CHORDS, MELODY, BPM, { instrumentProgram: 0, melodyProgram: 46 });
+      const midi = await parseBlob(blob);
+      expect(midi.tracks[0].instrument.number).toBe(0);
+      expect(midi.tracks[1].instrument.number).toBe(46);
     });
 
     it("uses chordVelocity x melodyLevel x melodyDynamics for melody notes", async () => {

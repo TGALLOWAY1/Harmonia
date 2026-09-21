@@ -42,12 +42,15 @@ function durationToBeats(dc: DurationClass | undefined): number {
  * Acoustic Grand Piano (0) — extend this as new instruments are added to
  * `instrumentCatalog.ts`.
  */
-const GM_PROGRAM_BY_INSTRUMENT: Partial<Record<SoundPresetId, number>> = {
+export const GM_PROGRAM_BY_INSTRUMENT: Partial<Record<SoundPresetId, number>> = {
   "piano": 0,
   "electric-piano": 4,
   "soft-keys": 5,
   "filtered-saw": 90,
   "organ": 16,
+  "warm-strings": 48, // String Ensemble 1
+  "vibraphone": 11, // Vibraphone
+  "pluck": 46, // Orchestral Harp
 };
 
 /** Resolve the GM program number for an instrument id, defaulting to 0. */
@@ -171,6 +174,14 @@ export function progressionToMidi(
 export interface MelodyMidiOptions {
   /** GM program number (0–127). Defaults to the live instrument setting, or 0. */
   instrumentProgram?: number;
+  /**
+   * GM program number (0–127) for the melody's own voice, when it differs
+   * from the chord instrument (a separate melody voice was chosen, not
+   * "follow chords"). Resolved by the caller from
+   * `resolveMelodyInstrument(instrumentId, melodyInstrumentId)`. Defaults to
+   * `instrumentProgram` — i.e. the chord program — when omitted.
+   */
+  melodyProgram?: number;
   /** Base chord velocity (0–1), the melody's own dynamics multiply over it. Defaults to the live playback settings, or 0.7. */
   chordVelocity?: number;
   /** Melody-above-chords level. Defaults to the live playback settings, or 1.15. */
@@ -219,7 +230,7 @@ export function melodyToMidi(notes: MelodyNote[], bpm: number, opts: MelodyMidiO
 
   const track = midi.addTrack();
   track.name = "Harmonia Melody";
-  track.instrument.number = resolveInstrumentProgram(opts.instrumentProgram);
+  track.instrument.number = opts.melodyProgram ?? resolveInstrumentProgram(opts.instrumentProgram);
 
   writeMelodyTrack(
     track,
@@ -235,8 +246,15 @@ export function melodyToMidi(notes: MelodyNote[], bpm: number, opts: MelodyMidiO
 }
 
 export interface CompositionMidiOptions {
-  /** GM program number (0–127), applied to both tracks. Defaults to the live instrument setting, or 0. */
+  /** GM program number (0–127), applied to the chord track (and the melody track, absent `melodyProgram`). Defaults to the live instrument setting, or 0. */
   instrumentProgram?: number;
+  /**
+   * GM program number (0–127) for the melody track, when a separate melody
+   * voice is chosen (not "follow chords"). Resolved by the caller from
+   * `resolveMelodyInstrument(instrumentId, melodyInstrumentId)`. Defaults to
+   * `instrumentProgram` — i.e. the chord program — when omitted.
+   */
+  melodyProgram?: number;
   /** Base chord velocity (0–1). Defaults to the live playback settings, or 0.7. */
   chordVelocity?: number;
   /** Melody-above-chords level. Defaults to the live playback settings, or 1.15. */
@@ -245,8 +263,9 @@ export interface CompositionMidiOptions {
 
 /**
  * Export a full composition — chords and melody together — as a single MIDI
- * file with two named tracks ("Chords", "Melody") sharing one tempo and GM
- * program, so a DAW opens both parts already in sync.
+ * file with two named tracks ("Chords", "Melody") sharing one tempo, so a DAW
+ * opens both parts already in sync. The melody track plays its own resolved
+ * instrument when one was chosen, and the chord program otherwise.
  */
 export function compositionToMidi(
   chords: ProgressionChord[],
@@ -261,6 +280,7 @@ export function compositionToMidi(
   const chordVelocity = resolveChordVelocity(opts.chordVelocity);
   const melodyLevel = resolveMelodyLevel(opts.melodyLevel);
   const program = resolveInstrumentProgram(opts.instrumentProgram);
+  const melodyProgram = opts.melodyProgram ?? program;
 
   const chordTrack = midi.addTrack();
   chordTrack.name = "Chords";
@@ -269,7 +289,7 @@ export function compositionToMidi(
 
   const melodyTrack = midi.addTrack();
   melodyTrack.name = "Melody";
-  melodyTrack.instrument.number = program;
+  melodyTrack.instrument.number = melodyProgram;
   writeMelodyTrack(melodyTrack, melody.notes, bpm, chordVelocity, melodyLevel, melody.phrases);
 
   const bytes = midi.toArray();

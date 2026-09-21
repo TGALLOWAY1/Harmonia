@@ -30,9 +30,14 @@ import { useFavoritesStore } from "@/lib/favorites/favoritesStore";
 import {
   SOUND_PRESETS,
   presetHasHighQuality,
+  resolveMelodyInstrument,
+  FOLLOW_CHORDS,
   type AudioQuality,
   type SoundPresetId,
+  type InstrumentCategory,
+  type MelodyInstrumentId,
 } from "@/lib/audio/instrumentCatalog";
+import { SPACE_LIST } from "@/lib/audio/audioSpace";
 import type { Synth, MelodySynth } from "@/lib/audio/synthPresets";
 import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
@@ -160,6 +165,36 @@ const MELODY_MOODS: { value: MelodyMood; label: string }[] = [
   { value: "energetic", label: "Energetic" },
 ];
 
+const INSTRUMENT_CATEGORIES: { value: InstrumentCategory; label: string }[] = [
+  { value: "keys", label: "Keys" },
+  { value: "synth", label: "Synths" },
+  { value: "strings", label: "Strings" },
+  { value: "mallet", label: "Mallets" },
+  { value: "plucked", label: "Plucked" },
+];
+
+/**
+ * Grouped `<optgroup>`s over the instrument catalog, shared by the chord and
+ * melody voice pickers so the two menus always agree.
+ */
+function InstrumentOptions() {
+  return (
+    <>
+      {INSTRUMENT_CATEGORIES.map((category) => {
+        const entries = SOUND_PRESETS.filter((p) => p.category === category.value);
+        if (entries.length === 0) return null;
+        return (
+          <optgroup key={category.value} label={category.label}>
+            {entries.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
+
 /* ─── Component ─── */
 
 export default function HarmoniaPage() {
@@ -239,8 +274,14 @@ export default function HarmoniaPage() {
   const {
     instrumentId: soundPreset,
     quality: audioQuality,
+    melodyInstrumentId,
+    masterVolume,
+    space,
     setInstrument: setSoundPreset,
     setQuality: setAudioQuality,
+    setMelodyInstrument,
+    setMasterVolume,
+    setSpace,
   } = useAudioSettingsStore();
 
   const [playbackIndex, setPlaybackIndex] = useState<number | null>(null);
@@ -281,9 +322,9 @@ export default function HarmoniaPage() {
     retry: retrySynthLoad,
   } = useInstrument(soundPreset, { quality: audioQuality, sustainMode, synthRef });
 
-  /* ─── Melody synth lifecycle (same instrument & quality, melody voice) ─── */
+  /* ─── Melody synth lifecycle (its own voice, or follows the chords) ─── */
 
-  useInstrument(soundPreset, {
+  useInstrument(resolveMelodyInstrument(soundPreset, melodyInstrumentId), {
     quality: audioQuality,
     role: "melody",
     enabled: melodyEnabled,
@@ -1302,6 +1343,25 @@ export default function HarmoniaPage() {
                     <span className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted">
                       Sound
                     </span>
+
+                    {/* Master volume */}
+                    <div className="px-3 pb-1.5 pt-0.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-xs font-medium text-foreground">
+                        <span>Master volume</span>
+                        <span className="text-muted tabular-nums">{Math.round(masterVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={masterVolume}
+                        onChange={(e) => setMasterVolume(Number(e.target.value))}
+                        className="w-full accent-accent cursor-pointer"
+                        aria-label="Master volume"
+                      />
+                    </div>
+
                     <div className="px-3 pb-1.5 pt-0.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
@@ -1324,16 +1384,26 @@ export default function HarmoniaPage() {
                             className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
                             title="Instrument preset"
                           >
-                            <optgroup label="Keys">
-                              {SOUND_PRESETS.filter((p) => p.category === "keys").map((preset) => (
-                                <option key={preset.id} value={preset.id}>{preset.label}</option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="Synths">
-                              {SOUND_PRESETS.filter((p) => p.category === "synth").map((preset) => (
-                                <option key={preset.id} value={preset.id}>{preset.label}</option>
-                              ))}
-                            </optgroup>
+                            <InstrumentOptions />
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Melody voice — a lead voice of its own, or follow the chords */}
+                    <div className="px-3 pb-1.5 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">Melody voice</span>
+                        <div className="relative">
+                          <select
+                            value={melodyInstrumentId}
+                            onChange={(e) => setMelodyInstrument(e.target.value as MelodyInstrumentId)}
+                            className="appearance-none bg-background/60 border border-border-subtle rounded-lg pl-3 pr-7 py-1.5 text-sm font-medium text-foreground outline-none cursor-pointer hover:border-accent/40 transition-colors"
+                            title="Melody voice — the instrument the melody lane plays"
+                          >
+                            <option value={FOLLOW_CHORDS}>Follow chords</option>
+                            <InstrumentOptions />
                           </select>
                           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
                         </div>
@@ -1372,6 +1442,27 @@ export default function HarmoniaPage() {
                             : "This instrument is synth-based; it sounds the same in both modes."
                           : "Instant synth sound. No downloads — ideal for slow connections."}
                       </p>
+                    </div>
+
+                    {/* Space */}
+                    <div className="px-3 pb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-foreground">Space</span>
+                      <div className="flex items-center rounded-lg bg-background/60 border border-border-subtle p-0.5">
+                        {SPACE_LIST.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setSpace(s.id)}
+                            title={s.description}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                              space === s.id
+                                ? "bg-accent text-white shadow-sm"
+                                : "text-muted hover:text-foreground"
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="my-1 h-px bg-border-subtle" />

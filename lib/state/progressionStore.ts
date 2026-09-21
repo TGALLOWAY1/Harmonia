@@ -2,7 +2,14 @@ import { create } from "zustand";
 import type { Progression, Chord } from "../theory/progressionTypes";
 import type { Mode } from "../theory/harmonyEngine";
 import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
-import { progressionToMidi, melodyToMidi, compositionToMidi, type ProgressionChord } from "../progressionMidiExport";
+import {
+    progressionToMidi,
+    melodyToMidi,
+    compositionToMidi,
+    gmProgramForInstrument,
+    type ProgressionChord,
+} from "../progressionMidiExport";
+import { useAudioSettingsStore, resolveMelodyInstrument } from "./audioSettingsStore";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { ChordMood } from "../music/generators/advanced/chordMoods";
 import type {
@@ -470,7 +477,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         const { melody, bpm, rootKey, mode } = get();
         if (!melody || melody.notes.length === 0) return;
 
-        const blob = melodyToMidi(melody.notes, bpm, { phrases: melody.phrases });
+        const { instrumentId, melodyInstrumentId } = useAudioSettingsStore.getState();
+        const melodyProgram = gmProgramForInstrument(resolveMelodyInstrument(instrumentId, melodyInstrumentId));
+
+        const blob = melodyToMidi(melody.notes, bpm, { phrases: melody.phrases, melodyProgram });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -484,8 +494,10 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         if (!currentProgression || !melody || melody.notes.length === 0) return;
 
         const midiChords = chordsForMidiExport(currentProgression, chordTensionCurve);
+        const { instrumentId, melodyInstrumentId } = useAudioSettingsStore.getState();
+        const melodyProgram = gmProgramForInstrument(resolveMelodyInstrument(instrumentId, melodyInstrumentId));
 
-        const blob = compositionToMidi(midiChords, melody, bpm);
+        const blob = compositionToMidi(midiChords, melody, bpm, { melodyProgram });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
