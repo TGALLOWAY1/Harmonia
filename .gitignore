@@ -39,3 +39,6 @@ next-env.d.ts
 
 
 /lib/generated/prisma
+
+# agent worktrees
+.claude/worktrees/
