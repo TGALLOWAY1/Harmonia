@@ -39,6 +39,12 @@ export type MoodProfile = {
   nctDensity: number;
   /** Which non-chord-tone devices this mood may use. */
   nctPalette: OrnamentKind[];
+  /** 0–1: how often a chord change is approached by a planned step figure. */
+  approachRate: number;
+  /** Share of those approaches that are chromatic (the semitone into the target). */
+  chromaticApproachShare: number;
+  /** Share of those approaches that enclose the target from both sides. */
+  enclosureShare: number;
   /** Multiplier applied to the phrase tension curve. */
   tensionScale: number;
   /** 0–1: preference for sustained notes in intros and phrase endings. */
@@ -58,6 +64,9 @@ export const MOOD_PROFILES: Record<MelodyMood, MoodProfile> = {
     leapChance: 0.15,
     nctDensity: 0.5,
     nctPalette: ["passing", "neighbor", "suspension"],
+    approachRate: 0.5,
+    chromaticApproachShare: 0.45,
+    enclosureShare: 0.15,
     tensionScale: 1.2,
     longNoteBias: 0.6,
   },
@@ -73,6 +82,9 @@ export const MOOD_PROFILES: Record<MelodyMood, MoodProfile> = {
     leapChance: 0.25,
     nctDensity: 0.6,
     nctPalette: ["passing", "neighbor", "suspension", "anticipation", "appoggiatura"],
+    approachRate: 0.5,
+    chromaticApproachShare: 0.4,
+    enclosureShare: 0.2,
     tensionScale: 1.0,
     longNoteBias: 0.5,
   },
@@ -88,6 +100,9 @@ export const MOOD_PROFILES: Record<MelodyMood, MoodProfile> = {
     leapChance: 0.35,
     nctDensity: 0.4,
     nctPalette: ["suspension", "anticipation", "neighbor"],
+    approachRate: 0.4,
+    chromaticApproachShare: 0.12,
+    enclosureShare: 0.12,
     tensionScale: 0.7,
     longNoteBias: 0.8,
   },
@@ -103,6 +118,9 @@ export const MOOD_PROFILES: Record<MelodyMood, MoodProfile> = {
     leapChance: 0.4,
     nctDensity: 0.3,
     nctPalette: ["passing", "neighbor", "anticipation"],
+    approachRate: 0.45,
+    chromaticApproachShare: 0.25,
+    enclosureShare: 0.2,
     tensionScale: 1.1,
     longNoteBias: 0.2,
   },
@@ -125,18 +143,25 @@ export function applyStyleToMood(profile: MoodProfile, style: MelodyStyle): Mood
         ...profile,
         rhythmDensity: clamp01(profile.rhythmDensity - 0.1),
         nctDensity: clamp01(profile.nctDensity + 0.1),
+        // A sung line approaches a change, but modestly: it is carried by the
+        // words, not by the changes.
+        approachRate: clamp01(profile.approachRate * 0.85),
       };
     case "rhythmic":
       return {
         ...profile,
         rhythmDensity: clamp01(profile.rhythmDensity + 0.2),
         syncopationChance: clamp01(profile.syncopationChance + 0.15),
+        approachRate: clamp01(profile.approachRate * 1.2),
       };
     case "arpeggiated":
       return {
         ...profile,
         leapChance: clamp01(profile.leapChance + 0.2),
         nctDensity: clamp01(profile.nctDensity - 0.2),
+        // Running the chord tones, the line has somewhere to put an approach
+        // on the way into each new chord.
+        approachRate: clamp01(profile.approachRate * 1.2),
       };
   }
 }

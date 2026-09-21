@@ -17,7 +17,13 @@ import { motifRepetitionCoverage, scoreMelody } from "../lib/music/generators/me
 import { buildPhrasePlan } from "../lib/music/generators/melody/phrasePlan";
 import { MOOD_PROFILES } from "../lib/music/generators/melody/moods";
 import { createRng } from "../lib/music/generators/melody/rng";
-import { isStrongBeat, isChordTone } from "../lib/music/generators/melody/helpers";
+import { durationClassToBeats, isStrongBeat, isChordTone } from "../lib/music/generators/melody/helpers";
+import { buildHarmonicContext } from "../lib/music/generators/melody/harmonicContext";
+import {
+  chordStartBeatsOf,
+  countSurprises,
+  observeApproaches,
+} from "../lib/music/generators/melody/approach";
 import type {
   Melody,
   MelodyGenerationOptions,
@@ -92,15 +98,36 @@ type Stats = {
   leapsOver7: number;
 };
 
+/**
+ * Counts pooled across melodies rather than averaged per melody: rates over
+ * chord changes, phrases and intervals only mean something on the whole
+ * sample.
+ */
+type Counts = {
+  changes: number;
+  approachDiatonic: number;
+  approachChromatic: number;
+  approachEnclosure: number;
+  phrases: number;
+  surprises: number;
+  phrasesOverBudget: number;
+  intervals: number;
+  intervalSum: number;
+  unisons: number;
+  steps: number;
+  thirds: number;
+  fourthPlus: number;
+  sixthPlus: number;
+};
+
+const ZERO_COUNTS: Counts = {
+  changes: 0, approachDiatonic: 0, approachChromatic: 0, approachEnclosure: 0,
+  phrases: 0, surprises: 0, phrasesOverBudget: 0,
+  intervals: 0, intervalSum: 0, unisons: 0, steps: 0, thirds: 0, fourthPlus: 0, sixthPlus: 0,
+};
+
 function totalBeats(chords: MelodyGenerationOptions["chords"]): number {
-  return chords.reduce((s, c) => {
-    switch (c.durationClass) {
-      case "half": return s + 2;
-      case "quarter": return s + 1;
-      case "eighth": return s + 0.5;
-      default: return s + 4;
-    }
-  }, 0);
+  return chords.reduce((s, c) => s + durationClassToBeats(c.durationClass), 0);
 }
 
 function analyze(
@@ -144,6 +171,51 @@ function analyze(
   };
 }
 
+/**
+ * Approach figures at chord changes, surprises per phrase and the interval
+ * distribution — the three things the second research round left open.
+ * The legacy engine composes no phrases, so its surprises are counted against
+ * the phrase plan the scorer builds for it.
+ */
+function count(
+  melody: Melody,
+  scale: PitchClass[],
+  chords: MelodyGenerationOptions["chords"],
+  mood: MelodyMood,
+): Counts {
+  const notes = melody.notes;
+  const hc = buildHarmonicContext(chords, scale);
+  const starts = chordStartBeatsOf(chords.map((c) => durationClassToBeats(c.durationClass)));
+  const phrases =
+    melody.phrases ?? buildPhrasePlan(chords, MOOD_PROFILES[mood], createRng(0)).phrases;
+
+  const out: Counts = { ...ZERO_COUNTS };
+
+  for (const observation of observeApproaches(notes, hc, starts)) {
+    out.changes++;
+    if (observation.kind === "diatonic") out.approachDiatonic++;
+    else if (observation.kind === "chromatic") out.approachChromatic++;
+    else if (observation.kind === "enclosure") out.approachEnclosure++;
+  }
+
+  const surprises = countSurprises(notes, hc, starts, phrases);
+  out.phrases += surprises.perPhrase.length;
+  out.surprises += surprises.total;
+  out.phrasesOverBudget += surprises.overBudget;
+
+  for (let i = 1; i < notes.length; i++) {
+    const iv = Math.abs(notes[i].midi - notes[i - 1].midi);
+    out.intervals++;
+    out.intervalSum += iv;
+    if (iv === 0) out.unisons++;
+    else if (iv <= 2) out.steps++;
+    else if (iv <= 4) out.thirds++;
+    if (iv >= 5) out.fourthPlus++;
+    if (iv >= 8) out.sixthPlus++;
+  }
+  return out;
+}
+
 function mean(values: number[]): number {
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
@@ -153,6 +225,18 @@ function aggregate(all: Stats[]): Record<keyof Stats, number> {
   const out = {} as Record<keyof Stats, number>;
   for (const k of keys) out[k] = mean(all.map((s) => s[k]));
   return out;
+}
+
+function pool(all: Counts[]): Counts {
+  const out: Counts = { ...ZERO_COUNTS };
+  for (const c of all) {
+    for (const k of Object.keys(out) as (keyof Counts)[]) out[k] += c[k];
+  }
+  return out;
+}
+
+function pct(numerator: number, denominator: number): string {
+  return denominator === 0 ? "—" : `${((numerator / denominator) * 100).toFixed(1)}%`;
 }
 
 function fmt(v: number, digits = 2): string {
@@ -173,6 +257,7 @@ function main() {
   console.log("Non-chord tones are marked with `*` in notated examples.\n");
 
   const legacyStats: Stats[] = [];
+  const legacyCounts: Counts[] = [];
   for (const prog of PROGRESSIONS) {
     for (const seed of SEEDS) {
       const melody = generateMelodyLegacy({
@@ -183,14 +268,20 @@ function main() {
         seed,
       });
       legacyStats.push(analyze(melody, prog.chords, "emotional"));
+      legacyCounts.push(count(melody, prog.scale, prog.chords, "emotional"));
     }
   }
 
   const newStatsByMood = new Map<MelodyMood, Stats[]>();
+  const newCountsByMood = new Map<MelodyMood, Counts[]>();
+  let elapsedMs = 0;
+  let generated = 0;
   for (const mood of MOODS) {
     const list: Stats[] = [];
+    const counts: Counts[] = [];
     for (const prog of PROGRESSIONS) {
       for (const seed of SEEDS) {
+        const started = performance.now();
         const melody = generateMelody({
           scalePitchClasses: prog.scale,
           chords: prog.chords,
@@ -199,10 +290,14 @@ function main() {
           octave: 5,
           seed,
         });
+        elapsedMs += performance.now() - started;
+        generated++;
         list.push(analyze(melody, prog.chords, mood));
+        counts.push(count(melody, prog.scale, prog.chords, mood));
       }
     }
     newStatsByMood.set(mood, list);
+    newCountsByMood.set(mood, counts);
   }
 
   const rows: [string, Record<keyof Stats, number>][] = [
@@ -221,6 +316,40 @@ function main() {
       `| ${name} | ${fmt(a.score, 1)} | ${fmt(a.motifCoverage)} | ${fmt(a.meanInterval)} | ${fmt(a.directionChangeRate)} | ${fmt(a.strongBeatChordTonePct, 0)} | ${fmt(a.finalNoteBeats, 1)} | ${fmt(a.finalOnChordTone * 100, 0)}% | ${fmt(a.distinctDurations, 1)} | ${fmt(a.notesPerBeat)} | ${fmt(a.leapsOver7, 2)} |`,
     );
   }
+
+  /* ── Approach patterns, surprise budget, interval distribution ── */
+
+  const countRows: [string, Counts][] = [
+    ["legacy (lyrical)", pool(legacyCounts)],
+    ...MOODS.map((m): [string, Counts] => [`new (${m})`, pool(newCountsByMood.get(m)!)]),
+    ["new (all moods)", pool(MOODS.flatMap((m) => newCountsByMood.get(m)!))],
+  ];
+
+  console.log("\n## Approach patterns at chord changes\n");
+  console.log("Denominator: chord changes where a note ends exactly on the change, inside");
+  console.log("the beat before it, and the new chord starts with an onset of its own.\n");
+  console.log("| Engine | Approachable changes | Any approach | Diatonic | Chromatic | Enclosure |");
+  console.log("|---|---|---|---|---|---|");
+  for (const [name, c] of countRows) {
+    const any = c.approachDiatonic + c.approachChromatic + c.approachEnclosure;
+    console.log(
+      `| ${name} | ${c.changes} | ${pct(any, c.changes)} | ${pct(c.approachDiatonic, c.changes)} | ${pct(c.approachChromatic, c.changes)} | ${pct(c.approachEnclosure, c.changes)} |`,
+    );
+  }
+
+  console.log("\n## Surprise budget and interval distribution\n");
+  console.log("A surprise is an interval of a sixth or more, or a chromatic tone that does");
+  console.log("not resolve by semitone. Corpus column: Essen Folksong Collection.\n");
+  console.log("| Engine | Surprises/phrase | Phrases over budget | Mean interval | Unisons | Steps | Thirds | ≥ 4th | ≥ 6th |");
+  console.log("|---|---|---|---|---|---|---|---|---|");
+  for (const [name, c] of countRows) {
+    console.log(
+      `| ${name} | ${fmt(c.phrases ? c.surprises / c.phrases : 0)} | ${pct(c.phrasesOverBudget, c.phrases)} | ${fmt(c.intervals ? c.intervalSum / c.intervals : 0)} | ${pct(c.unisons, c.intervals)} | ${pct(c.steps, c.intervals)} | ${pct(c.thirds, c.intervals)} | ${pct(c.fourthPlus, c.intervals)} | ${pct(c.sixthPlus, c.intervals)} |`,
+    );
+  }
+  console.log("| *corpus (Essen)* | — | — | 2.15 | 22.0% | 49.0% | 17.0% | 12.0% | 2.5% |");
+
+  console.log(`\nGeneration: ${fmt(elapsedMs / generated, 2)} ms per melody (${generated} melodies, 8 candidates each).`);
 
   console.log("\n## Before/after examples (C major I–vi–IV–V, lyrical)\n");
   const prog = PROGRESSIONS[0];
@@ -242,6 +371,26 @@ function main() {
       scalePitchClasses: prog.scale, chords: prog.chords, style: "lyrical", mood, octave: 5, seed: 5,
     });
     console.log(`- ${mood}: ${notate(m)}`);
+  }
+
+  console.log("\n## Approach figures by style (emotional, all progressions)\n");
+  console.log("| Style | Approachable changes | Any approach | Diatonic | Chromatic | Enclosure |");
+  console.log("|---|---|---|---|---|---|");
+  for (const style of ["lyrical", "rhythmic", "arpeggiated"] as const) {
+    const counts: Counts[] = [];
+    for (const p of PROGRESSIONS) {
+      for (const seed of SEEDS) {
+        const m = generateMelody({
+          scalePitchClasses: p.scale, chords: p.chords, style, mood: "emotional", octave: 5, seed,
+        });
+        counts.push(count(m, p.scale, p.chords, "emotional"));
+      }
+    }
+    const c = pool(counts);
+    const any = c.approachDiatonic + c.approachChromatic + c.approachEnclosure;
+    console.log(
+      `| ${style} | ${c.changes} | ${pct(any, c.changes)} | ${pct(c.approachDiatonic, c.changes)} | ${pct(c.approachChromatic, c.changes)} | ${pct(c.approachEnclosure, c.changes)} |`,
+    );
   }
 }
 
