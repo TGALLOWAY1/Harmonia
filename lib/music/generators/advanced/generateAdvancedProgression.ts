@@ -43,6 +43,7 @@ import {
   insertSuspensions,
   validateChromaticDensity,
 } from "./substitutions";
+import { chordIdentities, tendencyPenalty } from "./tendencyTones";
 import { tensionCurveFor } from "./tensionCurve";
 import type {
   AdvancedProgressionOptions,
@@ -426,6 +427,20 @@ const BEAM_WIDTH = 4;
 const MAX_CANDIDATES_PER_CHORD = 16;
 /** Seeded jitter ceiling, matching the greedy path's tie band. */
 const JITTER = 0.5;
+/**
+ * How much an unresolved tendency tone costs the search.
+ *
+ * `tendencyTones.ts` returns a penalty on a unit scale — 1.0 for a chordal
+ * seventh left hanging, 1.6 for a leading tone stranded in the soprano. This
+ * is the factor that puts it on the same scale as `calculateVoiceLeadingCost`,
+ * where one extra semitone of motion in one voice is worth about 0.25 and two
+ * voicings within `COST_TIE_BAND` (0.5) count as equally good. At 2.0 a single
+ * unresolved seventh costs about as much as four extra semitones of voice
+ * motion spread across the chord: enough to win every time the alternatives
+ * are close, not enough to force a badly spaced or out-of-register voicing.
+ * Calibrated by sweep; see §1a of CHORD_PROGRESSION_ASSESSMENT.md.
+ */
+const TENDENCY_WEIGHT = 2.0;
 
 /**
  * Turn a finished chord plan into voiced MIDI: connect per-chord voicing
@@ -533,6 +548,16 @@ function voicePlannedChords(
   const registerTargetFor = (chord: PlannedAdvancedChord): number =>
     Math.max(low + 6, Math.min(high - 6, center + ((chord.tensionLevel ?? 0.5) - 0.4) * 6));
 
+  // What each chord *is*, so the transition cost can tell a leading tone from
+  // any other note. Built once per progression and handed to the search.
+  const identities = chordIdentities(planned);
+  // Major pentatonic has no leading tone and no functional dominant, and its
+  // sevenths are scale tones of sus chords rather than dissonances that owe a
+  // resolution — so the tendency rules have nothing to say there and the
+  // pentatonic path is left exactly as it was.
+  const tendencyWeight =
+    options.mode === "major_pentatonic" ? 0 : Math.max(0, options.tendencyWeight ?? TENDENCY_WEIGHT);
+
   const jitters = new Map<string, number>();
   const jitterFor = (index: number, voicing: number[]): number => {
     const key = `${index}:${voicing.join(",")}`;
@@ -599,6 +624,10 @@ function voicePlannedChords(
           preferredBassPitchClass:
             chord.plannedBass !== undefined ? PITCH_CLASSES.indexOf(chord.plannedBass) : undefined,
           rng: voicingRng,
+          tendency:
+            tendencyWeight > 0 && index > 0
+              ? { weight: tendencyWeight, from: identities[index - 1], to: identities[index] }
+              : undefined,
         }
       );
       chosen.push(selection.voicing);
@@ -608,14 +637,42 @@ function voicePlannedChords(
   } else {
     const searched = searchVoicings({
       candidates: candidatesPerChord,
+      identities,
       emission,
-      transition: (previous, next) => calculateVoiceLeadingCost(previous, next),
+      transition: (previous, next, _index, context) =>
+        calculateVoiceLeadingCost(previous, next) +
+        (tendencyWeight > 0 ? tendencyWeight * tendencyPenalty(previous, next, context) : 0),
       dependentCandidates,
       beamWidth: BEAM_WIDTH,
       maxCandidates: MAX_CANDIDATES_PER_CHORD,
     });
     chosen = searched.voicings;
     costs = searched.costs;
+  }
+
+  // Report the geometric voice-leading cost only.
+  //
+  // The whole-progression rubric reads these numbers to compare eight *chord
+  // plans*, and a chord that owes a resolution can owe one no voicing is able
+  // to take — the leading tone of a `V7` running into a root-position `Imaj7`
+  // at four voices has nowhere to go, because the only C in the chord is the
+  // bass. Leaving the tendency term in the reported costs therefore charges
+  // the plan for containing a dominant at all. Measured over 400 seeds at the
+  // defaults: with the term left in, the share of generations carrying a
+  // dominant falls from 47.8% to 37.0%; taking it out recovers 39.5%. The term
+  // belongs to the voicing search, which is where it stays.
+  if (tendencyWeight > 0) {
+    costs = costs.map((cost, index) => {
+      if (index === 0) return cost;
+      const previous = chosen[index - 1];
+      const current = chosen[index];
+      if (!previous || !current) return cost;
+      const penalty = tendencyPenalty(previous, current, {
+        from: identities[index - 1],
+        to: identities[index],
+      });
+      return cost - tendencyWeight * penalty;
+    });
   }
 
   const voiced = [] as AdvancedProgressionResult["chords"];

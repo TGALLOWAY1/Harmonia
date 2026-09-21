@@ -82,7 +82,78 @@ Three design decisions are worth recording. First, the borrowed chord is deliber
 
 Covered by 5 new module test files (70 tests), 18 further generator-level regressions in `progressionQuality.test.ts`, and a store test that keeps `bass`/`inversion` in step with note edits.
 
-Still open: the voice-leading cost function still cannot see chord identity, so tendency-tone resolution (the leading tone rising, the seventh falling) is enforced for the *bass* by the planner but not for inner voices (§4.2 and the Lerdahl/Tymoczko work in §5.1). The corpus-fitted 12-feature weight vector is adopted only for its roughness term; the remaining weights stay hand-tuned. The pentatonic path takes the tension shapes and the bass plan but, by design, no borrowed harmony.
+### Tendency tones in the upper voices — 2026-09-21
+
+The open item above (§4.2, and the Harrison & Pearce voice-leading model in §5.1). The Viterbi transition cost took two bare MIDI arrays, so a leading tone or a chordal seventh in an inner voice went wherever smoothness sent it; the bass-line planner enforced "a seventh in the bass resolves down by step" and nothing enforced the same rule one voice higher. `advanced/tendencyTones.ts` now derives a **chord identity** per slot — root, harmonic function, dominant flag, pitch classes, the chordal seventh, and the chord it is *expected* to resolve to — and `searchVoicings` carries those identities into the transition cost. Four soft rules, each gated on the resolution actually being available in the next chord:
+
+1. **The leading tone rises** a semitone in V, V7, vii°, an applied dominant, a tritone substitution or the raised seventh of a minor key. The classical licence survives: in an inner voice of a complete dominant seventh it may fall to the fifth of the tonic instead.
+2. **The chordal seventh falls** a semitone or a whole tone to a tone of the next chord — or is simply held, which is no failure at all when the next chord contains it.
+3. **The dominant tritone resolves in contrary motion.** In a tritone substitution the same two pitch classes do the same thing with the roles swapped: the spelled seventh is the tone that rises and the spelled third is the one that falls.
+4. **A suspension falls** by step to its resolution.
+
+Measured over 400 seeds per configuration at the store's own presets (four chords, mood *emotional*, `phrase` tension, `auto` brightness and voicing, four voices, C3–G5), before → after.
+
+| Configuration | Leading tone rises (of those voiceable) | Chordal seventh falls or is held | Suspension falls | Dominant tritone contrary |
+|---|---|---|---|---|
+| C ionian cx1 | 100.0% → **100.0%** | 96.7% → **100.0%** | — | 50.0% → **100.0%** |
+| C ionian cx2 | 100.0% → **100.0%** | 59.8% → **77.4%** | — | 100.0% → 100.0% |
+| C ionian cx3 | 60.0% → **100.0%** | 65.2% → **72.5%** | 72.9% → **91.3%** | 100.0% → 100.0% |
+| C ionian cx4 | 90.0% → **100.0%** | 64.3% → **72.5%** | 70.3% → **78.8%** | 100.0% → 100.0% |
+| A aeolian cx2 | 100.0% → 100.0% | 83.1% → **88.5%** | — | 100.0% → 100.0% |
+| A aeolian cx3 | 100.0% → 100.0% | 75.5% → **78.8%** | 83.6% → **85.0%** | 50.0% → **80.0%** |
+| D dorian cx2 | 29.7% → **100.0%** | 69.7% → **78.9%** | — | 94.7% → **100.0%** |
+| G mixolydian cx2 | 100.0% → 100.0% | 75.2% → **78.7%** | — | 100.0% → 100.0% |
+
+And what it cost:
+
+| Configuration | Mean voice-leading cost | Mean semitones moved per chord change | Chord changes with a leap > P5 | Distinct progressions per 400 seeds | ms per generation |
+|---|---|---|---|---|---|
+| C ionian cx1 | 0.62 → 0.62 | 8.45 → 8.43 | 0.0% → 0.0% | 36 → 38 | 6.7 → 6.6 |
+| C ionian cx2 | 1.37 → 1.45 | 8.52 → **7.98** | 0.2% → 0.3% | 81 → 70 | 6.9 → 7.1 |
+| C ionian cx3 | 1.86 → 1.87 | 8.62 → **8.30** | 0.9% → 0.7% | 261 → 263 | 7.1 → 6.8 |
+| C ionian cx4 | 1.76 → 1.75 | 8.43 → **8.12** | 2.6% → 2.4% | 289 → 283 | 6.9 → 5.8 |
+| A aeolian cx2 | 0.75 → 0.88 | 7.86 → 8.12 | 0.9% → 0.8% | 67 → 65 | 6.9 → 6.7 |
+| A aeolian cx3 | 1.44 → 1.51 | 8.95 → 8.94 | 4.2% → 4.3% | 245 → 239 | 6.7 → 7.0 |
+| D dorian cx2 | 1.08 → 1.08 | 8.03 → 8.10 | 0.1% → 0.2% | 76 → 87 | 6.4 → 7.2 |
+| G mixolydian cx2 | 0.83 → 0.85 | 7.60 → 7.73 | 0.0% → 0.3% | 80 → 81 | 7.0 → 7.2 |
+
+The headline is the second column of the first table and the third of the second: sevenths discharge far more often, and **total voice motion per chord change went down, not up** — resolving a seventh by step is usually the smoothest thing that voice could have done, it simply was not what the geometry happened to pick.
+
+The term is charged at **weight 2.0** against a unit penalty (1.0 for a stranded seventh, 1.6 for a leading tone left hanging in the top voice, 0.25 for one the chord of resolution absorbs, 0.15 for the classical frustrated one, 1.2 for a suspension, 0.6 for a half-resolved tritone). The weight was swept from 0 to 30, with 0, 1.5, 2 and 3 re-measured at 400 seeds across all eight configurations:
+
+- **from 1.5 upward** every voiceable leading tone is taken, in every configuration — that part saturates early;
+- **1.5 → 2** is free: at C ionian cx2 the mean cost moves 1.44 → 1.45, leaps over a fifth 0.2% → 0.3%, motion 7.99 → 7.98, while suspensions at cx3 go 82.6% → **91.3%**;
+- **2 → 3** is where the price appears: four more points of seventh resolution (77.4% → 81.4%) for mean cost 1.45 → 1.56, motion 7.98 → 8.11 and leaps over a fifth 0.3% → **1.2%**, a fourfold rise.
+
+Two is the knee. For scale, `COST_TIE_BAND` is 0.5 and one extra semitone in one voice is worth about 0.25, so an unresolved seventh costs roughly four extra semitones of motion spread across the chord: decisive when the alternatives are close, overridable when they are not.
+
+Three findings worth recording. First — and this is the real ceiling — **the voicing vocabulary, not the search, is what limits the leading tone**. At four voices a seventh chord is voiced as one of each tone, so a root-position `Imaj7` has its only C in the bass and no upper voice can rise into it; in A aeolian just 11.5% of the owed leading tones are voiceable at all, which is why that row moves in the seventh column and not the first. Where a rise is voiceable the search now takes it every time, including on deceptive motion. Second, a leading tone the chord of resolution owns in its own right — `V7` into `Imaj7`, where the leading tone *is* the major seventh — is not a failure; charging it as one is both unmusical and unwinnable, so it carries a 0.25 nudge rather than the full cost, and the joint tritone charge is waived. Third, the term is kept **out of the reported `voiceLeadingCosts`**: the whole-progression rubric reads those numbers to compare eight chord *plans*, and a plan that contains a dominant can owe a resolution no voicing is able to take, so leaving the term in charged the plan for containing a dominant at all — measured, the share of default generations carrying a dominant fell from 47.8% to 37.0%, against 39.5% with the term confined to the voicing search where it belongs. (Some of that remaining 8-point drop is the rubric's tie band redistributing: the dominant-bearing draws' mean score rose from 7.106 to 7.122 while the dominant-free ones rose further, from 7.033 to 7.106, so they win more ties. The field got better; the ranking tightened.)
+
+A caveat on denominators. The tritone column counts only dominant sevenths whose leading tone the chord of resolution does not absorb, which in C major is rare — 1 to 5 events per 400 seeds, so those cells carry almost no weight; D dorian (19 → 23) and G mixolydian (34 → 35) are the substantive ones. The same applies to the leading-tone column at C ionian cx2 (n = 4): the rows that matter there are cx3, cx4 and D dorian, where n runs from 13 to 151.
+
+Two examples, same seed and the same chords in both, where only the voicing moved:
+
+```
+seed 11, C ionian cx2    I Cmaj7       iii Em7       ii Dm7        I Cmaj7
+before                   48 59 64 67   52 59 62 67   50 60 65 69   48 55 64 71
+after                    48 59 64 67   52 59 62 67   50 60 65 69   48 59 64 67
+```
+
+Only the last chord differs. `ii7`'s seventh, the C4 at 60, had nowhere to go into `48 55 64 71`: no B3 was voiced and the tonic chord does not contain a C above the bass either. It now falls a semitone onto the B3 at 59, which is the same `Cmaj7` spelled as C3–B3–E4–G4.
+
+```
+seed 42, D dorian cx2    i Dm7         v Am7         ii Em7        i Dm7
+before                   50 60 65 69   57 60 64 67   52 62 67 71   50 57 65 72
+after                    50 60 65 69   57 60 64 67   52 62 67 71   50 60 65 69
+```
+
+Again only the last chord: `Em7`'s seventh, the D4 at 62, was stranded in `50 57 65 72` and now falls a whole tone onto the C4 at 60.
+
+The snapshot in `__snapshots__/advancedGenerator.test.ts.snap` was **not** regenerated — that configuration (complexity 3, `drop2`, C3–C5, seed 123) produces byte-identical voicings with the term on.
+
+Covered by `advanced/__tests__/tendencyTones.test.ts` (26 unit tests over the identity derivation and the penalty's rules and exceptions) and 15 further generator-level regressions in `progressionQuality.test.ts`, including one that pins the pentatonic path to byte-identical output and one that fails on the pre-change code for every complexity from 2 up.
+
+Still open: the corpus-fitted 12-feature weight vector is adopted only for its roughness term; the remaining weights stay hand-tuned. The voicing vocabulary is now the binding constraint on the leading tone (§4.1) — a root-doubled, fifth-omitted shape for seventh chords at four voices would lift the ceiling the table above runs into, and is the natural next step. The pentatonic path takes the tension shapes and the bass plan but, by design, no borrowed harmony and no tendency rules: it has no leading tone, no functional dominant, and its sevenths are scale tones of sus chords rather than dissonances that owe anything.
 
 ---
 
