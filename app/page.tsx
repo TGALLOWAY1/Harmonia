@@ -13,7 +13,7 @@ import {
   MELODY_LEVEL_MIN,
   MELODY_LEVEL_MAX,
 } from "@/lib/state/playbackSettingsStore";
-import { beatsToSeconds, buildChordEvents, humanizeVelocity } from "@/lib/audio/humanization";
+import { beatsToSeconds, buildChordEvents, humanizeVelocity, noteDurationWithinEvent } from "@/lib/audio/humanization";
 import {
   applyDynamics,
   chordVoiceWeights,
@@ -425,9 +425,11 @@ export default function HarmoniaPage() {
             weights: voiceWeights,
           });
           for (const ev of events) {
+            // A strummed or arpeggiated voice starts late but still ends
+            // with the chord, so the whole articulation stays inside it.
             synthRef.current.triggerAttackRelease(
               ev.note,
-              durationSeconds,
+              noteDurationWithinEvent(durationSeconds, ev.timeOffset),
               time + ev.timeOffset,
               ev.velocity,
             );

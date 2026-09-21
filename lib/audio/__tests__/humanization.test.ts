@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { beatsToSeconds, buildChordEvents, humanizeVelocity } from "../humanization";
+import { beatsToSeconds, buildChordEvents, humanizeVelocity, noteDurationWithinEvent } from "../humanization";
 
 const NOTES_3 = ["C4", "E4", "G4"];
 
@@ -159,5 +159,22 @@ describe("beatsToSeconds", () => {
   it("scales with tempo", () => {
     expect(beatsToSeconds(1, 60)).toBeCloseTo(1, 6);
     expect(beatsToSeconds(1, 240)).toBeCloseTo(0.25, 6);
+  });
+});
+
+describe("noteDurationWithinEvent", () => {
+  it("keeps the full length for on-time and early notes", () => {
+    expect(noteDurationWithinEvent(2, 0)).toBe(2);
+    expect(noteDurationWithinEvent(2, -0.01)).toBe(2);
+  });
+
+  it("shortens a late (strummed/arpeggiated) note so it ends with the event", () => {
+    expect(noteDurationWithinEvent(2, 0.5)).toBeCloseTo(1.5);
+    expect(noteDurationWithinEvent(1, 0.6)).toBeCloseTo(0.4);
+  });
+
+  it("never returns less than the minimum audible length", () => {
+    expect(noteDurationWithinEvent(0.1, 0.09)).toBe(0.05);
+    expect(noteDurationWithinEvent(0.1, 5)).toBe(0.05);
   });
 });

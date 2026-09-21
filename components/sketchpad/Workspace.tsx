@@ -12,7 +12,7 @@ import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
 import { ensureAudioReady } from "@/lib/audio/audioEngine";
 import { usePlaybackSettingsStore } from "@/lib/state/playbackSettingsStore";
-import { beatsToSeconds, buildChordEvents } from "@/lib/audio/humanization";
+import { beatsToSeconds, buildChordEvents, noteDurationWithinEvent } from "@/lib/audio/humanization";
 import { applyDynamics, chordVoiceWeights, metricAccent } from "@/lib/audio/dynamics";
 
 export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject }) {
@@ -98,8 +98,20 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       spreadSeconds: beats * (60 / liveBpm),
       weights,
     });
+    // Cut whatever the previous event left ringing at this exact boundary —
+    // the same safeguard as the main page — so a sampled instrument's long
+    // sustain, a release dropped at the loop boundary, or a note shared with
+    // the next event never piles up across events. Then each voice plays
+    // only until the event ends, however late its strum/arpeggio offset made
+    // it start.
+    synthRef.current.releaseAll(time);
     for (const ev of chordEvents) {
-      synthRef.current.triggerAttackRelease(ev.note, durationSeconds, time + ev.timeOffset, ev.velocity);
+      synthRef.current.triggerAttackRelease(
+        ev.note,
+        noteDurationWithinEvent(durationSeconds, ev.timeOffset),
+        time + ev.timeOffset,
+        ev.velocity,
+      );
     }
   }, []);
 

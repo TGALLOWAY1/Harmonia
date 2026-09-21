@@ -137,3 +137,17 @@ export function buildChordEvents(
 export function beatsToSeconds(beats: number, bpm: number): number {
   return (beats * 60) / bpm;
 }
+
+/** Shortest note the scheduler will ask for, so a late voice still speaks. */
+const MIN_NOTE_SECONDS = 0.05;
+
+/**
+ * Duration for one note of a chord event so that the note still ends with
+ * the event: a strummed or arpeggiated voice starts `timeOffset` late, so it
+ * plays that much shorter. Early (negative-jitter) notes keep the full
+ * length. Without this, the last voices of an arpeggio would ring past the
+ * next chord and, in a loop, past the loop boundary into the next pass.
+ */
+export function noteDurationWithinEvent(eventSeconds: number, timeOffset: number): number {
+  return Math.max(MIN_NOTE_SECONDS, eventSeconds - Math.max(0, timeOffset));
+}
