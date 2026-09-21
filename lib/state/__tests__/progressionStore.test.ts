@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Midi } from "@tonejs/midi";
 
 import { useProgressionStore } from "@/lib/state/progressionStore";
 import type { Progression } from "@/lib/theory/progressionTypes";
@@ -142,5 +144,78 @@ describe("progression store invalidates the chord tension curve when the harmony
     const melody = useProgressionStore.getState().melody;
     expect(melody).not.toBeNull();
     expect(melody!.notes.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * `exportCompositionMidi` combines the current progression and its generated
+ * melody into one downloadable MIDI file. These tests exercise the store
+ * wiring (guards, and driving the shared MIDI pipeline) — the dynamics model
+ * and MIDI byte content itself are covered in `progressionMidiExport.test.ts`.
+ */
+describe("progression store composition MIDI export", () => {
+  const progression: Progression = {
+    id: "composition-test",
+    timestamp: 0,
+    chords: [
+      {
+        symbol: "C", notes: ["C", "E", "G"], romanNumeral: "I",
+        notesWithOctave: ["C3", "E3", "G3"], midiNotes: [48, 52, 55],
+        root: "C", bass: "C", inversion: 0,
+      },
+      {
+        symbol: "G", notes: ["G", "B", "D"], romanNumeral: "V",
+        notesWithOctave: ["G3", "B3", "D4"], midiNotes: [55, 59, 62],
+        root: "G", bass: "G", inversion: 0,
+      },
+    ],
+  };
+
+  let createObjectURLSpy: ReturnType<typeof vi.spyOn>;
+  let clickSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    useProgressionStore.setState({ rootKey: "C", mode: "ionian", melodyEnabled: false });
+    useProgressionStore.getState().loadProgression(progression);
+    createObjectURLSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does nothing without a current progression", () => {
+    useProgressionStore.setState({ currentProgression: null, melody: null });
+    useProgressionStore.getState().exportCompositionMidi();
+    expect(createObjectURLSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without a generated melody", () => {
+    useProgressionStore.setState({ melody: null, melodyEnabled: false });
+    useProgressionStore.getState().exportCompositionMidi();
+    expect(createObjectURLSpy).not.toHaveBeenCalled();
+  });
+
+  it("exports a single MIDI file with a Chords track and a Melody track", async () => {
+    useProgressionStore.getState().setMelodyEnabled(true);
+    expect(useProgressionStore.getState().melody).not.toBeNull();
+
+    useProgressionStore.getState().exportCompositionMidi();
+
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    const blob = createObjectURLSpy.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("audio/midi");
+
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const midi = new Midi(bytes);
+    expect(midi.tracks).toHaveLength(2);
+    expect(midi.tracks[0].name).toBe("Chords");
+    expect(midi.tracks[1].name).toBe("Melody");
+    expect(midi.tracks[0].notes.length).toBeGreaterThan(0);
+    expect(midi.tracks[1].notes.length).toBeGreaterThan(0);
   });
 });

@@ -11,16 +11,9 @@ import { type Synth } from "@/lib/audio/synthPresets";
 import { useAudioSettingsStore } from "@/lib/state/audioSettingsStore";
 import { useInstrument } from "@/lib/audio/useInstrument";
 import { ensureAudioReady } from "@/lib/audio/audioEngine";
-
-function beatsToDuration(beats: number): string {
-  switch (beats) {
-    case 4: return "1n";
-    case 2: return "2n";
-    case 1: return "4n";
-    case 0.5: return "8n";
-    default: return "1n";
-  }
-}
+import { usePlaybackSettingsStore } from "@/lib/state/playbackSettingsStore";
+import { beatsToSeconds, buildChordEvents } from "@/lib/audio/humanization";
+import { applyDynamics, chordVoiceWeights, metricAccent } from "@/lib/audio/dynamics";
 
 export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject }) {
   const {
@@ -78,6 +71,38 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
     setPlaybackPosition(0, 0);
   }, [setPlaybackMode, setPlaybackPosition]);
 
+  /**
+   * Trigger one harmonic event's notes at a scheduled transport time, using
+   * the same dynamics model as the main page: the playback settings store's
+   * velocity/humanize/style and tempo-aware arpeggio spread, voice weights
+   * (bass/top/inner voicing), the position's metric accent, and an exact
+   * note duration in seconds — any beat count, not just 4/2/1/0.5 — so a
+   * dotted or triplet-length event rings for as long as it's actually meant
+   * to instead of snapping to a whole note.
+   */
+  const triggerHarmonicEvent = useCallback((time: number, event: HarmonicEvent, beats: number, accent: number) => {
+    if (!synthRef.current) return;
+    const notes = event.notesWithOctave.length > 0 ? event.notesWithOctave : event.notes.map((n) => `${n}3`);
+    const noteMidiNumbers =
+      event.midiNotes.length > 0 ? event.midiNotes : notes.map((n) => Tone.Frequency(n).toMidi());
+    const weights = chordVoiceWeights(noteMidiNumbers);
+
+    const ps = usePlaybackSettingsStore.getState();
+    const liveBpm = Tone.getTransport().bpm.value || 120;
+    const durationSeconds = beatsToSeconds(beats, liveBpm);
+    const baseVelocity = applyDynamics(ps.chordVelocity, accent);
+    const chordEvents = buildChordEvents(notes, {
+      baseVelocity,
+      humanize: ps.humanize,
+      style: ps.playbackStyle,
+      spreadSeconds: beats * (60 / liveBpm),
+      weights,
+    });
+    for (const ev of chordEvents) {
+      synthRef.current.triggerAttackRelease(ev.note, durationSeconds, time + ev.timeOffset, ev.velocity);
+    }
+  }, []);
+
   // Schedule events for playback
   const scheduleEvents = useCallback(
     (events: HarmonicEvent[], loop: boolean, onComplete?: () => void) => {
@@ -91,8 +116,8 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       for (let i = 0; i < events.length; i++) {
         const ev = events[i];
         const beats = ev.durationBeats;
-        const duration = beatsToDuration(beats);
         const evIdx = i;
+        const accent = metricAccent(((beatOffset % 4) + 4) % 4);
 
         const bars = Math.floor(beatOffset / 4);
         const quarters = Math.floor(beatOffset % 4);
@@ -101,8 +126,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
 
         const id = Tone.getTransport().schedule((time) => {
           if (!synthRef.current) return;
-          const notes = ev.notesWithOctave.length > 0 ? ev.notesWithOctave : ev.notes.map((n) => `${n}3`);
-          synthRef.current.triggerAttackRelease(notes, duration, time);
+          triggerHarmonicEvent(time, ev, beats, accent);
           Tone.getDraw().schedule(() => {
             setPlaybackPosition(playbackSectionIndex, evIdx);
           }, time);
@@ -122,7 +146,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       Tone.getTransport().position = 0;
       Tone.getTransport().start();
     },
-    [setPlaybackPosition, playbackSectionIndex]
+    [setPlaybackPosition, playbackSectionIndex, triggerHarmonicEvent]
   );
 
   // Play single chord
@@ -134,7 +158,22 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       stopPlayback();
       if (!ready || !synthRef.current) return;
       const notes = event.notesWithOctave.length > 0 ? event.notesWithOctave : event.notes.map((n) => `${n}3`);
-      synthRef.current.triggerAttackRelease(notes, "2n");
+      const noteMidiNumbers =
+        event.midiNotes.length > 0 ? event.midiNotes : notes.map((n) => Tone.Frequency(n).toMidi());
+      const weights = chordVoiceWeights(noteMidiNumbers);
+      const ps = usePlaybackSettingsStore.getState();
+      const chordEvents = buildChordEvents(notes, {
+        baseVelocity: ps.chordVelocity,
+        humanize: ps.humanize,
+        style: "block",
+        weights,
+      });
+      const now = Tone.now();
+      for (const ev of chordEvents) {
+        // Jitter can make timeOffset negative; clamp so an immediate preview
+        // never schedules a note earlier than `now`.
+        synthRef.current.triggerAttackRelease(ev.note, "2n", now + Math.max(0, ev.timeOffset), ev.velocity);
+      }
     },
     [stopPlayback]
   );
@@ -178,7 +217,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       let beatOffset = 0;
       for (const { event, sectionIndex, eventIndex } of allEvents) {
         const beats = event.durationBeats;
-        const duration = beatsToDuration(beats);
+        const accent = metricAccent(((beatOffset % 4) + 4) % 4);
 
         const bars = Math.floor(beatOffset / 4);
         const quarters = Math.floor(beatOffset % 4);
@@ -189,8 +228,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
         const ei = eventIndex;
         const id = Tone.getTransport().schedule((time) => {
           if (!synthRef.current) return;
-          const notes = event.notesWithOctave.length > 0 ? event.notesWithOctave : event.notes.map((n) => `${n}3`);
-          synthRef.current.triggerAttackRelease(notes, duration, time);
+          triggerHarmonicEvent(time, event, beats, accent);
           Tone.getDraw().schedule(() => {
             setPlaybackPosition(si, ei);
           }, time);
@@ -217,7 +255,7 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
       Tone.getTransport().position = 0;
       Tone.getTransport().start();
     },
-    [project.sections, stopPlayback, setPlaybackMode, setPlaybackPosition]
+    [project.sections, stopPlayback, setPlaybackMode, setPlaybackPosition, triggerHarmonicEvent]
   );
 
   // Play transition preview between two sections
@@ -245,9 +283,19 @@ export function SketchpadWorkspace({ project }: { project: HarmonicSketchProject
   const playNote = useCallback(
     async (noteWithOctave: string) => {
       const ready = await ensureAudioReady();
-      if (ready && synthRef.current) {
-        synthRef.current.triggerAttackRelease(noteWithOctave, "4n");
-      }
+      if (!ready || !synthRef.current) return;
+      const ps = usePlaybackSettingsStore.getState();
+      const weights = chordVoiceWeights([Tone.Frequency(noteWithOctave).toMidi()]);
+      const [ev] = buildChordEvents([noteWithOctave], {
+        baseVelocity: ps.chordVelocity,
+        humanize: ps.humanize,
+        style: "block",
+        weights,
+      });
+      const now = Tone.now();
+      // Jitter can make timeOffset negative; clamp so an immediate preview
+      // never schedules a note earlier than `now`.
+      synthRef.current.triggerAttackRelease(noteWithOctave, "4n", now + Math.max(0, ev.timeOffset), ev.velocity);
     },
     []
   );
