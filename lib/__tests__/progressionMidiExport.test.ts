@@ -188,6 +188,8 @@ describe("progressionMidiExport", () => {
       expect(midi.tracks).toHaveLength(2);
       expect(midi.tracks[0].name).toBe("Chords");
       expect(midi.tracks[1].name).toBe("Melody");
+      expect(midi.tracks[0].channel).toBe(0);
+      expect(midi.tracks[1].channel).toBe(1);
       expect(midi.header.tempos).toHaveLength(1);
       expect(Math.round(midi.header.tempos[0].bpm)).toBe(BPM);
     });

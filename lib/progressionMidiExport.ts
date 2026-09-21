@@ -282,13 +282,18 @@ export function compositionToMidi(
   const program = resolveInstrumentProgram(opts.instrumentProgram);
   const melodyProgram = opts.melodyProgram ?? program;
 
+  // Each part on its own channel: a shared channel would make the two
+  // program changes collide, and a DAW or MIDI-through keyed on channel would
+  // hear one part.
   const chordTrack = midi.addTrack();
   chordTrack.name = "Chords";
+  chordTrack.channel = 0;
   chordTrack.instrument.number = program;
   writeChordTrack(chordTrack, chords, bpm, chordVelocity);
 
   const melodyTrack = midi.addTrack();
   melodyTrack.name = "Melody";
+  melodyTrack.channel = 1;
   melodyTrack.instrument.number = melodyProgram;
   writeMelodyTrack(melodyTrack, melody.notes, bpm, chordVelocity, melodyLevel, melody.phrases);
 

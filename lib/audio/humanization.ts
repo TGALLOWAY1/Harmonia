@@ -57,7 +57,11 @@ const MAX_TIMING_JITTER = 0.012;
 const STRUM_STEP = 0.018;
 /** Arpeggio spreads notes across this fraction of the chord's duration. */
 const ARP_WINDOW_FRACTION = 0.6;
-/** Clamp arpeggio per-note step so it never drags or blurs into a strum. */
+/**
+ * Clamp arpeggio per-note step so it never drags or blurs into a strum — except
+ * that a chord too short to hold the slowest roll gets a faster one rather
+ * than voices that start after the chord has ended.
+ */
 const ARP_MIN_STEP = 0.06; // 60 ms
 const ARP_MAX_STEP = 0.16; // 160 ms
 /** Velocity floor/ceiling so notes are always audible and never clip. */
@@ -108,6 +112,9 @@ export function buildChordEvents(
     const window = spreadSeconds * ARP_WINDOW_FRACTION;
     const raw = window / (notes.length - 1);
     step = clamp(raw, ARP_MIN_STEP, ARP_MAX_STEP);
+    // Keep every onset inside the chord: an eighth at a fast tempo is shorter
+    // than a 60 ms roll over four voices.
+    if (spreadSeconds > 0) step = Math.min(step, spreadSeconds / notes.length);
   }
 
   return notes.map((note, index) => {

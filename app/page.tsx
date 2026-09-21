@@ -634,11 +634,13 @@ export default function HarmoniaPage() {
       style: "block",
       weights: voiceWeights,
     });
-    // Same safeguard as the sequence scheduler: cut whatever is still ringing
-    // before attacking so rapid taps (chord cards, substitution previews)
-    // replace the previous preview instead of stacking on top of it. Releasing
-    // and attacking at one precise `now` is deterministic, unlike the old
-    // releaseAll() + setTimeout(10ms) guess that each call site used to repeat.
+    // Same safeguard as the sequence scheduler: cut whatever is already
+    // sounding before attacking so taps (chord cards, substitution previews)
+    // replace the previous preview instead of stacking on top of it. An attack
+    // still pending inside the context's lookahead (~100 ms) is not a live
+    // voice yet, so two taps closer than that can still overlap briefly.
+    // Releasing and attacking at one precise `now` is deterministic, unlike
+    // the old releaseAll() + setTimeout(10ms) guess each call site repeated.
     const now = Tone.now();
     synthRef.current.releaseAll(now);
     for (const ev of events) {
@@ -670,7 +672,7 @@ export default function HarmoniaPage() {
         setIsPlaying(false);
       }
       // playChordPreview cuts the previous preview before attacking, so taps
-      // replace rather than overlap.
+      // more than a lookahead apart replace rather than overlap.
       void playChordPreview(notesWithOctave, "2n");
       // Set this chord as the new loop start position and select it
       playbackIndexRef.current = chordIndex;

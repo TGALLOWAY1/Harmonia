@@ -33,7 +33,6 @@
 
 import { chordIndexAtBeat } from "./helpers";
 import { midiPc, type HarmonicContext } from "./harmonicContext";
-import { GRID } from "./meter";
 import type { MoodProfile } from "./moods";
 import type { PlacedEvent } from "./motif";
 import type { MelodyHarmony } from "./types";

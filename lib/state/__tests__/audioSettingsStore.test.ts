@@ -26,8 +26,8 @@ function defaults() {
  * is the only way to exercise the `merge` sanitizer that guards against values
  * written by an older build (or by hand).
  */
-async function storeRehydratedFrom(state: unknown) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, version: 2 }));
+async function storeRehydratedFrom(state: unknown, version = 2) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ state, version }));
   const { resetModules } = await import("vitest").then((m) => ({ resetModules: m.vi.resetModules }));
   resetModules();
   const fresh = await import("../audioSettingsStore");
@@ -51,6 +51,15 @@ describe("audioSettingsStore", () => {
     expect(state.melodyInstrumentId).toBe(FOLLOW_CHORDS);
     expect(state.masterVolume).toBe(0.8);
     expect(state.space).toBe("room");
+  });
+
+  it("keeps a version-1 blob's instrument and quality across the version bump", async () => {
+    const state = await storeRehydratedFrom({ instrumentId: "filtered-saw", quality: "lightweight" }, 1);
+    expect(state.instrumentId).toBe("filtered-saw");
+    expect(state.quality).toBe("lightweight");
+    expect(state.melodyInstrumentId).toBe(FOLLOW_CHORDS);
+    expect(state.masterVolume).toBe(DEFAULT_MASTER_VOLUME);
+    expect(state.space).toBe(DEFAULT_SPACE);
   });
 
   it("updates the instrument", () => {

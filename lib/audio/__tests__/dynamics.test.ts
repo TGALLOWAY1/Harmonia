@@ -296,3 +296,30 @@ describe("melodyDynamics — with phrases", () => {
     expect(d).toBeLessThanOrEqual(1.2);
   });
 });
+
+describe("progressionDynamics — chord length", () => {
+  it("sets short passing chords a little lighter than full-bar chords", () => {
+    const full = progressionDynamics([
+      { durationClass: "full" },
+      { durationClass: "full" },
+      { durationClass: "full" },
+    ]);
+    const eighth = progressionDynamics([
+      { durationClass: "full" },
+      { durationClass: "eighth" },
+      { durationClass: "full" },
+    ]);
+    const quarter = progressionDynamics([
+      { durationClass: "full" },
+      { durationClass: "quarter" },
+      { durationClass: "full" },
+    ]);
+    expect(eighth[1]).toBeLessThan(full[1]);
+    expect(quarter[1]).toBeLessThan(full[1]);
+    expect(quarter[1]).toBeGreaterThan(eighth[1]);
+    expect(eighth[1]).toBeGreaterThanOrEqual(0.92);
+    // Outer chords are untouched by a short chord in the middle.
+    expect(eighth[0]).toBe(full[0]);
+    expect(eighth[2]).toBe(full[2]);
+  });
+});

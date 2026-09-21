@@ -111,14 +111,17 @@ export function metricAccent(beatInBar: number, beatsPerBar = 4): number {
 
 const FIRST_CHORD_LIFT = 1.05;
 const LAST_CHORD_SETTLE = 0.95;
+/** Short chords (a beat or less) are passing harmony and sit a little lighter. */
+const SHORT_CHORD_WEIGHTS: Record<string, number> = { quarter: 0.96, eighth: 0.93 };
 const TENSION_SWELL_MAX = 0.05;
 const PROGRESSION_DYNAMICS_RANGE = 0.08;
 
 /**
  * Per-chord velocity multipliers across a progression: a slight lift on the
- * first chord, a slight settle on the last, and — when tension values are
- * given (already 0–1) — a small additional swell that peaks with the
- * tensest chord. Stays within about ±8%.
+ * first chord, a slight settle on the last, a touch less on short passing
+ * chords (a beat or less), and — when tension values are given (already
+ * 0–1) — a small additional swell that peaks with the tensest chord. Stays
+ * within about ±8%.
  */
 export function progressionDynamics(chords: { durationClass?: string; tension?: number }[]): number[] {
   const n = chords.length;
@@ -129,6 +132,8 @@ export function progressionDynamics(chords: { durationClass?: string; tension?: 
     let mult = 1;
     if (i === 0) mult *= FIRST_CHORD_LIFT;
     if (i === n - 1) mult *= LAST_CHORD_SETTLE;
+    const shortWeight = chord.durationClass ? SHORT_CHORD_WEIGHTS[chord.durationClass] : undefined;
+    if (shortWeight !== undefined) mult *= shortWeight;
     if (typeof chord.tension === "number" && Number.isFinite(chord.tension)) {
       mult *= 1 + clamp(chord.tension, 0, 1) * TENSION_SWELL_MAX;
     }

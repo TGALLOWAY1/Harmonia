@@ -58,14 +58,28 @@ describe("buildChordEvents — arpeggio", () => {
   });
 
   it("clamps the step so fast tempos stay audible", () => {
-    // 5 notes, 0.2s window*0.6=0.12, raw 0.03 -> clamped to MIN 0.06
+    // 5 notes, 0.4s window*0.6=0.24, raw 0.06 -> at the MIN clamp, and the
+    // chord (0.4s / 5 voices = 0.08s per onset) has room for it
+    const events = buildChordEvents(["C4", "E4", "G4", "B4", "D5"], {
+      baseVelocity: 0.7,
+      humanize: 0,
+      style: "arpeggio",
+      spreadSeconds: 0.4,
+    });
+    expect(events[1].timeOffset).toBeCloseTo(0.06, 6);
+  });
+
+  it("keeps every onset inside a chord too short for the slowest roll", () => {
+    // 5 notes over a 0.2s chord: a 60ms roll would start the last voice at
+    // 0.24s, after the chord ended — capped to 0.2 / 5 = 0.04 per onset
     const events = buildChordEvents(["C4", "E4", "G4", "B4", "D5"], {
       baseVelocity: 0.7,
       humanize: 0,
       style: "arpeggio",
       spreadSeconds: 0.2,
     });
-    expect(events[1].timeOffset).toBeCloseTo(0.06, 6);
+    expect(events[1].timeOffset).toBeCloseTo(0.04, 6);
+    expect(events[4].timeOffset).toBeLessThan(0.2);
   });
 
   it("never starts notes in the past and rolls upward in order", () => {

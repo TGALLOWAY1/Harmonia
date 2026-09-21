@@ -92,6 +92,12 @@ export const useAudioSettingsStore = create<AudioSettingsState>()(
     {
       name: "harmonia-audio-settings",
       version: 2,
+      // A version-1 blob (instrument + quality only) is still valid: `merge`
+      // sanitizes every field and fills in the ones it lacks, so migration is
+      // the identity. Without a migrate function, persist discards the whole
+      // blob on a version mismatch and every returning user silently loses
+      // their instrument and quality choice on every load.
+      migrate: (persisted) => persisted as AudioSettingsState,
       // Sanitize persisted values: an instrument id from an older build that
       // no longer exists, or a volume someone typed into localStorage by hand,
       // must resolve to something playable — never crash, never deafen.

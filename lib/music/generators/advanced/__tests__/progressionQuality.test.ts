@@ -671,6 +671,7 @@ describe("tendency-tone resolution", () => {
 
     return {
       leadingTones,
+      leadingTonesVoiceable,
       leadingToneRise: ratio(leadingTonesRose, leadingTonesVoiceable),
       seventhRelease: ratio(seventhsDischarged, sevenths),
       sevenths,
@@ -698,6 +699,9 @@ describe("tendency-tone resolution", () => {
     (rootKey, mode, complexity) => {
       const stats = sweepTendency(complexity, { rootKey, mode } as never);
       expect(stats.leadingTones).toBeGreaterThan(0);
+      // The rise is measured over the voiceable cases, so guard that
+      // denominator too: ratio() reports 1 over zero and would pass vacuously.
+      expect(stats.leadingTonesVoiceable).toBeGreaterThan(0);
       expect(stats.leadingToneRise).toBeGreaterThan(0.97);
     }
   );
@@ -713,6 +717,9 @@ describe("tendency-tone resolution", () => {
     const dorian = sweepTendency(2, { rootKey: "D", mode: "dorian" } as never);
     const mixolydian = sweepTendency(2, { rootKey: "G", mode: "mixolydian" } as never);
     expect(dorian.tritones + mixolydian.tritones).toBeGreaterThan(10);
+    // Each ratio below has its own denominator; neither may be empty.
+    expect(dorian.tritones).toBeGreaterThan(0);
+    expect(mixolydian.tritones).toBeGreaterThan(0);
     expect(dorian.tritoneContrary).toBeGreaterThan(0.9);
     expect(mixolydian.tritoneContrary).toBeGreaterThan(0.9);
   });
