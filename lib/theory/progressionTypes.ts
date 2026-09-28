@@ -25,4 +25,6 @@ export interface Progression {
     id: string;
     chords: Chord[];
     timestamp: number;
+    /** Seed used to generate this progression, when known. */
+    seed?: number;
 }

@@ -35,6 +35,7 @@ import type { Mode } from "@/lib/theory/harmonyEngine";
 import type { SubstitutionOption, ChordSourceType } from "@/lib/creative/types";
 import type { VoicingStyle, VoiceCount } from "@/lib/music/generators/advanced/types";
 import type { MelodyStyle, MelodyHarmony, MelodyMood } from "@/lib/music/generators/melody/types";
+import type { AbletonExportReceipt } from "@/lib/progressionMidiExport";
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: { value: Mode; label: string }[] = [
@@ -87,6 +88,7 @@ export default function HarmoniaPage() {
     mode,
     complexity,
     numChords,
+    seed,
     voicingStyle,
     voiceCount,
     setSettings,
@@ -97,6 +99,7 @@ export default function HarmoniaPage() {
     setIsPlaying,
     exportMidi,
     exportMelodyMidi,
+    exportAbletonMidi,
     loadProgression,
     // Creative iteration
     chordSourceTypes,
@@ -160,6 +163,7 @@ export default function HarmoniaPage() {
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [showMelodyOnRoll, setShowMelodyOnRoll] = useState(true);
   const [justSaved, setJustSaved] = useState(false);
+  const [abletonExportReceipt, setAbletonExportReceipt] = useState<AbletonExportReceipt | null>(null);
   // Local text mirror for the BPM input so users can freely clear/retype without
   // a coerced "0" sticking around (Number("") === 0) and without React's
   // controlled-number-input quirk leaving a phantom leading zero (e.g. "0140").
@@ -411,9 +415,15 @@ export default function HarmoniaPage() {
     if (isPlaying) {
       setIsPlaying(false);
     }
+    setAbletonExportReceipt(null);
     generateNew();
     setGenerationKey((k) => k + 1);
   }, [generateNew, isPlaying, setIsPlaying]);
+
+  const handleAbletonExport = useCallback(() => {
+    const receipt = exportAbletonMidi();
+    if (receipt) setAbletonExportReceipt(receipt);
+  }, [exportAbletonMidi]);
 
   const handleTogglePlayback = useCallback(async () => {
     // Resume from this gesture and wait until the context is actually running
@@ -586,12 +596,14 @@ export default function HarmoniaPage() {
               </button>
               {currentProgression && (
                 <button
-                  onClick={exportMidi}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-subtle bg-surface hover:bg-surface-muted text-xs font-medium transition-colors text-muted hover:text-foreground"
-                  title="Export Chords MIDI"
+                  onClick={handleAbletonExport}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/10 hover:bg-accent/15 text-xs font-medium transition-colors text-accent"
+                  title="Export an Ableton-ready MIDI set"
+                  aria-label="Export for Ableton"
+                  data-testid="export-ableton-button"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Chords
+                  Ableton
                 </button>
               )}
               {melodyEnabled && melody && (
@@ -660,6 +672,19 @@ export default function HarmoniaPage() {
                   {currentProgression && (
                     <button
                       onClick={() => {
+                        handleAbletonExport();
+                        setHeaderMenuOpen(false);
+                      }}
+                      className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-muted hover:text-foreground hover:bg-surface-muted transition-colors"
+                      data-testid="export-ableton-button-mobile"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export for Ableton
+                    </button>
+                  )}
+                  {currentProgression && (
+                    <button
+                      onClick={() => {
                         exportMidi();
                         setHeaderMenuOpen(false);
                       }}
@@ -710,7 +735,7 @@ export default function HarmoniaPage() {
               Settings
             </span>
             <span className="flex-1 text-right text-xs font-medium text-foreground truncate">
-              {rootKey} {MODES.find((m) => m.value === mode)?.label} · {bpm} BPM · {numChords} Chords · {COMPLEXITY_LABELS[complexity]}
+              {rootKey} {MODES.find((m) => m.value === mode)?.label} · {bpm} BPM · {numChords} Chords · {COMPLEXITY_LABELS[complexity]}{seed !== null ? ` · Seed ${seed}` : ""}
             </span>
             <ChevronDown className={`w-4 h-4 text-muted transition-transform shrink-0 ${settingsExpanded ? "rotate-180" : ""}`} />
           </button>
@@ -729,6 +754,8 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ rootKey: e.target.value })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Root Key"
+                  aria-label="Root key"
+                  data-testid="root-key-select"
                 >
                   {NOTES.map((note) => (
                     <option key={note} value={note}>{note}</option>
@@ -740,6 +767,8 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ mode: e.target.value as Mode })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Scale Mode"
+                  aria-label="Scale mode"
+                  data-testid="scale-mode-select"
                 >
                   {MODES.map((m) => (
                     <option key={m.value} value={m.value}>{m.label}</option>
@@ -754,6 +783,8 @@ export default function HarmoniaPage() {
                     pattern="[0-9]*"
                     maxLength={3}
                     value={bpmText}
+                    aria-label="Tempo in BPM"
+                    data-testid="bpm-input"
                     onChange={(e) => {
                       const raw = e.target.value;
                       // Digits only; strip leading zeros so a phantom "0" can never persist.
@@ -795,6 +826,8 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ numChords: Number(e.target.value) as 3 | 4 | 5 | 6 | 7 | 8 })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Number of Chords"
+                  aria-label="Number of chords"
+                  data-testid="chord-count-select"
                 >
                   {CHORD_COUNTS.map((n) => (
                     <option key={n} value={n}>{n} Chords</option>
@@ -806,6 +839,8 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ complexity: Number(e.target.value) as ComplexityLevel })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Harmonic Complexity"
+                  aria-label="Harmonic complexity"
+                  data-testid="complexity-select"
                 >
                   {([1, 2, 3, 4] as ComplexityLevel[]).map((level) => (
                     <option key={level} value={level}>{COMPLEXITY_LABELS[level]}</option>
@@ -817,11 +852,38 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ voicingStyle: e.target.value as VoicingStyle })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Voicing Style"
+                  aria-label="Voicing style"
+                  data-testid="voicing-style-select"
                 >
                   {VOICING_STYLES.map((vs) => (
                     <option key={vs.value} value={vs.value}>{vs.label}</option>
                   ))}
                 </select>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={10}
+                  value={seed ?? ""}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (!/^\d*$/.test(raw)) return;
+                    if (raw === "") {
+                      setSettings({ seed: null });
+                      return;
+                    }
+                    const nextSeed = Number(raw);
+                    if (Number.isSafeInteger(nextSeed) && nextSeed <= 4_294_967_295) {
+                      setSettings({ seed: nextSeed });
+                    }
+                  }}
+                  placeholder="Random"
+                  className="w-16 min-w-0 bg-transparent hover:bg-surface px-1 py-1.5 text-xs font-medium outline-none rounded-lg transition-colors text-center placeholder:text-muted/50"
+                  title="Generation Seed (blank chooses a new seed)"
+                  aria-label="Generation seed"
+                  data-testid="generation-seed-input"
+                />
               </div>
             </div>
 
@@ -840,6 +902,8 @@ export default function HarmoniaPage() {
                   onChange={(e) => setSettings({ voiceCount: Number(e.target.value) as 3 | 4 | 5 })}
                   className="flex-1 min-w-0 bg-transparent hover:bg-surface px-2 py-1.5 text-sm font-medium outline-none appearance-none rounded-lg cursor-pointer transition-colors text-center"
                   title="Voice Count (Density)"
+                  aria-label="Voice count"
+                  data-testid="voice-count-select"
                 >
                   {VOICE_COUNTS.map((vc) => (
                     <option key={vc.value} value={vc.value}>{vc.label}</option>
@@ -1008,9 +1072,11 @@ export default function HarmoniaPage() {
             <button
               onClick={handleGenerate}
               className="flex items-center justify-center gap-1.5 px-3 lg:px-4 py-2.5 rounded-full border border-border-subtle bg-surface text-foreground font-medium text-sm hover:bg-surface-muted hover:border-accent/40 transition-all active:scale-95 shrink-0"
+              aria-label="Generate chord progression"
+              data-testid="generate-progression-button"
             >
               <Sparkles className="w-4 h-4 text-accent" />
-              Chords
+              Generate
             </button>
 
             {/* Secondary: Generate Melody */}
@@ -1018,6 +1084,7 @@ export default function HarmoniaPage() {
               onClick={generateMelodyForProgression}
               disabled={!currentProgression}
               className="flex items-center justify-center gap-1.5 px-3 lg:px-4 py-2.5 rounded-full border border-border-subtle bg-surface text-foreground font-medium text-sm hover:bg-surface-muted hover:border-accent/40 transition-all active:scale-95 disabled:opacity-40 shrink-0"
+              aria-label="Generate melody for progression"
             >
               <Sparkles className="w-4 h-4 text-accent" />
               Melody
@@ -1270,6 +1337,32 @@ export default function HarmoniaPage() {
           </div>
         </section>
 
+        {abletonExportReceipt && (
+          <section
+            role="status"
+            aria-live="polite"
+            data-testid="ableton-export-status"
+            className="flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm"
+          >
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-foreground">
+                Downloaded for Ableton: <span className="font-mono text-xs">{abletonExportReceipt.filename}</span>
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                {abletonExportReceipt.rootKey} {abletonExportReceipt.modeLabel} · {abletonExportReceipt.bpm} BPM · {abletonExportReceipt.chordCount} chords · {abletonExportReceipt.totalBeats} beats · {abletonExportReceipt.tracks.join(" + ")}{abletonExportReceipt.seed !== undefined ? ` · Seed ${abletonExportReceipt.seed}` : ""}. Import the MIDI file into Ableton Live, then save the Live Set.
+              </p>
+            </div>
+            <button
+              onClick={() => setAbletonExportReceipt(null)}
+              className="rounded-full p-1 text-muted transition-colors hover:bg-surface hover:text-foreground"
+              aria-label="Dismiss Ableton export status"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </section>
+        )}
+
         {/* ── Chord Cards + Piano Roll + Creative Tools ── */}
         <section>
           <AnimatePresence mode="wait">
@@ -1287,8 +1380,12 @@ export default function HarmoniaPage() {
                     keep the mobile view focused on the progression itself. */}
                 <div className="hidden lg:flex items-baseline justify-between border-b border-border-subtle pb-2">
                   <h2 className="text-sm font-semibold tracking-tight">Progression</h2>
-                  <span className="text-xs text-muted tabular-nums">
-                    {rootKey} {MODES.find((m) => m.value === mode)?.label} · {currentProgression.chords.length} chords · {bpm} BPM
+                  <span
+                    className="text-xs text-muted tabular-nums"
+                    data-testid="progression-summary"
+                    aria-label={`Current progression: ${rootKey} ${MODES.find((m) => m.value === mode)?.label}, ${currentProgression.chords.length} chords, ${bpm} BPM, ${currentProgression.chords.map((chord) => chord.symbol).join(", ")}${currentProgression.seed !== undefined ? `, seed ${currentProgression.seed}` : ""}`}
+                  >
+                    {rootKey} {MODES.find((m) => m.value === mode)?.label} · {currentProgression.chords.length} chords · {bpm} BPM{currentProgression.seed !== undefined ? ` · Seed ${currentProgression.seed}` : ""}
                   </span>
                 </div>
 

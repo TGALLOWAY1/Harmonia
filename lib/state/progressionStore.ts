@@ -2,7 +2,14 @@ import { create } from "zustand";
 import type { Progression, Chord } from "../theory/progressionTypes";
 import type { Mode } from "../theory/harmonyEngine";
 import { midiToPitchClass, midiToNoteName, normalizeToPitchClass, type PitchClass } from "../theory/midiUtils";
-import { progressionToMidi, melodyToMidi } from "../progressionMidiExport";
+import {
+    abletonProjectToMidi,
+    createAbletonExportReceipt,
+    progressionToMidi,
+    melodyToMidi,
+    type AbletonExportReceipt,
+    type AbletonMidiExportOptions,
+} from "../progressionMidiExport";
 import { generateAdvancedProgression } from "../music/generators/advanced/generateAdvancedProgression";
 import type { AdvancedProgressionOptions, VoicingStyle, VoiceCount } from "../music/generators/advanced/types";
 import type { ChordSourceType, SubstitutionOption } from "../creative/types";
@@ -73,6 +80,8 @@ interface ProgressionState {
     mode: Mode;
     complexity: ComplexityLevel;
     numChords: number;
+    /** Fixed generation seed. Null means choose a fresh seed each time. */
+    seed: number | null;
 
     // Voicing settings
     voicingStyle: VoicingStyle;
@@ -91,7 +100,7 @@ interface ProgressionState {
     melodyMood: MelodyMood;
     chordsEnabled: boolean;
 
-    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount">>) => void;
+    setSettings: (settings: Partial<Pick<ProgressionState, "rootKey" | "mode" | "complexity" | "numChords" | "bpm" | "voicingStyle" | "voiceCount" | "seed">>) => void;
     generateNew: () => void;
     toggleLock: (index: number) => void;
     deleteChord: (index: number) => void;
@@ -100,6 +109,7 @@ interface ProgressionState {
     addToHistory: (progression: Progression) => void;
     exportMidi: () => void;
     exportMelodyMidi: () => void;
+    exportAbletonMidi: () => AbletonExportReceipt | null;
     loadProgression: (progression: Progression) => void;
 
     // Creative iteration actions
@@ -183,6 +193,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     mode: "ionian",
     complexity: 2,
     numChords: 4,
+    seed: null,
 
     // Voicing defaults
     voicingStyle: "auto",
@@ -206,7 +217,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
     },
 
     generateNew: () => {
-        const { rootKey, mode, complexity, numChords, voicingStyle, voiceCount, currentProgression } = get();
+        const { rootKey, mode, complexity, numChords, seed, voicingStyle, voiceCount, currentProgression } = get();
         const rootPC = normalizeToPitchClass(rootKey) || "C";
 
         // Collect locked chords from the current progression (by position)
@@ -225,6 +236,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             voiceCount,
             rangeLow: 48,
             rangeHigh: 79,
+            seed: seed ?? undefined,
             ...complexityToOptions(complexity),
         });
 
@@ -258,6 +270,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
             id: `prog-${Date.now()}`,
             chords,
             timestamp: Date.now(),
+            seed: result.debug?.seed,
         };
 
         const sourceTypes: ChordSourceType[] = chords.map((c, i) =>
@@ -360,6 +373,8 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
 
         const midiChords = currentProgression.chords.map(c => ({
             symbol: c.symbol,
+            romanNumeral: c.romanNumeral,
+            midiNotes: c.midiNotes,
             notesWithOctave: c.notesWithOctave && c.notesWithOctave.length > 0
                 ? c.notesWithOctave
                 : c.notes.map(n => `${n}3`),
@@ -372,7 +387,7 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         a.href = url;
         a.download = `harmonia-${rootKey}-${mode}-${Date.now()}.mid`;
         a.click();
-        URL.revokeObjectURL(url);
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
     },
 
     exportMelodyMidi: () => {
@@ -385,13 +400,44 @@ export const useProgressionStore = create<ProgressionState>((set, get) => ({
         a.href = url;
         a.download = `harmonia-melody-${rootKey}-${mode}-${Date.now()}.mid`;
         a.click();
-        URL.revokeObjectURL(url);
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+
+    exportAbletonMidi: () => {
+        const { currentProgression, melody, bpm, rootKey, mode } = get();
+        if (!currentProgression) return null;
+
+        const options: AbletonMidiExportOptions = {
+            chords: currentProgression.chords.map((chord) => ({
+                symbol: chord.symbol,
+                romanNumeral: chord.romanNumeral,
+                midiNotes: chord.midiNotes,
+                notesWithOctave: chord.notesWithOctave && chord.notesWithOctave.length > 0
+                    ? chord.notesWithOctave
+                    : chord.notes.map((note) => `${note}3`),
+                durationClass: chord.durationClass,
+            })),
+            melody: melody?.notes.length ? melody.notes : undefined,
+            bpm,
+            rootKey,
+            mode,
+            seed: currentProgression.seed,
+        };
+        const receipt = createAbletonExportReceipt(options);
+        const url = URL.createObjectURL(abletonProjectToMidi(options));
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = receipt.filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        return receipt;
     },
 
     loadProgression: (progression: Progression) => {
         const sourceTypes: ChordSourceType[] = progression.chords.map(() => "generated");
         set({
             currentProgression: progression,
+            seed: progression.seed ?? null,
             chordSourceTypes: sourceTypes,
             originalChords: new Map(),
             substitutionTarget: null,

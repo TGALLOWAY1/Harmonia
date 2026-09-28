@@ -174,7 +174,7 @@ A song-level planner: multi-section structure (Intro/Verse/Chorus/Bridge/Drop/Ou
 <td width="50%" valign="top">
 
 ### 💾 MIDI Export & Saved Progressions
-Export chords or melody as a standard MIDI file (`@tonejs/midi`) with musical velocity curves. Save favorites to a persistent list; reload or delete anytime.
+Export chords or melody separately, or use **Export for Ableton** to download one type-1 MIDI file with tempo, 4/4 meter, key/mode metadata, chord markers, canonical voicings, and an optional melody track. Save favorites to a persistent list; reload or delete anytime.
 
 </td>
 </tr>
@@ -293,7 +293,7 @@ sequenceDiagram
     Viz-->>User: 👁️ Visual
     User->>Store: Edit notes / substitute / lock
     Store->>Theory: Re-interpret chord from MIDI
-    User->>Store: Save / Export MIDI
+    User->>Store: Save / Export Ableton-ready MIDI
 ```
 
 | Stage | What happens |
@@ -306,7 +306,7 @@ sequenceDiagram
 | **6. Playback** | Notes are humanized and scheduled through Tone.js after the audio context is unlocked. |
 | **7. Visualization** | Chord cards and the piano roll render in sync, aligned by duration class. |
 | **8. Editing** | Manual edits trigger reverse chord interpretation; provenance is tracked. |
-| **9. Save** | Export MIDI or persist to favorites / the sketchpad. |
+| **9. Save** | Export separate MIDI parts or one Ableton-ready multi-track file; alternatively persist to favorites / the sketchpad. |
 
 ---
 
@@ -517,7 +517,7 @@ Harmonia/
 │   ├── sketchpad/                 # 🧱 Song-planner store + types
 │   ├── state/                     # 🗃️ Zustand stores (progression, audio, playback)
 │   ├── favorites/ · feedback/     #   Persisted favorites & voicing feedback
-│   └── progressionMidiExport.ts   # 💾 MIDI export via @tonejs/midi
+│   └── progressionMidiExport.ts   # 💾 Separate + Ableton-ready multi-track MIDI export
 │
 ├── components/                    # ⚛️ React components
 │   ├── piano-roll/ · progression/ #   Piano rolls & chord cards
@@ -590,13 +590,24 @@ Open **[http://localhost:3000](http://localhost:3000)** for the progression gene
 | `npm run test:coverage` | Run tests with V8 coverage |
 
 ### Generating your first composition
-1. Pick a **key** and **mode**, set **complexity** and chord count.
+1. Pick a **key** and **mode**, set **complexity** and chord count. Optionally enter a **seed** to make every regeneration reproducible; leave it blank for a fresh seed.
 2. Click **Generate** for a progression; **Play** to loop it.
 3. Inspect voicings in the piano roll — click a note, nudge with **▲/▼** or arrow keys.
 4. **Lock** chords you like, regenerate to replace only the rest.
 5. Click **Melody** (choose style + mood + harmony) to add a melody line.
 6. **Substitute** any chord for theory-guided alternatives.
-7. **Save** to favorites or **Export MIDI** for your DAW.
+7. **Save** to favorites, export an individual part, or choose **Export for Ableton** for a DAW-ready multi-track file.
+
+### Computer → Ableton Live workflow
+
+Harmonia exposes stable accessible names for its generation settings and actions, so `@Computer` can operate the same UI as a musician without relying on screen coordinates. The automation surface includes **Root key**, **Scale mode**, **Tempo in BPM**, **Number of chords**, **Harmonic complexity**, **Voicing style**, **Voice count**, **Generation seed**, **Generate chord progression**, and **Export for Ableton**.
+
+1. Have `@Computer` set the musical controls and a seed, then activate **Generate chord progression**. The progression summary reports the realized seed and chord sequence.
+2. Optionally generate a melody, then activate **Export for Ableton**. Harmonia downloads a predictable filename such as `harmonia-f-minor-128bpm-seed-4242.mid` and shows a receipt with the exact key, tempo, length, seed, and included tracks.
+3. Have `@Computer` open Ableton Live and drag the downloaded MIDI file into Arrangement View. The file contains separate **Harmonia Chords** and, when present, **Harmonia Melody** tracks, plus tempo/meter and chord-position markers.
+4. Assign Ableton instruments, then use **Save Live Set As…** to create the `.als` project.
+
+Harmonia deliberately exports standard MIDI rather than writing Ableton's private `.als` format in the browser. Ableton remains responsible for creating the Live Set, while the on-screen receipt gives `@Computer` a deterministic handoff to verify.
 
 ### Deploying
 Harmonia is a standard Next.js app and deploys cleanly to **Vercel** — see [`VERCEL_SETUP.md`](VERCEL_SETUP.md). The `localStorage`-backed app needs no database; the Prisma `vercel-build` step is only relevant if/when the deferred backend is enabled.
@@ -676,7 +687,7 @@ Generative audio is notoriously hard to test. By driving generation with seeded 
 
 | Stage | Items |
 |---|---|
-| **✅ Current** | Progression generator, phrase-based melody, interactive piano roll, theory-guided substitutions, multi-instrument playback with hot-swap, MIDI export, favorites, voicing feedback, Harmonic Sketchpad |
+| **✅ Current** | Progression generator, phrase-based melody, interactive piano roll, theory-guided substitutions, multi-instrument playback with hot-swap, deterministic Ableton-ready multi-track MIDI export, favorites, voicing feedback, Harmonic Sketchpad |
 | **🔜 Next** | **Melody-first harmonization** — draw a melody in a scale-snapped roll, then auto-harmonize with smooth functional motion (prototyped, reverted pending better chord-fit scoring — see roadmap notes). MIDI **import**. Expanded screenshot/GIF gallery. CI + coverage badges. |
 | **🧪 v2 — Learning Path** | Flashcards, spaced repetition (SRS), circle-of-fifths exercises, milestone curriculum. Schema, card templates, and SRS engine already scaffolded under `_deferred/` and `prisma/`. |
 | **🔭 Research ideas** | AI-assisted composition, style transfer, genre-specific generators, counterpoint generation, adaptive harmonization, voice-leading optimization (search → learned), notation editor, DAW integration, collaboration, live-performance mode |
